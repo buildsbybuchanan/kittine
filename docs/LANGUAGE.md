@@ -168,6 +168,41 @@ Numbers are floating point (`f64` internally); integer-valued literals are
 rendered back as bare Rust integer literals (`0`, `1`, `42`) rather than
 `0.0`, `1.0`, etc., so generated code reads naturally.
 
+### `+` as string concatenation
+
+Kittine has no type system, so `+` can't be checked ahead of time as "numeric"
+or "string." Instead, the compiler looks at whether either side of a `+` is
+literally a string (`¨...¨` or `"..."`):
+
+- If **neither** side is a string literal, `+` lowers to Rust's numeric `+`,
+  exactly as before (`<{count}> >> count + 1` → `*n += 1`).
+- If **either** side is a string literal, the whole `+` lowers to
+  `format!("{}{}", left, right)`, `Display`-formatting both operands. This
+  means a variable on the other side doesn't need to be a string itself —
+  numbers interpolate naturally:
+
+  | Kittine | Generated Rust | Result (given `count` is `5`) |
+  |---|---|---|
+  | `¨Taps: ¨ + <{count}>` | `format!("{}{}", "Taps: ", count.get())` | `"Taps: 5"` |
+  | `<{mood}> + ¨!¨` | `format!("{}{}", mood.get(), "!")` | e.g. `"Curious!"` |
+
+  Chains resolve left-associatively as usual, so `¨a¨ + x + ¨b¨` parses as
+  `(¨a¨ + x) + ¨b¨` — the inner `+` already sees a string literal and
+  becomes a `format!`, and the outer `+` sees `¨b¨` as a literal and does
+  the same, so the whole chain concatenates as expected regardless of what
+  `x` is.
+
+  This works anywhere an expression is valid: `craft<...>` arguments, JSX
+  `{ expr }` interpolations, variable declarations/mutations, and inline
+  event-handler assignments.
+
+> **Watch out:** because `>` and `>>` are lexed greedily, a `+`-expression
+> ending in a variable read right before a closing `>` can accidentally
+> merge two adjacent `>` characters into a single `>>` token, e.g.
+> `craft<¨Taps: ¨ + <{count}>>` — the `}>` closing the variable read and the
+> `>` closing `craft<...>` collide. Add a space before the final bracket
+> (`craft<¨Taps: ¨ + <{count}> >`) to keep them separate tokens.
+
 ## Comments
 
 `// like this`, to end of line. There is no block comment syntax.

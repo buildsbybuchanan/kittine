@@ -129,6 +129,66 @@ func App() {
 }
 
 #[test]
+fn string_literal_plus_lowers_to_format() {
+    let out = compile(
+        r#"
+func App() {
+    <{count}> >> 0
+    craft<¨Taps: ¨ + <{count}> >
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"format!("{}{}", "Taps: ", count.get())"#));
+}
+
+#[test]
+fn numeric_plus_is_unaffected_by_string_concat() {
+    let out = compile(
+        r#"
+func App() {
+    <{count}> >> 0
+    <{count}> >> count + 1
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(!out.contains("format!"));
+    assert!(out.contains("set_count.update(|n| *n += 1);"));
+}
+
+#[test]
+fn string_concat_in_jsx_expr_interpolation() {
+    let out = compile(
+        r#"
+func App() {
+    <{mood}> >> ¨Curious¨
+    return (
+        <div>
+            <p>{ ¨Mood: ¨ + <{mood}> }</p>
+        </div>
+    )
+}
+"#,
+    );
+    assert!(out.contains(r#"{move || format!("{}{}", "Mood: ", mood.get())}"#));
+}
+
+#[test]
+fn string_concat_in_mutation() {
+    let out = compile(
+        r#"
+func App() {
+    <{label}> >> ¨Taps: 0¨
+    <{label}> >> ¨Taps: ¨ + <{label}>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"set_label.update(|n| *n = format!("{}{}", "Taps: ", *n));"#));
+}
+
+#[test]
 fn nested_if_inside_if_block() {
     let out = compile(
         r#"
