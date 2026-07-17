@@ -1,0 +1,20 @@
+func App() {
+    <{count}> >> 0
+    <{username}> >> ¨Admin¨
+
+    if><{username}> >> ¨Admin¨
+        craft<¨Welcome Admin¨>
+    orif><{username}> >> ¨User¨
+        craft<¨Welcome User¨>
+    else>
+        craft<¨no output¨>
+
+    return (
+        <div>
+            <button onClick={<{count}> >> count + 1}>
+                "Clicks: "
+                <{count}>
+            </button>
+        </div>
+    )
+}
