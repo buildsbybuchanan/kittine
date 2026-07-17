@@ -1,0 +1,54 @@
+{
+  "name": "kittine-lang",
+  "displayName": "Kittine",
+  "description": "Syntax highlighting and language support for the Kittine (.kitty) language — compiles to Leptos 0.7 / WebAssembly.",
+  "version": "0.1.0",
+  "publisher": "buildsbybuchanan",
+  "author": "Sivario Buchanan",
+  "license": "MIT",
+  "icon": "images/kittine-icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "kittine",
+    "kitty",
+    "leptos",
+    "rust",
+    "wasm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/siv-the-programmer/BuildsByBuchanan.git",
+    "directory": "Valquroz_holding/kittine/vscode-kittine"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "kitty",
+        "aliases": [
+          "Kittine",
+          "kitty"
+        ],
+        "extensions": [
+          ".kitty"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/kitty-file-icon.png",
+          "dark": "./icons/kitty-file-icon.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kitty",
+        "scopeName": "source.kitty",
+        "path": "./syntaxes/kittine.tmLanguage.json"
+      }
+    ]
+  }
+}

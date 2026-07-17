@@ -4,3 +4,4 @@ dist/
 pkg/
 *.log
 .DS_Store
+*.vsix

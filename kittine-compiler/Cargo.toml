@@ -3,6 +3,7 @@ name = "kittine-compiler"
 version = "0.1.0"
 edition = "2024"
 description = "Compiler for the Kittine (.kitty) language, targeting Leptos 0.7"
+authors = ["Sivario Buchanan"]
 license = "MIT"
 
 [[bin]]
