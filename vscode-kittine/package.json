@@ -22,8 +22,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/siv-the-programmer/BuildsByBuchanan.git",
-    "directory": "Valquroz_holding/kittine/vscode-kittine"
+    "url": "https://github.com/siv-the-programmer/kittine.git",
+    "directory": "vscode-kittine"
   },
   "contributes": {
     "languages": [
