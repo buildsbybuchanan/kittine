@@ -1,11 +1,25 @@
+<p align="center">
+  <img src="kittinelogo.png" alt="Kittine" width="160" />
+</p>
+
 # Kittine
+
+*Created by [Sivario Buchanan](https://buildsbybuchanan.com).*
 
 Kittine (`.kitty`) is a small custom language with its own variable/state
 syntax and an embedded JSX-like view syntax, compiled to idiomatic
 [Leptos 0.7](https://leptos.dev) Rust and run in the browser via
 WebAssembly.
 
-This repository is a monorepo with three parts:
+Part of the [BuildsByBuchanan](https://buildsbybuchanan.com) code
+portfolio.
+
+📖 **[Full documentation](docs/)** — [language reference](docs/LANGUAGE.md) ·
+[getting started](docs/GETTING_STARTED.md) · [CLI reference](docs/CLI.md) ·
+[VS Code extension](docs/VSCODE_EXTENSION.md) ·
+[architecture](docs/ARCHITECTURE.md)
+
+This repository is a monorepo with four parts:
 
 - **`kittine-compiler/`** — a Rust CLI that lexes, parses, and lowers
   `.kitty` source into a Leptos 0.7 `.rs` file.
@@ -16,6 +30,9 @@ This repository is a monorepo with three parts:
 - **`example-app/`** — a minimal Leptos CSR app (`App.kitty`) demonstrating
   a signal-backed counter and an `if>`/`orif>`/`else>` block, wired up
   through the Vite plugin.
+- **`vscode-kittine/`** — a VS Code extension providing syntax highlighting
+  and a file icon for `.kitty` files. See
+  [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) to install it.
 
 ## Language quick reference
 
@@ -136,3 +153,19 @@ cd example-app && npm run preview
 cd kittine-compiler
 cargo test
 ```
+
+## VS Code extension
+
+Syntax highlighting and a dedicated file icon for `.kitty` files live in
+[`vscode-kittine/`](vscode-kittine). See
+[docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) for install
+instructions (including how to hand a `.vsix` to a friend).
+
+## Author
+
+Kittine (language, compiler, and tooling) was designed and created by
+**Sivario Buchanan**.
+
+## License
+
+[MIT](LICENSE).
