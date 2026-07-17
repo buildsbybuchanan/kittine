@@ -1,6 +1,8 @@
 {
   "name": "kittine-workspace",
   "private": true,
+  "author": "Sivario Buchanan",
+  "license": "MIT",
   "type": "module",
   "workspaces": [
     "vite-plugin-kittine",
