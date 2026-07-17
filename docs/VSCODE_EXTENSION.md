@@ -17,12 +17,20 @@ language before a full language server exists.
 
 ```sh
 cd vscode-kittine
-npx @vscode/vsce package
+npx @vscode/vsce package --no-rewrite-relative-links
 code --install-extension kittine-lang-0.1.0.vsix
 ```
 
 Restart VS Code (or reload the window: `Ctrl+Shift+P` → "Developer: Reload
 Window") if `.kitty` files don't pick up highlighting immediately.
+
+`--no-rewrite-relative-links` matters here: by default `vsce` rewrites
+relative links/images in `README.md` into absolute URLs pointing at the
+GitHub repo in `package.json#repository`, so they render on the Marketplace
+web page. That repo is currently **private**, so those URLs 404 — without
+the flag, the extension's icon shows as a broken-image placeholder once
+installed. The flag keeps the README's image reference relative, so VS
+Code resolves it against the file bundled inside the `.vsix` instead.
 
 ### Sharing it with friends
 
@@ -65,7 +73,7 @@ manifest (`package.json`), re-package and re-install:
 
 ```sh
 cd vscode-kittine
-npx @vscode/vsce package
+npx @vscode/vsce package --no-rewrite-relative-links
 code --install-extension kittine-lang-<version>.vsix --force
 ```
 
