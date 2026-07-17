@@ -158,13 +158,33 @@ fn substitute_self(expr: &Expr, name: &str, declared: &HashSet<String>) -> Strin
         Expr::Ident(n) | Expr::VarRead(n) => render_var_read(n, declared),
         Expr::Number(n) => fmt_num(*n),
         Expr::Str(s) => format!("\"{}\"", escape_str(s)),
-        Expr::Binary { left, op, right } => format!(
-            "({} {} {})",
-            substitute_self(left, name, declared),
-            op_str(*op),
-            substitute_self(right, name, declared)
-        ),
+        Expr::Binary { left, op, right } => {
+            render_binary(left, *op, right, &|e| substitute_self(e, name, declared))
+        }
         Expr::InlineAssign { name: n, value } => mutation_expr(n, value, declared),
+    }
+}
+
+/// `true` if `expr` is a bare string literal — used to decide whether a `+`
+/// should lower to Rust's numeric `+` or to string formatting (see
+/// [`render_binary`]).
+fn is_string_literal(expr: &Expr) -> bool {
+    matches!(expr, Expr::Str(_))
+}
+
+/// Renders a binary expression, special-casing `+` where either side is a
+/// string literal: Kittine has no type system to tell a numeric `+` from a
+/// string one, so `+` involving a literal string lowers to `format!("{}{}",
+/// ..)` instead of Rust's `+` operator (which doesn't accept `&str + &str`,
+/// let alone `&str + f64`). This makes `¨Taps: ¨ + <{count}>` produce
+/// `"Taps: 5"` by `Display`-formatting both sides, while a plain `x + 1`
+/// with no string literal in sight keeps compiling to ordinary numeric
+/// addition, unchanged.
+fn render_binary(left: &Expr, op: BinOp, right: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    if op == BinOp::Add && (is_string_literal(left) || is_string_literal(right)) {
+        format!("format!(\"{{}}{{}}\", {}, {})", render(left), render(right))
+    } else {
+        format!("({} {} {})", render(left), op_str(op), render(right))
     }
 }
 
@@ -190,12 +210,9 @@ fn expr_to_rust(expr: &Expr, declared: &HashSet<String>) -> String {
         Expr::Ident(name) | Expr::VarRead(name) => render_var_read(name, declared),
         Expr::Number(n) => fmt_num(*n),
         Expr::Str(s) => format!("\"{}\"", escape_str(s)),
-        Expr::Binary { left, op, right } => format!(
-            "({} {} {})",
-            expr_to_rust(left, declared),
-            op_str(*op),
-            expr_to_rust(right, declared)
-        ),
+        Expr::Binary { left, op, right } => {
+            render_binary(left, *op, right, &|e| expr_to_rust(e, declared))
+        }
         Expr::InlineAssign { name, value } => mutation_expr(name, value, declared),
     }
 }
@@ -204,7 +221,7 @@ fn expr_to_rust(expr: &Expr, declared: &HashSet<String>) -> String {
 /// parentheses `expr_to_rust` would otherwise add around every `Binary`.
 fn render_condition(expr: &Expr, declared: &HashSet<String>) -> String {
     match expr {
-        Expr::Binary { left, op, right } => format!(
+        Expr::Binary { left, op, right } if *op != BinOp::Add => format!(
             "{} {} {}",
             expr_to_rust(left, declared),
             op_str(*op),
