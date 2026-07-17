@@ -1,0 +1,16 @@
+[package]
+name = "kittine-compiler"
+version = "0.1.0"
+edition = "2024"
+description = "Compiler for the Kittine (.kitty) language, targeting Leptos 0.7"
+license = "MIT"
+
+[[bin]]
+name = "kittine-compiler"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+opt-level = 3

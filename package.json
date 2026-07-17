@@ -1,0 +1,14 @@
+{
+  "name": "kittine-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "vite-plugin-kittine",
+    "example-app"
+  ],
+  "scripts": {
+    "build:plugin": "npm run build --workspace=vite-plugin-kittine",
+    "dev": "npm run dev --workspace=example-app",
+    "build": "npm run build --workspace=example-app"
+  }
+}

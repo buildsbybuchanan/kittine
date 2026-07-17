@@ -1,0 +1,464 @@
+//! Recursive-descent parser that turns a token stream into a Kittine [`Program`].
+//!
+//! Two things make this grammar unusual compared to a typical toy language:
+//!
+//! 1. `func` bodies are brace-delimited, but the `if>` / `orif>` / `else>`
+//!    control-flow blocks nested inside them are indentation-delimited
+//!    (Python-style), with no braces at all. We handle this with the
+//!    classic "off-side rule" trick: every statement token carries its
+//!    source column, an `if>`/`orif>`/`else>` block captures the column of
+//!    its own keyword as `base_col`, and keeps consuming statements while
+//!    the next statement's column is greater than `base_col`. Sibling
+//!    `orif>`/`else>` keywords are recognized because they sit back at
+//!    exactly `base_col`.
+//! 2. `<{name}> >> expr` is reused in three different grammatical
+//!    positions: a top-level statement (declare-or-mutate a signal), an
+//!    `if>` condition (equality test), and an inline JSX event-handler
+//!    expression. All three share one primitive, [`Parser::parse_var_bracket_expr`],
+//!    which is why the AST has a single `Expr::InlineAssign` node that
+//!    callers reinterpret based on where they found it.
+
+use crate::ast::*;
+use crate::lexer::{Token, TokenKind};
+use std::fmt;
+
+#[derive(Debug)]
+pub struct ParseError {
+    pub message: String,
+    pub line: usize,
+    pub col: usize,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "parse error at {}:{}: {}",
+            self.line, self.col, self.message
+        )
+    }
+}
+
+type PResult<T> = Result<T, ParseError>;
+
+pub struct Parser {
+    tokens: Vec<Token>,
+    pos: usize,
+}
+
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Parser { tokens, pos: 0 }
+    }
+
+    // ---- token stream helpers -------------------------------------------------
+
+    fn peek(&self) -> &Token {
+        &self.tokens[self.pos.min(self.tokens.len() - 1)]
+    }
+
+    fn advance(&mut self) -> Token {
+        let tok = self.tokens[self.pos.min(self.tokens.len() - 1)].clone();
+        if self.pos < self.tokens.len() - 1 {
+            self.pos += 1;
+        }
+        tok
+    }
+
+    fn check(&self, kind: &TokenKind) -> bool {
+        std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
+    }
+
+    fn err(&self, message: impl Into<String>) -> ParseError {
+        let tok = self.peek();
+        ParseError {
+            message: message.into(),
+            line: tok.line,
+            col: tok.col,
+        }
+    }
+
+    fn expect(&mut self, kind: TokenKind) -> PResult<Token> {
+        if self.check(&kind) {
+            Ok(self.advance())
+        } else {
+            Err(self.err(format!("expected '{kind}', found '{}'", self.peek().kind)))
+        }
+    }
+
+    fn expect_ident(&mut self) -> PResult<String> {
+        match self.peek().kind.clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(name)
+            }
+            other => Err(self.err(format!("expected identifier, found '{other}'"))),
+        }
+    }
+
+    // ---- top level --------------------------------------------------------
+
+    pub fn parse_program(&mut self) -> PResult<Program> {
+        let mut components = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::Eof) {
+            components.push(self.parse_component()?);
+        }
+        Ok(Program { components })
+    }
+
+    fn parse_component(&mut self) -> PResult<Component> {
+        self.expect(TokenKind::KeywordFunc)?;
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::LParen)?;
+        self.expect(TokenKind::RParen)?;
+        self.expect(TokenKind::LBrace)?;
+
+        let mut body = Vec::new();
+        let mut return_view = None;
+        loop {
+            match self.peek().kind {
+                TokenKind::RBrace => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::KeywordReturn => {
+                    self.advance();
+                    self.expect(TokenKind::LParen)?;
+                    let node = self.parse_jsx_node()?;
+                    self.expect(TokenKind::RParen)?;
+                    return_view = Some(node);
+                }
+                TokenKind::Eof => {
+                    return Err(self.err("unexpected end of file inside component body"));
+                }
+                _ => {
+                    body.push(self.parse_stmt()?);
+                }
+            }
+        }
+
+        Ok(Component {
+            name,
+            body,
+            return_view,
+        })
+    }
+
+    // ---- statements --------------------------------------------------------
+
+    fn parse_stmt(&mut self) -> PResult<Stmt> {
+        match self.peek().kind {
+            TokenKind::LeftVarBracket => self.parse_var_assign_stmt(),
+            TokenKind::KeywordCraft => self.parse_craft_stmt(),
+            TokenKind::KeywordIf => self.parse_if_stmt(),
+            _ => {
+                let expr = self.parse_expr()?;
+                Ok(Stmt::Expr(expr))
+            }
+        }
+    }
+
+    fn parse_var_assign_stmt(&mut self) -> PResult<Stmt> {
+        match self.parse_var_bracket_expr()? {
+            Expr::InlineAssign { name, value } => Ok(Stmt::VarAssign {
+                name,
+                value: *value,
+            }),
+            _ => Err(self.err("expected '>>' after '<{ .. }>' in a statement")),
+        }
+    }
+
+    fn parse_craft_stmt(&mut self) -> PResult<Stmt> {
+        self.expect(TokenKind::KeywordCraft)?;
+        let value = self.parse_expr()?;
+        self.expect(TokenKind::Gt)?;
+        Ok(Stmt::Craft { value })
+    }
+
+    /// Parses `if> cond <block> (orif> cond <block>)* (else> <block>)?`
+    /// using indentation to delimit each block, per the module doc comment.
+    fn parse_if_stmt(&mut self) -> PResult<Stmt> {
+        let if_tok = self.expect(TokenKind::KeywordIf)?;
+        let base_col = if_tok.col;
+
+        let cond = self.parse_condition()?;
+        let body = self.parse_indented_block(base_col)?;
+        let mut branches = vec![(cond, body)];
+        let mut else_body = None;
+
+        loop {
+            let tok = self.peek().clone();
+            match tok.kind {
+                TokenKind::KeywordOrif if tok.col == base_col => {
+                    self.advance();
+                    let cond = self.parse_condition()?;
+                    let body = self.parse_indented_block(base_col)?;
+                    branches.push((cond, body));
+                }
+                TokenKind::KeywordElse if tok.col == base_col => {
+                    self.advance();
+                    let body = self.parse_indented_block(base_col)?;
+                    else_body = Some(body);
+                    break;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(Stmt::If {
+            branches,
+            else_body,
+        })
+    }
+
+    /// A condition is grammatically identical to `<{name}> >> expr`, but is
+    /// interpreted as an equality test rather than an assignment.
+    fn parse_condition(&mut self) -> PResult<Expr> {
+        match self.parse_var_bracket_expr()? {
+            Expr::InlineAssign { name, value } => Ok(Expr::Binary {
+                left: Box::new(Expr::VarRead(name)),
+                op: BinOp::Eq,
+                right: value,
+            }),
+            other => Ok(other),
+        }
+    }
+
+    fn parse_indented_block(&mut self, base_col: usize) -> PResult<Vec<Stmt>> {
+        let mut stmts = Vec::new();
+        loop {
+            let tok = self.peek();
+            if matches!(tok.kind, TokenKind::Eof | TokenKind::RBrace) {
+                break;
+            }
+            if tok.col <= base_col {
+                break;
+            }
+            stmts.push(self.parse_stmt()?);
+        }
+        if stmts.is_empty() {
+            return Err(self.err("expected an indented block"));
+        }
+        Ok(stmts)
+    }
+
+    // ---- expressions --------------------------------------------------------
+    //
+    // Precedence, low to high: `>>` (equality) < `+ -` < `* /` < unary < primary.
+
+    fn parse_expr(&mut self) -> PResult<Expr> {
+        self.parse_equality()
+    }
+
+    fn parse_equality(&mut self) -> PResult<Expr> {
+        let left = self.parse_additive()?;
+        if matches!(self.peek().kind, TokenKind::OpAssign) {
+            self.advance();
+            let right = self.parse_additive()?;
+            return Ok(Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::Eq,
+                right: Box::new(right),
+            });
+        }
+        Ok(left)
+    }
+
+    fn parse_additive(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_term()?;
+        loop {
+            let op = match self.peek().kind {
+                TokenKind::Plus => BinOp::Add,
+                TokenKind::Minus => BinOp::Sub,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_term()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_term(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_unary()?;
+        loop {
+            let op = match self.peek().kind {
+                TokenKind::Star => BinOp::Mul,
+                TokenKind::Slash => BinOp::Div,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_unary()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_unary(&mut self) -> PResult<Expr> {
+        if matches!(self.peek().kind, TokenKind::Minus) {
+            self.advance();
+            let inner = self.parse_unary()?;
+            return Ok(Expr::Binary {
+                left: Box::new(Expr::Number(0.0)),
+                op: BinOp::Sub,
+                right: Box::new(inner),
+            });
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> PResult<Expr> {
+        match self.peek().kind.clone() {
+            TokenKind::LeftVarBracket => self.parse_var_bracket_expr(),
+            TokenKind::Number(n) => {
+                self.advance();
+                Ok(Expr::Number(n))
+            }
+            TokenKind::Str(s) => {
+                self.advance();
+                Ok(Expr::Str(s))
+            }
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(Expr::Ident(name))
+            }
+            TokenKind::LParen => {
+                self.advance();
+                let inner = self.parse_expr()?;
+                self.expect(TokenKind::RParen)?;
+                Ok(inner)
+            }
+            other => Err(self.err(format!("unexpected token '{other}' in expression"))),
+        }
+    }
+
+    /// Parses `<{ident}>`, then optionally `>> expr` if present, producing
+    /// either a bare `Expr::VarRead` or an `Expr::InlineAssign`.
+    fn parse_var_bracket_expr(&mut self) -> PResult<Expr> {
+        self.expect(TokenKind::LeftVarBracket)?;
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::RBrace)?;
+        self.expect(TokenKind::Gt)?;
+        if matches!(self.peek().kind, TokenKind::OpAssign) {
+            self.advance();
+            let value = self.parse_additive()?;
+            Ok(Expr::InlineAssign {
+                name,
+                value: Box::new(value),
+            })
+        } else {
+            Ok(Expr::VarRead(name))
+        }
+    }
+
+    // ---- JSX ----------------------------------------------------------------
+
+    fn parse_jsx_node(&mut self) -> PResult<JsxNode> {
+        match self.peek().kind.clone() {
+            TokenKind::Lt => self.parse_jsx_element(),
+            TokenKind::Str(s) => {
+                self.advance();
+                Ok(JsxNode::Text(s))
+            }
+            TokenKind::LeftVarBracket => {
+                self.advance();
+                let name = self.expect_ident()?;
+                self.expect(TokenKind::RBrace)?;
+                self.expect(TokenKind::Gt)?;
+                Ok(JsxNode::VarInterp(name))
+            }
+            TokenKind::LBrace => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                self.expect(TokenKind::RBrace)?;
+                Ok(JsxNode::ExprInterp(expr))
+            }
+            other => Err(self.err(format!("unexpected token '{other}' in JSX"))),
+        }
+    }
+
+    fn parse_jsx_element(&mut self) -> PResult<JsxNode> {
+        self.expect(TokenKind::Lt)?;
+        let tag = self.expect_ident()?;
+
+        let mut attrs = Vec::new();
+        loop {
+            match self.peek().kind.clone() {
+                TokenKind::Gt => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::SlashGt => {
+                    self.advance();
+                    return Ok(JsxNode::Element {
+                        tag,
+                        attrs,
+                        children: Vec::new(),
+                        self_closing: true,
+                    });
+                }
+                TokenKind::Ident(attr_name) => {
+                    self.advance();
+                    self.expect(TokenKind::Eq)?;
+                    let value = match self.peek().kind.clone() {
+                        TokenKind::LBrace => {
+                            self.advance();
+                            let expr = self.parse_expr()?;
+                            self.expect(TokenKind::RBrace)?;
+                            JsxAttrValue::Expr(expr)
+                        }
+                        TokenKind::Str(s) => {
+                            self.advance();
+                            JsxAttrValue::Str(s)
+                        }
+                        other => {
+                            return Err(self.err(format!(
+                                "expected attribute value after '=', found '{other}'"
+                            )));
+                        }
+                    };
+                    attrs.push((attr_name, value));
+                }
+                other => {
+                    return Err(self.err(format!("unexpected token '{other}' in JSX tag")));
+                }
+            }
+        }
+
+        let mut children = Vec::new();
+        loop {
+            if matches!(self.peek().kind, TokenKind::LtSlash) {
+                break;
+            }
+            children.push(self.parse_jsx_node()?);
+        }
+
+        self.expect(TokenKind::LtSlash)?;
+        let close_tag = self.expect_ident()?;
+        if close_tag != tag {
+            return Err(self.err(format!(
+                "mismatched closing tag: expected '</{tag}>', found '</{close_tag}>'"
+            )));
+        }
+        self.expect(TokenKind::Gt)?;
+
+        Ok(JsxNode::Element {
+            tag,
+            attrs,
+            children,
+            self_closing: false,
+        })
+    }
+}
+
+pub fn parse(tokens: Vec<Token>) -> PResult<Program> {
+    Parser::new(tokens).parse_program()
+}
