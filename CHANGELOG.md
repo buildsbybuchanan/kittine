@@ -69,6 +69,13 @@ grouped by date until the first tagged release.
   verified end-to-end with Playwright against the running dev server
   (navigation, the 404 fallback, and continued reactivity all checked, not
   just a successful compile).
+- **Comparison operators**: `<`, `<=`, `>`, `>=`, `!=` alongside the
+  existing `>>` (equality) — usable in `if>`/`orif>` conditions and
+  generally anywhere an expression is (`purr` returns, `craft<...>`
+  arguments, JSX interpolations), not just inside conditions. A bare `>`
+  at the top level of `craft<expr>` is ambiguous with `craft<...>`'s own
+  closing `>`; wrap it in parens (`craft<(age > 18)>`) — the only new
+  caveat this introduces, everything else composes freely.
 
 ### Fixed
 

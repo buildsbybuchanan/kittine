@@ -611,17 +611,50 @@ like any other JSX position.
 
 Precedence, lowest to highest:
 
-1. `>>` — equality (only inside an `if>` / `orif>` condition, or as the
-   top-level operator of a `<{name}> >> value` assignment)
+1. Comparison — `>>` (equality), `<`, `<=`, `>`, `>=`, `!=`. Valid as the
+   top-level operator of a `<{name}> >> value` assignment/mutation, inside
+   an `if>`/`orif>` condition, and generally anywhere an expression is
+   valid (a `purr` return, a `craft<...>` argument, a JSX `{ expr }`).
 2. `+` `-` (addition, subtraction — left-associative)
 3. `*` `/` (multiplication, division — left-associative)
 4. unary `-` (negation)
-5. primary: numbers, strings, identifiers, `<{name}>` reads, parenthesized
-   expressions
+5. primary: numbers, strings, booleans, arrays, calls, type tags,
+   identifiers, `<{name}>` reads, parenthesized expressions
+
+```kitty
+purr isAdult(<<Num>> age) <<Flag>> {
+    return (age >= 18)
+}
+
+if><{age}> >= 18
+    craft<'adult'>
+orif><{age}> < 13
+    craft<'child'>
+else>
+    craft<'teen'>
+```
+
+All five comparisons (`<`, `<=`, `>`, `>=`, `!=`) lower to Rust's own
+operators of the same name, plus `>>` for `==`; they work between any two
+comparable values (numbers, and — via Rust's lexicographic `Ord` for
+`String` — words too).
+
+> **Watch out:** a bare `>` (greater-than) at the top level of
+> `craft<expr>` is ambiguous with `craft<...>`'s own closing `>` — wrap it
+> in parens to disambiguate: `craft<(age > 18)>`, not `craft<age > 18>`.
+> `<`, `<=`, `>=`, and `!=` don't have this problem (only a bare `>` is
+> craft's own delimiter); this is the same class of greedy-lexing caveat
+> as the `>>`-merging one below, just at the parser level instead of the
+> lexer level.
 
 Numbers are floating point (`f64` internally); integer-valued literals are
-rendered back as bare Rust integer literals (`0`, `1`, `42`) rather than
-`0.0`, `1.0`, etc., so generated code reads naturally.
+rendered back as bare Rust integer literals (`0`, `1`, `42`) in most
+positions, so generated code reads naturally — except where the literal is
+an operand next to an already-`f64`-typed value (a signal initializer, an
+arithmetic or comparison operand, a function-call argument), where it's
+spelled with an explicit `f64` suffix (`0f64`, `18f64`) instead. This isn't
+cosmetic — see [Variables and state § Compilation](#compilation) for why
+the bare form doesn't always compile.
 
 ### `+` as string concatenation
 
@@ -718,20 +751,22 @@ return_stmt  := "return" "(" jsx_node | expr ")"
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
 var_stmt     := "<{" IDENT "}>" ">>" expr
-craft_stmt   := "craft<" expr ">"
+craft_stmt   := "craft<" craft_expr ">"
 if_stmt      := "if>" condition INDENT_BLOCK
                 ("orif>" condition INDENT_BLOCK)*
                 ("else>" INDENT_BLOCK)?
-condition    := "<{" IDENT "}>" ">>" expr
+condition    := "<{" IDENT "}>" cmp_op expr
+cmp_op       := ">>" | "<" | "<=" | ">" | ">=" | "!="
 spin_stmt    := "spin" "<{" IDENT "}>" "in" expr "}{" stmt* "}{"
 expr_stmt    := expr
 
-expr         := additive (">>" additive)?
+expr         := additive (cmp_op additive)?
+craft_expr   := additive ((">>" | "<" | "<=" | ">=" | "!=") additive)?  // no bare ">"; see Expressions and operators
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
 unary        := "-" unary | primary
 primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | CALL | IDENT
-              | "<{" IDENT "}>" (">>" expr)?
+              | "<{" IDENT "}>" (">>" expr)?  // >> here is inline mutation, not comparison
               | "(" expr ")"
 
 array        := "[" (expr ("," expr)*)? "]"
@@ -804,5 +839,7 @@ These are intentional scope boundaries of the current prototype, not bugs:
   than from top-level `craft<...>` statements.
 - **Numbers are always `f64`.** There is no integer/float distinction in
   the type system, matching JavaScript-style numeric semantics.
-- **Comparison is equality-only.** `>>` is the sole comparison operator;
-  there is no `<`, `>`, `<=`, `>=`, or `!=` in conditions yet.
+- **No logical `&&`/`||`.** Each comparison operator (`>>`, `<`, `<=`, `>`,
+  `>=`, `!=`) works on its own; there's no way to combine two comparisons
+  into one condition yet (`if>` age `>=` 18 and status `>>` 'active'
+  needs two separate `if>`s today, not one).

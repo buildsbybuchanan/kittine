@@ -353,7 +353,12 @@ impl Parser {
 
     fn parse_craft_stmt(&mut self) -> PResult<Stmt> {
         self.expect(TokenKind::KeywordCraft)?;
-        let value = self.parse_expr()?;
+        // Not `parse_expr()`: a bare `>` comparison at the top level here
+        // would be indistinguishable from `craft<...>`'s own closing `>`.
+        // Wrap a `>` comparison in parens (`craft<(age > 18)>`) to use one —
+        // parens are self-delimiting via `)`, so there's no ambiguity once
+        // the comparison is inside them.
+        let value = self.parse_equality_no_trailing_gt()?;
         self.expect(TokenKind::Gt)?;
         Ok(Stmt::Craft { value })
     }
@@ -394,8 +399,10 @@ impl Parser {
         })
     }
 
-    /// A condition is grammatically identical to `<{name}> >> expr`, but is
-    /// interpreted as an equality test rather than an assignment.
+    /// A condition always starts with `<{name}>`. `<{name}> >> expr` is
+    /// interpreted as an equality test rather than an assignment; any other
+    /// comparison operator (`<`, `<=`, `>`, `>=`, `!=`) following the bare
+    /// `<{name}>` read works the same way, via [`Parser::parse_comparison_tail`].
     fn parse_condition(&mut self) -> PResult<Expr> {
         match self.parse_var_bracket_expr()? {
             Expr::InlineAssign { name, value } => Ok(Expr::Binary {
@@ -403,7 +410,7 @@ impl Parser {
                 op: BinOp::Eq,
                 right: value,
             }),
-            other => Ok(other),
+            other => self.parse_comparison_tail(other),
         }
     }
 
@@ -427,7 +434,8 @@ impl Parser {
 
     // ---- expressions --------------------------------------------------------
     //
-    // Precedence, low to high: `>>` (equality) < `+ -` < `* /` < unary < primary.
+    // Precedence, low to high: comparison (`>>` `<` `<=` `>` `>=` `!=`)
+    // < `+ -` < `* /` < unary < primary.
 
     fn parse_expr(&mut self) -> PResult<Expr> {
         self.parse_equality()
@@ -435,16 +443,56 @@ impl Parser {
 
     fn parse_equality(&mut self) -> PResult<Expr> {
         let left = self.parse_additive()?;
-        if matches!(self.peek().kind, TokenKind::OpAssign) {
-            self.advance();
-            let right = self.parse_additive()?;
-            return Ok(Expr::Binary {
-                left: Box::new(left),
-                op: BinOp::Eq,
-                right: Box::new(right),
-            });
-        }
-        Ok(left)
+        self.parse_comparison_tail(left)
+    }
+
+    /// Like [`Parser::parse_equality`], but never consumes a trailing bare
+    /// `>` as a greater-than comparison — used for `craft<expr>`'s
+    /// argument, where craft's own closing `>` would otherwise be
+    /// ambiguous with one. A `>` comparison nested inside parens (e.g.
+    /// `craft<(age > 18)>`) is unaffected: the parens are bounded by their
+    /// own `)`, fully resolved via the ordinary [`Parser::parse_expr`]
+    /// before this check ever runs.
+    fn parse_equality_no_trailing_gt(&mut self) -> PResult<Expr> {
+        let left = self.parse_additive()?;
+        let op = match self.peek().kind {
+            TokenKind::OpAssign => BinOp::Eq,
+            TokenKind::Lt => BinOp::Lt,
+            TokenKind::LtEq => BinOp::Le,
+            TokenKind::GtEq => BinOp::Ge,
+            TokenKind::BangEq => BinOp::Ne,
+            _ => return Ok(left),
+        };
+        self.advance();
+        let right = self.parse_additive()?;
+        Ok(Expr::Binary {
+            left: Box::new(left),
+            op,
+            right: Box::new(right),
+        })
+    }
+
+    /// Given an already-parsed left-hand side, checks for a trailing
+    /// comparison operator and folds it into a `Binary` — shared by the
+    /// general expression grammar ([`Parser::parse_equality`]) and `if>`/
+    /// `orif>` conditions ([`Parser::parse_condition`]).
+    fn parse_comparison_tail(&mut self, left: Expr) -> PResult<Expr> {
+        let op = match self.peek().kind {
+            TokenKind::OpAssign => BinOp::Eq,
+            TokenKind::Lt => BinOp::Lt,
+            TokenKind::LtEq => BinOp::Le,
+            TokenKind::Gt => BinOp::Gt,
+            TokenKind::GtEq => BinOp::Ge,
+            TokenKind::BangEq => BinOp::Ne,
+            _ => return Ok(left),
+        };
+        self.advance();
+        let right = self.parse_additive()?;
+        Ok(Expr::Binary {
+            left: Box::new(left),
+            op,
+            right: Box::new(right),
+        })
     }
 
     fn parse_additive(&mut self) -> PResult<Expr> {

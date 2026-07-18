@@ -16,11 +16,16 @@ pub fn doubled(n: f64) -> f64 {
     n * 2f64
 }
 
+pub fn isAdult(age: f64) -> bool {
+    age >= 18f64
+}
+
 #[component]
 pub fn Home() -> impl IntoView {
     let (count, set_count) = signal(0f64);
     let (username, set_username) = signal("Admin");
     let (ready, set_ready) = signal(true);
+    let (age, set_age) = signal(25f64);
     if username.get() == "Admin" {
         leptos::logging::log!("Welcome Admin");
     } else if username.get() == "User" {
@@ -28,6 +33,14 @@ pub fn Home() -> impl IntoView {
     } else {
         leptos::logging::log!("no output");
     }
+    if age.get() >= 18f64 {
+        leptos::logging::log!("adult");
+    } else if age.get() < 13f64 {
+        leptos::logging::log!("child");
+    } else {
+        leptos::logging::log!("teen");
+    }
+    leptos::logging::log!("{}", isAdult(age.get()));
     for n in (vec![1, 2, 3]).into_iter() {
         leptos::logging::log!("{}", n);
     }

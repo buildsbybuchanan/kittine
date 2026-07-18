@@ -682,3 +682,95 @@ func App() {
     // any other `name(args)` call would be.
     assert!(out.contains(r#"path=StaticSegment("")"#));
 }
+
+#[test]
+fn comparison_operators_in_condition() {
+    let out = compile(
+        r#"
+func App() {
+    <{age}> >> 20
+
+    if><{age}> >= 18
+        craft<'adult'>
+    orif><{age}> < 13
+        craft<'child'>
+    else>
+        craft<'teen'>
+
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("if age.get() >= 18f64 {"));
+    assert!(out.contains("} else if age.get() < 13f64 {"));
+}
+
+#[test]
+fn all_comparison_operators_lower_correctly() {
+    for (kitty_op, rust_op) in [
+        ("<", "<"),
+        ("<=", "<="),
+        (">=", ">="),
+        ("!=", "!="),
+    ] {
+        let out = compile(&format!(
+            r#"
+func App() {{
+    <{{age}}> >> 20
+    if><{{age}}> {kitty_op} 18
+        craft<'yes'>
+    return ( <div></div> )
+}}
+"#
+        ));
+        assert!(
+            out.contains(&format!("if age.get() {rust_op} 18f64 {{")),
+            "operator {kitty_op} did not lower to {rust_op}: {out}"
+        );
+    }
+}
+
+#[test]
+fn comparison_works_in_purr_functions() {
+    let out = compile(
+        r#"
+purr isAdult(<<Num>> age) <<Flag>> {
+    return (age >= 18)
+}
+"#,
+    );
+    assert!(out.contains("pub fn isAdult(age: f64) -> bool {"));
+    assert!(out.contains("age >= 18f64"));
+    assert!(!out.contains("(age >= 18f64)")); // no redundant top-level parens
+}
+
+#[test]
+fn craft_with_bare_gt_comparison_requires_parens() {
+    // A bare `>` at the top level of `craft<...>` is ambiguous with
+    // craft's own closing `>` — parens disambiguate.
+    let out = compile(
+        r#"
+func App() {
+    <{age}> >> 20
+    craft<(age > 18)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("leptos::logging::log!(\"{}\", (age.get() > 18f64));"));
+}
+
+#[test]
+fn craft_without_comparison_is_unaffected_by_gt_parsing() {
+    // Regression check: adding `>` as a general comparison operator must
+    // not break plain `craft<expr>` calls that don't use one at all.
+    let out = compile(
+        r#"
+func App() {
+    craft<'just a string'>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"leptos::logging::log!("just a string");"#));
+}

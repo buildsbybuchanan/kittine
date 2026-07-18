@@ -5,10 +5,15 @@ purr doubled(<<Num>> n) <<Num>> {
     return (n * 2)
 }
 
+purr isAdult(<<Num>> age) <<Flag>> {
+    return (age >= 18)
+}
+
 func Home() {
     <{count}> >> <<Num>> 0
     <{username}> >> 'Admin'
     <{ready}> >> yes>
+    <{age}> >> 25
 
     if><{username}> >> 'Admin'
         craft<'Welcome Admin'>
@@ -16,6 +21,15 @@ func Home() {
         craft<"Welcome User">
     else>
         craft<'no output'>
+
+    if><{age}> >= 18
+        craft<'adult'>
+    orif><{age}> < 13
+        craft<'child'>
+    else>
+        craft<'teen'>
+
+    craft<isAdult(age)>
 
     spin<{n}> in [1, 2, 3] }{
         craft<n>

@@ -89,8 +89,9 @@ func Counter() {
   mandatory on a prop or a `purr` return type — checked against literal
   values at compile time and erased in the generated Rust.
 - `craft<expr>` logs via `leptos::logging::log!`.
-- `if>` / `orif>` / `else>` are indentation-delimited (no braces), and use
-  `>>` as an equality test.
+- `if>` / `orif>` / `else>` are indentation-delimited (no braces), with
+  `>>`/`<`/`<=`/`>`/`>=`/`!=` as comparisons — usable in conditions and
+  generally anywhere an expression is (a `purr` return, `craft<...>`).
 - `spin<{item}> in list }{ .. }{` loops over an array, its body fenced by
   `}{` — a closing brace immediately followed by an opening one. As a
   statement it's a plain imperative loop; inside `return ( ... )` it
