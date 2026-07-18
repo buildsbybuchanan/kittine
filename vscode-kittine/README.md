@@ -98,7 +98,7 @@ install it from the `.vsix` file directly.
 ```sh
 cd vscode-kittine
 npx @vscode/vsce package --no-rewrite-relative-links
-code --install-extension kittine-lang-0.1.0.vsix
+code --install-extension kittine-lang-0.2.0.vsix
 ```
 
 Restart VS Code, or reload the window (`Ctrl+Shift+P` → "Developer: Reload
@@ -106,7 +106,7 @@ Window"), if `.kitty` files don't pick up highlighting immediately.
 
 ### From the VS Code UI
 
-1. Build (or download) `kittine-lang-0.1.0.vsix`.
+1. Build (or download) `kittine-lang-0.2.0.vsix`.
 2. Open the Extensions view (`Ctrl+Shift+X`).
 3. Click the `...` menu → **Install from VSIX...** → select the file.
 
@@ -128,10 +128,10 @@ anyone to install it with `code --install-extension`.
 This extension mirrors the compiler's current scope; it does not add
 features beyond what Kittine itself supports yet (see
 [Known limitations](../docs/LANGUAGE.md#known-limitations) in the language
-reference for the full list — no component props, no JSX component
-composition, no list-rendering in views, equality-only comparisons). There
-is also no language server: no diagnostics, no completions, no hover info,
-no go-to-definition — purely TextMate-grammar-based highlighting.
+reference for the full list — no array-typed props/returns, no
+`export`/visibility control, equality-only comparisons). There is also no
+language server: no diagnostics, no completions, no hover info, no
+go-to-definition — purely TextMate-grammar-based highlighting.
 
 ## Rebuilding after changes
 
