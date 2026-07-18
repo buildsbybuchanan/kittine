@@ -137,6 +137,8 @@ pub enum BinOp {
     Le,
     Ge,
     Ne,
+    And,
+    Or,
 }
 
 /// A node in the JSX-like `return ( ... )` tree.

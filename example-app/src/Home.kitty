@@ -10,6 +10,10 @@ purr isAdult(<<Num>> age) <<Flag>> {
     return (age >= 18)
 }
 
+purr isWorkingAge(<<Num>> age) <<Flag>> {
+    return (age >= 18 && age <= 65)
+}
+
 func Home() {
     <{count}> >> <<Num>> 0
     <{username}> >> 'Admin'
@@ -31,7 +35,13 @@ func Home() {
     else>
         craft<'teen'>
 
+    if><{age}> >= 18 && <{ready}> >> yes>
+        craft<'ready adult'>
+    orif><{age}> < 13 || <{age}> >= 65
+        craft<'discount age'>
+
     craft<isAdult(age)>
+    craft<isWorkingAge(age)>
 
     spin<{n}> in [1, 2, 3] }{
         craft<n>

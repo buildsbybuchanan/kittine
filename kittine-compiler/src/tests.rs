@@ -761,6 +761,91 @@ func App() {
 }
 
 #[test]
+fn logical_and_combines_two_conditions() {
+    let out = compile(
+        r#"
+func App() {
+    <{age}> >> 20
+    <{status}> >> 'active'
+
+    if><{age}> >= 18 && <{status}> >> 'active'
+        craft<'eligible'>
+
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"if (age.get() >= 18f64) && (status.get() == "active") {"#));
+}
+
+#[test]
+fn logical_or_combines_two_conditions() {
+    let out = compile(
+        r#"
+func App() {
+    <{age}> >> 20
+
+    if><{age}> < 13 || <{age}> >= 65
+        craft<'discount'>
+
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"if (age.get() < 13f64) || (age.get() >= 65f64) {"#));
+}
+
+#[test]
+fn logical_and_binds_tighter_than_or() {
+    // `a || b && c` should read as `a || (b && c)`.
+    let out = compile(
+        r#"
+func App() {
+    <{a}> >> 1
+    <{b}> >> 2
+    <{c}> >> 3
+
+    if><{a}> >> 1 || <{b}> >> 2 && <{c}> >> 3
+        craft<'x'>
+
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(
+        r#"if (a.get() == 1f64) || ((b.get() == 2f64) && (c.get() == 3f64)) {"#
+    ));
+}
+
+#[test]
+fn logical_operators_work_in_purr_functions() {
+    let out = compile(
+        r#"
+purr inRange(<<Num>> n) <<Flag>> {
+    return (n >= 0 && n <= 100)
+}
+"#,
+    );
+    assert!(out.contains("(n >= 0f64) && (n <= 100f64)"));
+}
+
+#[test]
+fn craft_supports_logical_and_with_parenthesized_comparisons() {
+    let out = compile(
+        r#"
+func App() {
+    <{age}> >> 20
+    craft<(age > 18) && (age < 65)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(
+        r#"leptos::logging::log!("{}", ((age.get() > 18f64) && (age.get() < 65f64)));"#
+    ));
+}
+
+#[test]
 fn craft_without_comparison_is_unaffected_by_gt_parsing() {
     // Regression check: adding `>` as a general comparison operator must
     // not break plain `craft<expr>` calls that don't use one at all.
