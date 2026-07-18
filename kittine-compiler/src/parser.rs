@@ -153,14 +153,23 @@ impl Parser {
     /// Parses a signature-position type tag `<<Type>>` (no value follows —
     /// used for parameter and return-type annotations, as opposed to
     /// [`Parser::parse_type_tag`] which wraps a value).
+    /// Parses `<<Type>>` or `<<Type[]>>` (an array of `Type`), returning
+    /// `"Type"` or `"Type[]"` respectively — the `[]` suffix mirrors the
+    /// array-literal syntax (`[expr, ..]`) rather than inventing a new
+    /// bracket convention.
     fn parse_signature_type(&mut self) -> PResult<String> {
         self.expect(TokenKind::Lt)?;
         self.expect(TokenKind::Lt)?;
-        let ty = self.expect_ident()?;
+        let mut ty = self.expect_ident()?;
         if !matches!(ty.as_str(), "Num" | "Word" | "Flag") {
             return Err(self.err(format!(
-                "unknown type tag '<<{ty}>>': expected one of Num, Word, Flag"
+                "unknown type tag '<<{ty}>>': expected one of Num, Word, Flag (optionally followed by [] for an array)"
             )));
+        }
+        if matches!(self.peek().kind, TokenKind::LBracket) {
+            self.advance();
+            self.expect(TokenKind::RBracket)?;
+            ty.push_str("[]");
         }
         self.expect(TokenKind::OpAssign)?;
         Ok(ty)
@@ -625,6 +634,9 @@ impl Parser {
             ("Num", Expr::Number(_)) => true,
             ("Word", Expr::Str(_)) => true,
             ("Flag", Expr::Bool(_)) => true,
+            ("Num[]" | "Word[]" | "Flag[]", Expr::Array(items)) => {
+                array_elements_match(&ty, items)
+            }
             (_, Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_)) => false,
             _ => true, // a variable read or computed expression — trust the annotation
         };
@@ -801,4 +813,27 @@ impl Parser {
 
 pub fn parse(tokens: Vec<Token>) -> PResult<Program> {
     Parser::new(tokens).parse_program()
+}
+
+/// `true` if every *literal* element of an array matches an array type
+/// tag's element type (`"Num[]"` -> every literal element must be a
+/// `Number`, etc.) — a non-literal element (a variable read, a call, a
+/// nested computed expression) is trusted rather than checked, same as
+/// the scalar type tag check.
+fn array_elements_match(array_ty: &str, items: &[Expr]) -> bool {
+    let element_ty = match array_ty {
+        "Num[]" => "Num",
+        "Word[]" => "Word",
+        "Flag[]" => "Flag",
+        _ => return true,
+    };
+    items.iter().all(|item| {
+        matches!(
+            (element_ty, item),
+            ("Num", Expr::Number(_))
+                | ("Word", Expr::Str(_))
+                | ("Flag", Expr::Bool(_))
+                | (_, Expr::Ident(_) | Expr::VarRead(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::InlineAssign { .. } | Expr::Typed { .. })
+        )
+    })
 }

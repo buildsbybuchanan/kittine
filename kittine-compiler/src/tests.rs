@@ -44,7 +44,7 @@ func App() {
 }
 "#,
     );
-    assert!(out.contains(r#"let (username, set_username) = signal("Admin");"#));
+    assert!(out.contains(r#"let (username, set_username) = signal("Admin".to_string());"#));
 
     let out2 = compile(
         r#"
@@ -54,7 +54,7 @@ func App() {
 }
 "#,
     );
-    assert!(out2.contains(r#"let (username, set_username) = signal("Admin");"#));
+    assert!(out2.contains(r#"let (username, set_username) = signal("Admin".to_string());"#));
 }
 
 #[test]
@@ -257,7 +257,7 @@ func App() {
 }
 "#,
     );
-    assert!(out.contains("let (scores, set_scores) = signal(vec![1, 2, 3]);"));
+    assert!(out.contains("let (scores, set_scores) = signal(vec![1f64, 2f64, 3f64]);"));
 }
 
 #[test]
@@ -286,7 +286,7 @@ func App() {
 "#,
     );
     assert!(out.contains("let (count, set_count) = signal(0f64);"));
-    assert!(out.contains(r#"let (label, set_label) = signal("hi");"#));
+    assert!(out.contains(r#"let (label, set_label) = signal("hi".to_string());"#));
     assert!(out.contains("let (ready, set_ready) = signal(true);"));
 }
 
@@ -546,7 +546,7 @@ func List() {
     );
     assert!(out.contains(r#"<For each=move || items.get() key=|n| format!("{n}") let:n>"#));
     assert!(out.contains("</For>"));
-    assert!(out.contains("{move || n}"));
+    assert!(out.contains("{move || n.clone()}"));
 }
 
 #[test]
@@ -586,7 +586,7 @@ func List() {
     // Both sibling <li>s inside one iteration should be emitted, not just
     // the last one.
     assert!(out.contains(r#""Item: ""#));
-    assert!(out.contains("{move || n}"));
+    assert!(out.contains("{move || n.clone()}"));
 }
 
 #[test]
@@ -773,4 +773,79 @@ func App() {
 "#,
     );
     assert!(out.contains(r#"leptos::logging::log!("just a string");"#));
+}
+
+#[test]
+fn array_typed_prop_and_return() {
+    let out = compile(
+        r#"
+func NavList(<<Word[]>> items) {
+    return ( <ul><li>{ items }</li></ul> )
+}
+
+purr passthrough(<<Num[]>> scores) <<Num[]>> {
+    return (scores)
+}
+"#,
+    );
+    assert!(out.contains("pub fn NavList(items: Vec<String>) -> impl IntoView"));
+    assert!(out.contains("pub fn passthrough(scores: Vec<f64>) -> Vec<f64>"));
+    // `Vec` isn't `Copy`, so reads of an array-typed prop clone it, same
+    // as a `Word` prop.
+    assert!(out.contains("{move || items.clone()}"));
+}
+
+#[test]
+fn string_signal_init_is_owned_string_not_borrowed_str() {
+    // A bare string literal signal initializer must produce an owned
+    // `String`, not `&'static str` — otherwise it silently fails to
+    // compile the moment that signal's value is passed somewhere an
+    // owned `String` is required (e.g. as a `Word`-typed prop to another
+    // component).
+    let out = compile(
+        r#"
+func App() {
+    <{username}> >> 'Admin'
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"signal("Admin".to_string());"#));
+}
+
+#[test]
+fn spin_in_view_clones_item_even_for_copy_types() {
+    // Regression test: a view-position `spin`'s `{move || item}` closure
+    // must be callable more than once (Fn, not FnOnce) for Leptos's
+    // reactivity to work. Moving a non-`Copy` `item` (e.g. a `Word`) out
+    // of the closure would only satisfy `FnOnce`, so `item` is always
+    // `.clone()`d regardless of its element type — cheap/free for `Copy`
+    // types like `Num`, required for everything else.
+    let out = compile(
+        r#"
+func List() {
+    return (
+        <ul>
+            spin<{n}> in [1, 2, 3] }{
+                <li>{ n }</li>
+            }{
+        </ul>
+    )
+}
+"#,
+    );
+    assert!(out.contains("{move || n.clone()}"));
+}
+
+#[test]
+fn array_type_tag_checks_element_literals() {
+    let message = compile_err(
+        r#"
+func App() {
+    <{scores}> >> <<Num[]>> ['a', 'b']
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(message.contains("does not match"));
 }

@@ -24,7 +24,8 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `spin` loops (both imperative-statement and reactive-list-in-view forms),
   function calls, arithmetic/string-concat expressions, comparisons
   (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
-  arrays, booleans, type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
+  arrays (including array-typed props/returns — `<<Num[]>>`/`<<Word[]>>`/
+  `<<Flag[]>>`), booleans, type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
 - **Component composition**: `<Name prop='x' />` for a PascalCase tag,
@@ -114,17 +115,18 @@ website (in Kittine) need next":
 1. **SSR/SSG.** Currently CSR-only. A marketing/business site cares about
    first paint and SEO; Leptos already supports both server rendering and
    static generation, Kittine just doesn't expose either yet. The biggest
-   remaining blocker specifically for "website" now that routing exists.
-2. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
-   scalars; there's no tag for "a list of `Num`" yet, so a `purr` can't
-   return one and a component can't take one as a prop — this blocks
-   anything data-driven (nav menus, card grids) that isn't a hardcoded
-   literal.
-3. **`export` / visibility control.** Every top-level `func`/`purr` is
+   remaining blocker specifically for "website" now that routing and
+   array-typed props both exist.
+2. **`export` / visibility control.** Every top-level `func`/`purr` is
    implicitly importable by any file today; there's no way to keep
    something file-private.
-4. **Logical `&&`/`||`.** Each of `>>`/`<`/`<=`/`>`/`>=`/`!=` works alone;
+3. **Logical `&&`/`||`.** Each of `>>`/`<`/`<=`/`>`/`>=`/`!=` works alone;
    there's no way to combine two comparisons into one `if>` condition yet.
+4. **A string literal can't be passed directly to a `Word`-typed `purr`
+   parameter.** `someFunc('text')` doesn't work when `someFunc` takes a
+   `Word` — only a `Word` signal/prop does (`someFunc(name)`). Needs real
+   type information about the callee to fix safely; see
+   [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
 5. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
@@ -141,7 +143,8 @@ Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
 composed with zero new syntax) — landed 2026-07-18. ~~Comparison
 operators~~ (`<`/`<=`/`>`/`>=`/`!=`, usable generally not just in
-conditions) — landed 2026-07-18.
+conditions) — landed 2026-07-18. ~~Array-typed props/returns~~
+(`<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
@@ -213,10 +216,11 @@ stable v1.0 grammar freeze.
 
 The plan (per explicit instruction) is to build **buildsbybuchanan-style
 kittine.dev in Kittine itself**, once — and only once — enough of [Next
-up](#next-up) lands to make that practical. Multi-page composition is
-ready: imports ✅, props ✅, list rendering ✅, component children ✅,
-routing ✅. What's left that would matter for a *real* public site is
-SSR/SSG ❌ (first paint + SEO) and array-typed props ❌ (structured
-nav/card data instead of hardcoded literals) — both still open in [Next
-up](#next-up). Do not start building the site itself until told to — this
+up](#next-up) lands to make that practical. Multi-page composition with
+real, structured data is ready: imports ✅, props ✅, list rendering ✅,
+component children ✅, routing ✅, array-typed props/returns ✅ (nav/card
+data can be real arrays now, not just hardcoded literals). What's left
+that would matter for a *real public* site — as opposed to what's
+buildable today — is mainly SSR/SSG ❌ (first paint + SEO), still open in
+[Next up](#next-up). Do not start building the site itself until told to — this
 roadmap is preparation, not a green light.

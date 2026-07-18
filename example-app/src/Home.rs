@@ -11,6 +11,9 @@ use __kittine_mod_nav::{Nav};
 #[path = "./Card.rs"]
 mod __kittine_mod_card;
 use __kittine_mod_card::{Card};
+#[path = "./NavList.rs"]
+mod __kittine_mod_navlist;
+use __kittine_mod_navlist::{NavList};
 
 pub fn doubled(n: f64) -> f64 {
     n * 2f64
@@ -23,9 +26,10 @@ pub fn isAdult(age: f64) -> bool {
 #[component]
 pub fn Home() -> impl IntoView {
     let (count, set_count) = signal(0f64);
-    let (username, set_username) = signal("Admin");
+    let (username, set_username) = signal("Admin".to_string());
     let (ready, set_ready) = signal(true);
     let (age, set_age) = signal(25f64);
+    let (sections, set_sections) = signal(vec!["Home".to_string(), "About".to_string(), "Contact".to_string()]);
     if username.get() == "Admin" {
         leptos::logging::log!("Welcome Admin");
     } else if username.get() == "User" {
@@ -57,7 +61,7 @@ pub fn Home() -> impl IntoView {
             <ul>
                 <For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>
                     <li>
-                        {move || n}
+                        {move || n.clone()}
                     </li>
                 </For>
             </ul>
@@ -66,6 +70,7 @@ pub fn Home() -> impl IntoView {
                     "This card's children came from the composing view."
                 </p>
             </Card>
+            <NavList items=sections.get()/>
         </div>
     }
 }

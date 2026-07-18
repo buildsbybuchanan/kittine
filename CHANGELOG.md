@@ -76,6 +76,10 @@ grouped by date until the first tagged release.
   at the top level of `craft<expr>` is ambiguous with `craft<...>`'s own
   closing `>`; wrap it in parens (`craft<(age > 18)>`) — the only new
   caveat this introduces, everything else composes freely.
+- **Array-typed props/returns**: `<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>` —
+  `func NavList(<<Word[]>> items) { .. }` lowers to `items: Vec<String>`,
+  a `purr` can return an array type the same way. Array type tags also
+  check literal elements against the declared element type at parse time.
 
 ### Fixed
 
@@ -94,6 +98,23 @@ grouped by date until the first tagged release.
   be concretely `f64` (e.g. passed into a `purr` call). Found by actually
   compiling generated output against real Leptos, not just asserting on
   generated-string snapshots.
+- A string-literal signal initializer (`signal("Admin")`) now produces an
+  owned `String` (`signal("Admin".to_string())`), not a borrowed
+  `&'static str` — the same class of bug as the `f64` fix above, just for
+  strings: `&str` compiles fine on its own, until that signal's value is
+  later required to be an owned `String` (passed as a `Word`-typed prop to
+  another component), where it silently fails. This fix is scoped to
+  signal initializers specifically — a broader attempt (making every
+  string literal owned everywhere) broke `leptos_router::StaticSegment`,
+  which requires `&str`; reverted that part after catching it via a real
+  compile, not just tests.
+- A view-position `spin`'s loop variable (`{move || item}`) is now always
+  `.clone()`d, regardless of its element type. Leptos's reactive closures
+  need to be callable more than once (`Fn`), and moving a non-`Copy` item
+  (a `Word`) out of one only satisfies `FnOnce` — invisible with a `Num`
+  (`Copy`) array, which is what the original list-rendering feature had
+  been tested with, and only surfaced once a `Word[]`-typed prop was
+  actually rendered in a list.
 
 ### Repository
 

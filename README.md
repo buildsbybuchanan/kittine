@@ -85,9 +85,10 @@ func Counter() {
   component, and mutates it (`set_name.update(..)`) every time after.
 - `'...'` and `"..."` are fully interchangeable string literals.
 - `yes>` / `no>` are boolean literals; `[a, b, c]` is an array literal.
-- `<<Num>>` / `<<Word>>` / `<<Flag>>` are type tags — optional on a value,
-  mandatory on a prop or a `purr` return type — checked against literal
-  values at compile time and erased in the generated Rust.
+- `<<Num>>` / `<<Word>>` / `<<Flag>>` (or `<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`
+  for an array of one) are type tags — optional on a value, mandatory on a
+  prop or a `purr` return type — checked against literal values at compile
+  time and erased in the generated Rust.
 - `craft<expr>` logs via `leptos::logging::log!`.
 - `if>` / `orif>` / `else>` are indentation-delimited (no braces), with
   `>>`/`<`/`<=`/`>`/`>=`/`!=` as comparisons — usable in conditions and
