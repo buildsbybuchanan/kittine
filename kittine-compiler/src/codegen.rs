@@ -117,7 +117,14 @@ pub fn generate(program: &Program) -> String {
     // everywhere — instead of only where it's used — costs nothing but an
     // `unused_imports` allowance for files that don't route.
     out.push_str("use leptos_router::components::*;\n");
-    out.push_str("use leptos_router::*;\n\n");
+    out.push_str("use leptos_router::*;\n");
+    // `leptos_router::hooks` (use_params_map, use_navigate, use_query_map,
+    // ..) isn't re-exported at the crate root (`pub mod hooks;`, not `pub
+    // use hooks::*;`), unlike `components` and `matching` — bring it into
+    // scope the same unconditional way so a dynamic route's page can read
+    // its segment via `use_params_map().get().get("id")` (see
+    // `Expr::MethodCall`) with no new Kittine syntax at all.
+    out.push_str("use leptos_router::hooks::*;\n\n");
     out.push_str(&gen_imports(&program.imports));
     let known_functions = collect_function_signatures(&program.items);
     for item in &program.items {
@@ -429,6 +436,13 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
         Expr::Call { name: fname, args } => {
             render_call(fname, args, &|e| substitute_self(e, name, scope), scope)
         }
+        Expr::MethodCall { receiver, method, args } => {
+            render_method_call(receiver, method, args, &|e| substitute_self(e, name, scope))
+        }
+        Expr::CallResult { callee, args } => {
+            render_call_result(callee, args, &|e| substitute_self(e, name, scope))
+        }
+        Expr::Tuple(items) => render_tuple(items, &|e| substitute_self(e, name, scope)),
     }
 }
 
@@ -475,6 +489,38 @@ fn is_bare_string_literal(expr: &Expr) -> bool {
         Expr::Typed { ty, value } => ty == "Word" && is_bare_string_literal(value),
         _ => false,
     }
+}
+
+/// Renders `receiver.method(arg, arg, ..)` — see `ast::Expr::MethodCall`.
+/// Kittine has no receiver *or* argument type information for an arbitrary
+/// method (unlike [`render_call`], where a same-file `purr`'s `Num`
+/// parameters are always known to be `f64`), so a bare numeric literal
+/// argument is rendered plain, not forced to `f64` — a real Rust method
+/// just as often expects `usize`/`i32`/etc. (`Vec::get(0)`, not
+/// `Vec::get(0f64)`), and Kittine has no way to tell which. Rust's own
+/// type checker is the source of truth on whether the call is valid.
+fn render_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[Expr],
+    render: &dyn Fn(&Expr) -> String,
+) -> String {
+    let rendered_args: Vec<String> = args.iter().map(|a| render(a)).collect();
+    format!("{}.{method}({})", render(receiver), rendered_args.join(", "))
+}
+
+/// Renders `callee(arg, arg, ..)` where `callee` isn't a bare name — see
+/// `ast::Expr::CallResult`. Same trust model as [`render_method_call`]:
+/// no type information, arguments render plain (no forced `f64`).
+fn render_call_result(callee: &Expr, args: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
+    let rendered_args: Vec<String> = args.iter().map(|a| render(a)).collect();
+    format!("{}({})", render(callee), rendered_args.join(", "))
+}
+
+/// Renders `(a, b, c)` — see `ast::Expr::Tuple`.
+fn render_tuple(items: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
+    let rendered: Vec<String> = items.iter().map(|e| render(e)).collect();
+    format!("({})", rendered.join(", "))
 }
 
 /// Renders `[a, b, c]` as `vec![a, b, c]`.
@@ -608,6 +654,13 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
         Expr::Array(items) => render_array(items, &|e| expr_to_rust(e, scope)),
         Expr::Typed { value, .. } => expr_to_rust(value, scope),
         Expr::Call { name, args } => render_call(name, args, &|e| expr_to_rust(e, scope), scope),
+        Expr::MethodCall { receiver, method, args } => {
+            render_method_call(receiver, method, args, &|e| expr_to_rust(e, scope))
+        }
+        Expr::CallResult { callee, args } => {
+            render_call_result(callee, args, &|e| expr_to_rust(e, scope))
+        }
+        Expr::Tuple(items) => render_tuple(items, &|e| expr_to_rust(e, scope)),
     }
 }
 

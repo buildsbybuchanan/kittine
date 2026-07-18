@@ -123,6 +123,32 @@ pub enum Expr {
         name: String,
         args: Vec<Expr>,
     },
+    /// `receiver.method(arg, arg, ..)` — a method call on an arbitrary
+    /// expression, for interop with real Rust/Leptos APIs that aren't a
+    /// Kittine `purr` (e.g. `use_params_map().get()`). Kittine doesn't
+    /// track receiver types, so this renders verbatim and lets Rust's own
+    /// type checker validate it — same trust model as `Expr::Call` for an
+    /// unknown function name.
+    MethodCall {
+        receiver: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
+    /// `callee(arg, arg, ..)` where `callee` is itself an arbitrary
+    /// expression rather than a bare name — e.g. calling the closure
+    /// `use_navigate()` returns immediately: `use_navigate()('/', ..)`.
+    /// Distinct from `Expr::Call` (a *named* function/`purr`), which keeps
+    /// its own same-file signature lookup (see `codegen::render_call`)
+    /// unaffected by this more general, untyped form.
+    CallResult {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    /// `(expr, expr, ..)` — a tuple literal, needed to combine multiple
+    /// `leptos_router` path segments into one route (`(StaticSegment('user'),
+    /// ParamSegment('id'))`). A single parenthesized expression with no
+    /// comma is just grouping, not a 1-tuple — see `parser::parse_primary`.
+    Tuple(Vec<Expr>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

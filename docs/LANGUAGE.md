@@ -14,6 +14,8 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Props](#props)
 - [Functions (`purr`)](#functions-purr)
 - [Calling functions](#calling-functions)
+  - [Method calls](#method-calls)
+  - [Tuples](#tuples)
 - [Modules and imports](#modules-and-imports)
   - [Visibility](#visibility)
 - [Component composition](#component-composition)
@@ -150,6 +152,46 @@ because the compiler already knows that parameter's declared type:
 
 This only applies to same-file calls — see [Known
 limitations](#known-limitations) for the cross-file gap.
+
+### Method calls
+
+```kitty
+use_params_map().get().get('id').unwrap_or_default()
+```
+
+`receiver.method(arg, ..)` calls a method on the result of any expression —
+for interop with real Rust/Leptos APIs that aren't a Kittine `purr` (a
+`leptos_router` hook, a standard-library method, anything). Chains work,
+since the receiver of a method call is itself an arbitrary expression:
+`a.b().c(1).d()`.
+
+Kittine tracks no receiver or argument types here — unlike a same-file
+`purr` call, where a `Num` parameter is known to be `f64`, a method call's
+arguments render as plain literals (`0`, not `0f64`), since a real Rust
+method just as often expects `usize`/`i32`/etc. as `f64`, and Kittine has
+no way to tell which. Rust's own type checker is the source of truth on
+whether the call is valid — same trust model as calling an unknown
+function by name.
+
+Calling the *result* of an expression (not a bare name) works the same
+way — `expr(arg, ..)` immediately after any expression, most usefully
+right after a call that returns a closure: `use_navigate()('/home')`
+calls the closure `use_navigate()` itself returns. This is what makes
+[programmatic navigation](#programmatic-navigation--a-real-current-gap)'s
+first argument reachable at all, even though its second argument still
+isn't (see that section).
+
+### Tuples
+
+```kitty
+(StaticSegment('user'), ParamSegment('id'))
+```
+
+`(expr, expr, ..)` is a tuple literal — needed to combine multiple
+`leptos_router` path segments into one dynamic route (see
+[Routing](#routing)). A single parenthesized expression with no comma is
+still just grouping, not a 1-tuple: `(age + 1)` is `age + 1`, not a
+1-tuple containing it.
 
 ## Modules and imports
 
@@ -389,17 +431,51 @@ in **every** generated file (see [Compilation model](#compilation-model))
 — routing works the moment you reach for it, without a separate opt-in
 step, at the cost of an `unused_imports` allowance for files that don't.
 
-### What Kittine doesn't add on top
+### Dynamic route segments
 
-Everything `leptos_router` itself supports is available exactly as-is:
-nested routes (`<ParentRoute>` + `<Outlet/>`), dynamic segments
-(`ParamSegment("id")`, read with `leptos_router::hooks::use_params_map`),
-wildcard/catch-all segments, and programmatic navigation
-(`leptos_router::hooks::use_navigate`) — Kittine hasn't built dedicated
-syntax for any of these yet, but nothing stops you from calling them the
-same way `StaticSegment` is called above; they're just Rust items already
-in scope. Server-side rendering / static generation (Leptos supports both)
-is a separate, bigger piece of work — see
+A dynamic segment combines a static prefix and a `ParamSegment` in a
+[tuple](#tuples), and reads back out via a [method-call
+chain](#method-calls) on `use_params_map()` — verified end-to-end (real
+compile, real dev server, real click-through) in `example-app`'s
+`User.kitty`:
+
+```kitty
+<Route path={(StaticSegment('user'), ParamSegment('id'))} view={User}/>
+```
+
+```kitty
+func User() {
+    return (
+        <p>"User id: "{ use_params_map().get().get('id').unwrap_or_default() }</p>
+    )
+}
+```
+
+`leptos_router::hooks` (`use_params_map`, `use_navigate`, `use_query_map`,
+...) isn't re-exported at `leptos_router`'s crate root the way
+`components` is, so it gets its own `use leptos_router::hooks::*;` in
+every generated file's fixed preamble (see [Compilation
+model](#compilation-model)) — the same "already in scope, zero opt-in
+step" treatment as everything else routing-related.
+
+### Programmatic navigation — a real, current gap
+
+`leptos_router::hooks::use_navigate()` returns a closure you call with
+`(&str, NavigateOptions)`. The path half is easy (`use_navigate()('/',
+..)` — calling the result of an expression, not a named function — parses
+fine as ordinary Kittine syntax), but `NavigateOptions` has no `Default`
+value expressible in Kittine: there's no `Type::method()` /
+`Path::CONST`-style path-qualified expression, so `NavigateOptions::default()`
+or `Default::default()` can't be written. This was discovered by actually
+trying to wire up a working example, not assumed — see [Known
+limitations](#known-limitations). A `<A>` link (client-side, no full
+reload) covers most real navigation needs in the meantime; reach for
+`use_navigate()` only once path-qualified calls exist.
+
+Everything else `leptos_router` supports — nested routes (`<ParentRoute>`
++ `<Outlet/>`), wildcard/catch-all segments — is available the same
+zero-new-syntax way. Server-side rendering / static generation (Leptos
+supports both) is a separate, bigger piece of work — see
 [ROADMAP.md](ROADMAP.md#next-up).
 
 ## Variables and state
@@ -863,14 +939,17 @@ craft_and    := craft_equality ("&&" craft_equality)*
 craft_equality := additive ((">>" | "<" | "<=" | ">=" | "!=") additive)?  // no bare ">"; see Expressions and operators
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
-unary        := "-" unary | primary
+unary        := "-" unary | postfix
+postfix      := primary ( ("." IDENT arg_list) | arg_list )*  // method call, or calling the result of an expression
+arg_list     := "(" (expr ("," expr)*)? ")"
 primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | CALL | IDENT
               | "<{" IDENT "}>" (">>" expr)?  // >> here is inline mutation, not comparison
-              | "(" expr ")"
+              | "(" expr ")" | tuple
 
 array        := "[" (expr ("," expr)*)? "]"
 type_tag     := type_tag_name unary
 call         := IDENT "(" (expr ("," expr)*)? ")"
+tuple        := "(" expr "," expr ("," expr)* ","? ")"  // a lone "(" expr ")" is just grouping
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
               | jsx_spin
@@ -893,6 +972,7 @@ Every generated Rust file starts with:
 use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::*;
+use leptos_router::hooks::*;
 ```
 
 followed by one `mod` + `use` pair per `import`, and then one item per
@@ -922,10 +1002,18 @@ These are intentional scope boundaries of the current prototype, not bugs:
   and have the compiler figure it out.
 - **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
   works via `leptos_router`'s own components composed as-is — real, but
-  client-side-rendered only (no SSR/SSG integration yet), and reading a
-  dynamic segment (`use_params_map`) or navigating programmatically
-  (`use_navigate`) means calling `leptos_router::hooks::*` directly rather
-  than through anything Kittine-specific.
+  client-side-rendered only (no SSR/SSG integration yet). Reading a
+  dynamic segment (`use_params_map().get().get("id")`) is real and
+  verified end-to-end (see [Dynamic route
+  segments](#dynamic-route-segments)); programmatic navigation
+  (`use_navigate()`) is not yet, for a specific reason — see the next
+  item.
+- **No path-qualified expressions (`Type::method()`, `Type::CONST`).**
+  Kittine's grammar has no `::`. This blocks `NavigateOptions::default()`
+  (or `Default::default()`), so `use_navigate()`'s second argument can't
+  be constructed — see [Programmatic navigation](#programmatic-navigation--a-real-current-gap).
+  Discovered while actually trying to wire up a working example, not
+  assumed up front.
 - **No re-exports.** `private` (see [Visibility](#visibility)) controls
   whether an item can be imported *at all*, but there's no way for a file
   to import something and then re-expose it under its own name for a

@@ -821,6 +821,96 @@ func App() {
 }
 
 #[test]
+fn dynamic_route_segment_uses_a_tuple_path() {
+    let out = compile(
+        r#"
+func User() {
+    return ( <h1>"User"</h1> )
+}
+
+func App() {
+    return (
+        <Router>
+            <Routes fallback={User}>
+                <Route path={(StaticSegment('user'), ParamSegment('id'))} view={User}/>
+            </Routes>
+        </Router>
+    )
+}
+"#,
+    );
+    assert!(out.contains(r#"path=(StaticSegment("user"), ParamSegment("id"))"#));
+}
+
+#[test]
+fn method_call_chain_renders_verbatim() {
+    // Kittine has no receiver-type information, so a method-call chain on
+    // any expression renders as-is and lets Rust's own type checker
+    // validate it -- this is how a dynamic route segment's value is read
+    // (`use_params_map().get().get("id").unwrap_or_default()`), with no
+    // dedicated Kittine syntax needed.
+    let out = compile(
+        r#"
+func User() {
+    return ( <p>{ use_params_map().get().get('id').unwrap_or_default() }</p> )
+}
+"#,
+    );
+    assert!(out.contains(r#"use_params_map().get().get("id").unwrap_or_default()"#));
+}
+
+#[test]
+fn method_call_numeric_argument_is_not_forced_to_f64() {
+    // Unlike a same-file `purr` call (where a `Num` parameter is known to
+    // be `f64`), Kittine has no idea what type an arbitrary method's
+    // parameter is -- a real Rust method just as often expects `usize`
+    // (`Vec::get(0)`) as `f64`, so a numeric literal argument stays plain
+    // rather than getting an `f64` suffix forced onto it.
+    let out = compile(
+        r#"
+func App() {
+    craft<items.get(0)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("items.get(0)"));
+    assert!(!out.contains("items.get(0f64)"));
+}
+
+#[test]
+fn calling_the_result_of_an_expression_renders_verbatim() {
+    // `use_navigate()('/', ..)` -- calling the closure `use_navigate()`
+    // returns immediately, rather than a bare named function -- is a
+    // distinct shape (`Expr::CallResult`) from an ordinary `Expr::Call`,
+    // since the callee is itself an arbitrary expression.
+    let out = compile(
+        r#"
+func App() {
+    craft<use_navigate()('/home')>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"use_navigate()("/home")"#));
+}
+
+#[test]
+fn generated_file_brings_leptos_router_hooks_into_scope() {
+    // `leptos_router::hooks` (use_params_map, use_navigate, ..) isn't
+    // re-exported at the crate root the way `components`/`matching` are,
+    // so it needs its own explicit `use`.
+    let out = compile(
+        r#"
+func App() {
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("use leptos_router::hooks::*;"));
+}
+
+#[test]
 fn comparison_operators_in_condition() {
     let out = compile(
         r#"

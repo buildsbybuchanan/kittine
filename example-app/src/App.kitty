@@ -1,5 +1,6 @@
 import { Home } from './Home.kitty'
 import { About } from './About.kitty'
+import { User } from './User.kitty'
 import { NotFound } from './NotFound.kitty'
 
 func App() {
@@ -8,11 +9,13 @@ func App() {
             <nav>
                 <A href='/'>"Home"</A>
                 <A href='/about'>"About"</A>
+                <A href='/user/42'>"User 42"</A>
             </nav>
             <main>
                 <Routes fallback={NotFound}>
                     <Route path={StaticSegment('')} view={Home}/>
                     <Route path={StaticSegment('about')} view={About}/>
+                    <Route path={(StaticSegment('user'), ParamSegment('id'))} view={User}/>
                 </Routes>
             </main>
         </Router>
