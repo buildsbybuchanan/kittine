@@ -32,6 +32,17 @@ grouped by date until the first tagged release.
 
 ### Added
 
+- **Re-exports**: `export import { Name } from './file.kitty'` re-exposes
+  an imported name under the importing file's own name — a third file
+  can then `import { Name }` from *this* file without reaching all the
+  way back to wherever `Name` is actually defined. Lowers to `pub use`
+  instead of a plain `use`; the intermediate `mod` declaration stays
+  non-`pub` either way (a `pub use` re-export doesn't need its source
+  module to be `pub`, only the item being re-exported). Verified with a
+  real three-file chain against actual Leptos 0.7, then wired into
+  `example-app` as a `components.kitty` barrel file re-exporting
+  `Nav`/`Card`/`NavList`, confirmed with Playwright against the running
+  dev server.
 - **Path-qualified expressions**: `Type::method()`, `Type::CONST`, and
   multi-segment paths like `std::cmp::max(1, 2)` — renders verbatim
   (`segments.join("::")`) and combines with the existing method-call

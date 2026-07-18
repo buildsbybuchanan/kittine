@@ -222,7 +222,17 @@ fn gen_imports(imports: &[Import]) -> String {
         let mod_ident = module_ident_for_path(&import.path);
         out.push_str(&format!("#[path = {rs_path:?}]\n"));
         out.push_str(&format!("mod {mod_ident};\n"));
-        out.push_str(&format!("use {mod_ident}::{{{}}};\n", import.names.join(", ")));
+        // `export import` re-exports `names` as part of this file's own
+        // public interface (`pub use`) — a third file can then `import`
+        // them straight from here without reaching back to where they're
+        // actually defined. `mod_ident` itself stays a plain (non-`pub`)
+        // declaration either way: a `pub use` re-export doesn't need its
+        // source module to be `pub` too, only the item it's re-exporting.
+        let visibility = if import.is_export { "pub " } else { "" };
+        out.push_str(&format!(
+            "{visibility}use {mod_ident}::{{{}}};\n",
+            import.names.join(", ")
+        ));
     }
     if !imports.is_empty() {
         out.push('\n');

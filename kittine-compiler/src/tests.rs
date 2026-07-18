@@ -607,6 +607,64 @@ func Home() {
 }
 
 #[test]
+fn re_export_lets_a_third_file_import_through_an_intermediate() {
+    // A.kitty defines Nav; B.kitty re-exports it (`export import`); C.kitty
+    // imports Nav from B, never reaching back to A directly. Needs the
+    // real CLI build path -- three separately compiled files, resolved and
+    // linked together by kittine-compiler and then rustc.
+    let dir = std::env::temp_dir().join(format!(
+        "kittine-reexport-test-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+
+    std::fs::write(
+        dir.join("A.kitty"),
+        r#"
+func Nav(<<Word>> active) {
+    return ( <span>{ active }</span> )
+}
+"#,
+    )
+    .expect("write A.kitty");
+
+    std::fs::write(
+        dir.join("B.kitty"),
+        r#"
+export import { Nav } from './A.kitty'
+"#,
+    )
+    .expect("write B.kitty");
+
+    std::fs::write(
+        dir.join("C.kitty"),
+        r#"
+import { Nav } from './B.kitty'
+
+func App() {
+    return ( <div><Nav active='home'/></div> )
+}
+"#,
+    )
+    .expect("write C.kitty");
+
+    let c_kitty = dir.join("C.kitty");
+    let (out_path, _) = crate::build(&c_kitty, None).expect("recursive build should succeed");
+
+    let c_rs = std::fs::read_to_string(&out_path).expect("read generated C.rs");
+    assert!(c_rs.contains("mod __kittine_mod_b;"));
+    assert!(c_rs.contains("use __kittine_mod_b::{Nav};"));
+    assert!(c_rs.contains(r#"<Nav active="home".to_string()/>"#));
+
+    let b_rs = std::fs::read_to_string(dir.join("B.rs")).expect("B.rs should be generated");
+    assert!(b_rs.contains("mod __kittine_mod_a;"));
+    assert!(b_rs.contains("pub use __kittine_mod_a::{Nav};"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn unchanged_output_is_not_rewritten() {
     // Rebuilding a dependency whose source didn't change must not touch its
     // already-up-to-date .rs file's mtime — downstream tools (cargo,
@@ -700,6 +758,38 @@ func Home() {
     assert!(out.contains(r#"#[path = "./Nav.rs"]"#));
     assert!(out.contains("mod __kittine_mod_nav;"));
     assert!(out.contains("use __kittine_mod_nav::{Nav};"));
+}
+
+#[test]
+fn plain_import_is_not_pub_use() {
+    // Regression check: an ordinary import must stay a private `use` --
+    // only `export import` should ever emit `pub use`.
+    let out = compile(
+        r#"
+import { Nav } from './Nav.kitty'
+
+func Home() {
+    return ( <div><Nav/></div> )
+}
+"#,
+    );
+    assert!(!out.contains("pub use __kittine_mod_nav"));
+}
+
+#[test]
+fn export_import_emits_pub_use() {
+    let out = compile(
+        r#"
+export import { Nav } from './Nav.kitty'
+
+func Home() {
+    return ( <div><Nav/></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"#[path = "./Nav.rs"]"#));
+    assert!(out.contains("mod __kittine_mod_nav;"));
+    assert!(out.contains("pub use __kittine_mod_nav::{Nav};"));
 }
 
 #[test]

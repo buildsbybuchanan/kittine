@@ -106,7 +106,10 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> PResult<Program> {
         let mut imports = Vec::new();
-        while matches!(self.peek().kind, TokenKind::KeywordImport) {
+        while matches!(
+            self.peek().kind,
+            TokenKind::KeywordImport | TokenKind::KeywordExport
+        ) {
             imports.push(self.parse_import()?);
         }
 
@@ -128,8 +131,14 @@ impl Parser {
         Ok(Program { imports, items })
     }
 
-    /// Parses `import { Name, Name2 } from 'path/to/file.kitty'`.
+    /// Parses `(export)? import { Name, Name2 } from 'path/to/file.kitty'`.
+    /// A leading `export` re-exports `names` under this file's own name —
+    /// see `ast::Import::is_export`.
     fn parse_import(&mut self) -> PResult<Import> {
+        let is_export = matches!(self.peek().kind, TokenKind::KeywordExport);
+        if is_export {
+            self.advance();
+        }
         self.expect(TokenKind::KeywordImport)?;
         self.expect(TokenKind::LBrace)?;
         let mut names = Vec::new();
@@ -153,7 +162,7 @@ impl Parser {
                 )));
             }
         };
-        Ok(Import { names, path })
+        Ok(Import { names, path, is_export })
     }
 
     /// Parses a signature-position type tag `<<Type>>` (no value follows —

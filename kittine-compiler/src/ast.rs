@@ -8,11 +8,16 @@ pub struct Program {
     pub items: Vec<Item>,
 }
 
-/// `import { Name, Name2 } from 'path/to/file.kitty'`
+/// `(export)? import { Name, Name2 } from 'path/to/file.kitty'`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Import {
     pub names: Vec<String>,
     pub path: String,
+    /// `true` for `export import ..` — re-exports `names` under this
+    /// file's own name, so a *third* file can `import` them straight from
+    /// here instead of reaching all the way back to where they're
+    /// actually defined. Lowers to `pub use` instead of a plain `use`.
+    pub is_export: bool,
 }
 
 /// A top-level declaration: either a view-rendering component (`func`) or a

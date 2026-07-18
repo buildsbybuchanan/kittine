@@ -6,15 +6,9 @@ use leptos_router::components::*;
 use leptos_router::*;
 use leptos_router::hooks::*;
 
-#[path = "./Nav.rs"]
-mod __kittine_mod_nav;
-use __kittine_mod_nav::{Nav};
-#[path = "./Card.rs"]
-mod __kittine_mod_card;
-use __kittine_mod_card::{Card};
-#[path = "./NavList.rs"]
-mod __kittine_mod_navlist;
-use __kittine_mod_navlist::{NavList};
+#[path = "./components.rs"]
+mod __kittine_mod_components;
+use __kittine_mod_components::{Nav, Card, NavList};
 #[path = "./Greetings.rs"]
 mod __kittine_mod_greetings;
 use __kittine_mod_greetings::{greet};

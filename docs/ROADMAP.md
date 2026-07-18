@@ -34,7 +34,9 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
   `private func`/`purr` opts an item out of being importable, enforced by
-  Rust's own privacy rules.
+  Rust's own privacy rules. `export import { A } from './file.kitty'`
+  re-exports `A` (`pub use`), so a third file can import it through this
+  one instead of reaching back to where it's actually defined.
 - **Component composition**: `<Name prop='x' />` for a PascalCase tag,
   passing typed props as plain values (not reactive DOM-attribute
   closures).
@@ -94,7 +96,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (69+ tests, every feature round-tripped against actual
+tested compiler (72+ tests, every feature round-tripped against actual
 Leptos, routing (including dynamic segments) driven end-to-end in a real
 browser) with a language core solid enough for a genuine multi-page
 client-side app. That's real progress, not the same thing as
@@ -176,10 +178,6 @@ website (in Kittine) need next":
    never actually changes. A real `let`-style binding would express this
    directly; see
    [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
-3. **Re-exports.** `private` controls whether an item is importable at
-   all, but there's no way to import something into a file and then
-   re-expose it under that file's own name for a third file to import.
-
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
 param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
@@ -210,6 +208,11 @@ now — verified against a real running dev server with Playwright, which
 also caught a real runtime-only gotcha: the hook must be called eagerly,
 not from inside the event handler, or it panics; `example-app`'s
 `User.kitty` demonstrates the correct pattern) — landed 2026-07-18.
+~~Re-exports~~ (`export import { Name } from './file.kitty'` lowers to
+`pub use`, letting a third file import through an intermediate one;
+verified with a real three-file chain against actual Leptos and wired
+into `example-app` as a `components.kitty` barrel file) — landed
+2026-07-18.
 
 ## Full vision (phased, honest)
 

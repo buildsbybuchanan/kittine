@@ -44,6 +44,7 @@ pub enum TokenKind {
     KeywordPrivate, // private func/purr ..
     KeywordImport, // import { A, B } from '...'
     KeywordFrom,
+    KeywordExport, // export import { A } from '...' -- re-export
 
     // Literals / identifiers
     Ident(String),
@@ -96,6 +97,7 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordPrivate => write!(f, "private"),
             TokenKind::KeywordImport => write!(f, "import"),
             TokenKind::KeywordFrom => write!(f, "from"),
+            TokenKind::KeywordExport => write!(f, "export"),
             TokenKind::Ident(s) => write!(f, "{s}"),
             TokenKind::Number(n) => write!(f, "{n}"),
             TokenKind::Str(s) => write!(f, "\"{s}\""),
@@ -396,6 +398,7 @@ impl Lexer {
                     "private" => TokenKind::KeywordPrivate,
                     "import" => TokenKind::KeywordImport,
                     "from" => TokenKind::KeywordFrom,
+                    "export" => TokenKind::KeywordExport,
                     "if" if self.peek() == Some('>') => {
                         self.advance();
                         TokenKind::KeywordIf
