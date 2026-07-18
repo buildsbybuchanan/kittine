@@ -7,12 +7,16 @@ use leptos::prelude::*;
 pub fn App() -> impl IntoView {
     let (count, set_count) = signal(0);
     let (username, set_username) = signal("Admin");
+    let (ready, set_ready) = signal(true);
     if username.get() == "Admin" {
         leptos::logging::log!("Welcome Admin");
     } else if username.get() == "User" {
         leptos::logging::log!("Welcome User");
     } else {
         leptos::logging::log!("no output");
+    }
+    for n in (vec![1, 2, 3]).into_iter() {
+        leptos::logging::log!("{}", n);
     }
     view! {
         <div>

@@ -12,6 +12,11 @@
 //! - `if>` / `orif>` / `else>` become `if` / `else if` / `else`, with `>>`
 //!   conditions becoming `==` comparisons and variable reads becoming
 //!   `.get()` calls.
+//! - `[a, b, c]` becomes `vec![a, b, c]`; `yes>` / `no>` become `true` /
+//!   `false`; a `<<Type>>` tag is erased (it's a compile-time-only check —
+//!   see `parser::parse_type_tag`), emitting just the inner value.
+//! - `spin<{item}> in list }{ .. }{` becomes a plain `for item in
+//!   (list).into_iter() { .. }`.
 //! - The `return ( .. )` JSX tree becomes a Leptos `view! { .. }` block,
 //!   with `onX` attributes rewritten to Leptos's `on:x=` event bindings.
 
@@ -87,6 +92,10 @@ fn gen_stmt(stmt: &Stmt, declared: &mut HashSet<String>, out: &mut String, inden
         Stmt::Craft { value } => {
             let code = match value {
                 Expr::Str(s) => format!("leptos::logging::log!(\"{}\");", escape_str(s)),
+                other if is_array_like(other) => format!(
+                    "leptos::logging::log!(\"{{:?}}\", {});",
+                    expr_to_rust(other, declared)
+                ),
                 other => format!(
                     "leptos::logging::log!(\"{{}}\", {});",
                     expr_to_rust(other, declared)
@@ -119,6 +128,14 @@ fn gen_stmt(stmt: &Stmt, declared: &mut HashSet<String>, out: &mut String, inden
         }
         Stmt::Expr(expr) => {
             push_line(out, indent, &format!("{};", expr_to_rust(expr, declared)));
+        }
+        Stmt::Spin { item, list, body } => {
+            let list_code = expr_to_rust(list, declared);
+            push_line(out, indent, &format!("for {item} in ({list_code}).into_iter() {{"));
+            for s in body {
+                gen_stmt(s, declared, out, indent + 1);
+            }
+            push_line(out, indent, "}");
         }
     }
 }
@@ -162,6 +179,26 @@ fn substitute_self(expr: &Expr, name: &str, declared: &HashSet<String>) -> Strin
             render_binary(left, *op, right, &|e| substitute_self(e, name, declared))
         }
         Expr::InlineAssign { name: n, value } => mutation_expr(n, value, declared),
+        Expr::Bool(b) => b.to_string(),
+        Expr::Array(items) => render_array(items, &|e| substitute_self(e, name, declared)),
+        Expr::Typed { value, .. } => substitute_self(value, name, declared),
+    }
+}
+
+/// Renders `[a, b, c]` as `vec![a, b, c]`.
+fn render_array(items: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
+    let rendered: Vec<String> = items.iter().map(|e| render(e)).collect();
+    format!("vec![{}]", rendered.join(", "))
+}
+
+/// `true` if `expr` (after stripping a `<<Type>>` tag) is an array literal —
+/// used to decide whether `craft<...>` should format with `{:?}` (arrays
+/// have no `Display` impl) instead of `{}`.
+fn is_array_like(expr: &Expr) -> bool {
+    match expr {
+        Expr::Array(_) => true,
+        Expr::Typed { value, .. } => is_array_like(value),
+        _ => false,
     }
 }
 
@@ -176,7 +213,7 @@ fn is_string_literal(expr: &Expr) -> bool {
 /// string literal: Kittine has no type system to tell a numeric `+` from a
 /// string one, so `+` involving a literal string lowers to `format!("{}{}",
 /// ..)` instead of Rust's `+` operator (which doesn't accept `&str + &str`,
-/// let alone `&str + f64`). This makes `¨Taps: ¨ + <{count}>` produce
+/// let alone `&str + f64`). This makes `'Taps: ' + <{count}>` produce
 /// `"Taps: 5"` by `Display`-formatting both sides, while a plain `x + 1`
 /// with no string literal in sight keeps compiling to ordinary numeric
 /// addition, unchanged.
@@ -214,6 +251,9 @@ fn expr_to_rust(expr: &Expr, declared: &HashSet<String>) -> String {
             render_binary(left, *op, right, &|e| expr_to_rust(e, declared))
         }
         Expr::InlineAssign { name, value } => mutation_expr(name, value, declared),
+        Expr::Bool(b) => b.to_string(),
+        Expr::Array(items) => render_array(items, &|e| expr_to_rust(e, declared)),
+        Expr::Typed { value, .. } => expr_to_rust(value, declared),
     }
 }
 

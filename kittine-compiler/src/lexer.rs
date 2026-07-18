@@ -28,17 +28,21 @@ pub enum TokenKind {
     // Keywords
     KeywordFunc,
     KeywordReturn,
+    KeywordSpin, // spin<{item}> in <list> }{ .. }{
 
     // Literals / identifiers
     Ident(String),
     Number(f64),
     Str(String),
+    Bool(bool), // yes> / no>
 
     // Punctuation
     LParen,
     RParen,
     LBrace,
     RBrace,
+    LBracket, // [
+    RBracket, // ]
     Comma,
     Dot,
     Eq, // = (JSX attribute assignment)
@@ -66,13 +70,18 @@ impl fmt::Display for TokenKind {
             TokenKind::LtSlash => write!(f, "</"),
             TokenKind::KeywordFunc => write!(f, "func"),
             TokenKind::KeywordReturn => write!(f, "return"),
+            TokenKind::KeywordSpin => write!(f, "spin"),
             TokenKind::Ident(s) => write!(f, "{s}"),
             TokenKind::Number(n) => write!(f, "{n}"),
             TokenKind::Str(s) => write!(f, "\"{s}\""),
+            TokenKind::Bool(true) => write!(f, "yes>"),
+            TokenKind::Bool(false) => write!(f, "no>"),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::LBrace => write!(f, "{{"),
             TokenKind::RBrace => write!(f, "}}"),
+            TokenKind::LBracket => write!(f, "["),
+            TokenKind::RBracket => write!(f, "]"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Dot => write!(f, "."),
             TokenKind::Eq => write!(f, "="),
@@ -228,20 +237,9 @@ impl Lexer {
                 break;
             };
 
-            // Kittine string literal: ¨...¨
-            if c == '¨' {
-                let s = self.read_string('¨')?;
-                tokens.push(Token {
-                    kind: TokenKind::Str(s),
-                    line,
-                    col,
-                });
-                continue;
-            }
-
-            // JSX-style string literal: "..."
-            if c == '"' {
-                let s = self.read_string('"')?;
+            // String literals: '...' and "..." are fully interchangeable.
+            if c == '\'' || c == '"' {
+                let s = self.read_string(c)?;
                 tokens.push(Token {
                     kind: TokenKind::Str(s),
                     line,
@@ -307,6 +305,7 @@ impl Lexer {
                 let kind = match word.as_str() {
                     "func" => TokenKind::KeywordFunc,
                     "return" => TokenKind::KeywordReturn,
+                    "spin" => TokenKind::KeywordSpin,
                     "if" if self.peek() == Some('>') => {
                         self.advance();
                         TokenKind::KeywordIf
@@ -322,6 +321,14 @@ impl Lexer {
                     "craft" if self.peek() == Some('<') => {
                         self.advance();
                         TokenKind::KeywordCraft
+                    }
+                    "yes" if self.peek() == Some('>') => {
+                        self.advance();
+                        TokenKind::Bool(true)
+                    }
+                    "no" if self.peek() == Some('>') => {
+                        self.advance();
+                        TokenKind::Bool(false)
                     }
                     _ => TokenKind::Ident(word),
                 };
@@ -362,6 +369,8 @@ impl Lexer {
                 ')' => TokenKind::RParen,
                 '{' => TokenKind::LBrace,
                 '}' => TokenKind::RBrace,
+                '[' => TokenKind::LBracket,
+                ']' => TokenKind::RBracket,
                 ',' => TokenKind::Comma,
                 '.' => TokenKind::Dot,
                 '=' => TokenKind::Eq,

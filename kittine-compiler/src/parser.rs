@@ -69,6 +69,12 @@ impl Parser {
         std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
     }
 
+    /// Looks at the token after the current one without consuming anything.
+    fn peek_next(&self) -> &TokenKind {
+        let idx = (self.pos + 1).min(self.tokens.len() - 1);
+        &self.tokens[idx].kind
+    }
+
     fn err(&self, message: impl Into<String>) -> ParseError {
         let tok = self.peek();
         ParseError {
@@ -151,11 +157,56 @@ impl Parser {
             TokenKind::LeftVarBracket => self.parse_var_assign_stmt(),
             TokenKind::KeywordCraft => self.parse_craft_stmt(),
             TokenKind::KeywordIf => self.parse_if_stmt(),
+            TokenKind::KeywordSpin => self.parse_spin_stmt(),
             _ => {
                 let expr = self.parse_expr()?;
                 Ok(Stmt::Expr(expr))
             }
         }
+    }
+
+    /// Parses `spin<{item}> in list }{ stmt* }{`. The `}{` fence is not a
+    /// single token — it is the ordinary `}` / `{` pair, read contextually
+    /// as a matched pair of loop-body markers rather than as a brace block,
+    /// so it never collides with `RBrace`/`LBrace` used elsewhere (e.g. two
+    /// adjacent JSX `{ expr }` interpolations).
+    fn parse_spin_stmt(&mut self) -> PResult<Stmt> {
+        self.expect(TokenKind::KeywordSpin)?;
+        self.expect(TokenKind::LeftVarBracket)?;
+        let item = self.expect_ident()?;
+        self.expect(TokenKind::RBrace)?;
+        self.expect(TokenKind::Gt)?;
+
+        let in_word = self.expect_ident()?;
+        if in_word != "in" {
+            return Err(self.err(format!("expected 'in' after 'spin<{{{item}}}>', found '{in_word}'")));
+        }
+
+        let list = self.parse_expr()?;
+        self.expect_fence()?;
+
+        let mut body = Vec::new();
+        loop {
+            if matches!(self.peek().kind, TokenKind::Eof) {
+                return Err(self.err("unexpected end of file inside 'spin' loop body"));
+            }
+            if matches!(self.peek().kind, TokenKind::RBrace)
+                && matches!(self.peek_next(), TokenKind::LBrace)
+            {
+                self.expect_fence()?;
+                break;
+            }
+            body.push(self.parse_stmt()?);
+        }
+
+        Ok(Stmt::Spin { item, list, body })
+    }
+
+    /// Consumes the `}{` loop fence: a plain `}` immediately followed by `{`.
+    fn expect_fence(&mut self) -> PResult<()> {
+        self.expect(TokenKind::RBrace)?;
+        self.expect(TokenKind::LBrace)?;
+        Ok(())
     }
 
     fn parse_var_assign_stmt(&mut self) -> PResult<Stmt> {
@@ -326,6 +377,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Str(s))
             }
+            TokenKind::Bool(b) => {
+                self.advance();
+                Ok(Expr::Bool(b))
+            }
             TokenKind::Ident(name) => {
                 self.advance();
                 Ok(Expr::Ident(name))
@@ -336,8 +391,63 @@ impl Parser {
                 self.expect(TokenKind::RParen)?;
                 Ok(inner)
             }
+            TokenKind::LBracket => self.parse_array_literal(),
+            TokenKind::Lt => self.parse_type_tag(),
             other => Err(self.err(format!("unexpected token '{other}' in expression"))),
         }
+    }
+
+    /// Parses `[expr, expr, ..]`.
+    fn parse_array_literal(&mut self) -> PResult<Expr> {
+        self.expect(TokenKind::LBracket)?;
+        let mut items = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RBracket) {
+            items.push(self.parse_expr()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                items.push(self.parse_expr()?);
+            }
+        }
+        self.expect(TokenKind::RBracket)?;
+        Ok(Expr::Array(items))
+    }
+
+    /// Parses `<<Type>> expr`, the idiomatic Kittine type tag. `<<` and `>>`
+    /// are not fused tokens — they fall out naturally from two `Lt`s and the
+    /// existing `OpAssign` (`>>`) token, disambiguated purely by being read
+    /// from inside an expression instead of a `<{name}>` or JSX position.
+    fn parse_type_tag(&mut self) -> PResult<Expr> {
+        let start = self.peek().clone();
+        self.expect(TokenKind::Lt)?;
+        self.expect(TokenKind::Lt)?;
+        let ty = self.expect_ident()?;
+        if !matches!(ty.as_str(), "Num" | "Word" | "Flag") {
+            return Err(self.err(format!(
+                "unknown type tag '<<{ty}>>': expected one of Num, Word, Flag"
+            )));
+        }
+        self.expect(TokenKind::OpAssign)?;
+        let value = self.parse_unary()?;
+
+        let matches_ty = match (ty.as_str(), &value) {
+            ("Num", Expr::Number(_)) => true,
+            ("Word", Expr::Str(_)) => true,
+            ("Flag", Expr::Bool(_)) => true,
+            (_, Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_)) => false,
+            _ => true, // a variable read or computed expression — trust the annotation
+        };
+        if !matches_ty {
+            return Err(ParseError {
+                message: format!("type tag '<<{ty}>>' does not match the value that follows"),
+                line: start.line,
+                col: start.col,
+            });
+        }
+
+        Ok(Expr::Typed {
+            ty,
+            value: Box::new(value),
+        })
     }
 
     /// Parses `<{ident}>`, then optionally `>> expr` if present, producing

@@ -27,8 +27,11 @@ parent [`kittine`](..) project.
   | `if>` / `orif>` / `else>` | Control flow (`orif>` = "or if", i.e. `else if`) | `keyword.control.conditional` |
   | `<{name}> >> value` *inside* `if>`/`orif>` | Equality test, not assignment — same tokens, different scope by position | `keyword.control.conditional` |
   | `craft<...>` | Console logging | `keyword.other.craft` |
-  | `¨...¨` | Diaeresis-quoted strings (idiomatic Kittine form) | `string.quoted.kittine` |
-  | `"..."` | Standard double-quoted strings (mainly JSX text) | `string.quoted.double` |
+  | `'...'` / `"..."` | Fully interchangeable single- and double-quoted strings | `string.quoted.single` / `string.quoted.double` |
+  | `yes>` / `no>` | Boolean literals | `constant.language.boolean` |
+  | `[a, b, c]` | Array literal | `punctuation.definition.array` |
+  | `<<Num>>` / `<<Word>>` / `<<Flag>>` | Optional type tags, checked against literals at compile time | `storage.type.kittine` |
+  | `spin<{item}> in list }{ .. }{` | Loop over an array, fenced by `}{` | `keyword.control.loop` |
   | `return ( <jsx> )` | The embedded JSX-like view syntax that closes a component | `entity.name.tag`, `entity.other.attribute-name` |
   | `// comment` | Line comments (no block comment form exists) | `comment.line.double-slash` |
 
@@ -43,9 +46,9 @@ parent [`kittine`](..) project.
 - **Bracket matching and auto-closing** tuned to Kittine's custom
   delimiters, not just the generic ones:
   - `<{` ↔ `}>` (variable brackets)
-  - `¨` ↔ `¨` (diaeresis strings)
+  - `'` ↔ `'` (single-quoted strings)
   - `"` ↔ `"` (double-quoted strings)
-  - `(` ↔ `)` and `{` ↔ `}` (expressions, JSX, blocks)
+  - `(` ↔ `)`, `{` ↔ `}`, and `[` ↔ `]` (expressions, JSX, blocks, arrays)
 
 - **Indentation-aware editing** for `if>` / `orif>` / `else>` chains. Kittine
   blocks are column-delimited rather than brace-delimited (see the
@@ -123,9 +126,9 @@ This extension mirrors the compiler's current scope; it does not add
 features beyond what Kittine itself supports yet (see
 [Known limitations](../docs/LANGUAGE.md#known-limitations) in the language
 reference for the full list — no component props, no JSX component
-composition, no loops/lists, equality-only comparisons). There is also no
-language server: no diagnostics, no completions, no hover info, no
-go-to-definition — purely TextMate-grammar-based highlighting.
+composition, no list-rendering in views, equality-only comparisons). There
+is also no language server: no diagnostics, no completions, no hover info,
+no go-to-definition — purely TextMate-grammar-based highlighting.
 
 ## Rebuilding after changes
 

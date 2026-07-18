@@ -1,13 +1,18 @@
 func App() {
-    <{count}> >> 0
-    <{username}> >> ¨Admin¨
+    <{count}> >> <<Num>> 0
+    <{username}> >> 'Admin'
+    <{ready}> >> yes>
 
-    if><{username}> >> ¨Admin¨
-        craft<¨Welcome Admin¨>
-    orif><{username}> >> ¨User¨
-        craft<¨Welcome User¨>
+    if><{username}> >> 'Admin'
+        craft<'Welcome Admin'>
+    orif><{username}> >> "User"
+        craft<"Welcome User">
     else>
-        craft<¨no output¨>
+        craft<'no output'>
+
+    spin<{n}> in [1, 2, 3] }{
+        craft<n>
+    }{
 
     return (
         <div>

@@ -1,0 +1,8 @@
+target/
+node_modules/
+dist/
+pkg/
+*.vsix
+*.log
+.DS_Store
+vscode-kittine/

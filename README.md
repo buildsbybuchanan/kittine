@@ -38,15 +38,20 @@ This repository is a monorepo with four parts:
 
 ```kitty
 func Counter() {
-    <{count}> >> 0
-    <{username}> >> ¨Admin¨
+    <{count}> >> <<Num>> 0
+    <{username}> >> 'Admin'
+    <{ready}> >> yes>
 
-    if><{username}> >> ¨Admin¨
-        craft<¨Welcome Admin¨>
-    orif><{username}> >> ¨User¨
-        craft<¨Welcome User¨>
+    if><{username}> >> 'Admin'
+        craft<'Welcome Admin'>
+    orif><{username}> >> "User"
+        craft<"Welcome User">
     else>
-        craft<¨no output¨>
+        craft<'no output'>
+
+    spin<{n}> in [1, 2, 3] }{
+        craft<n>
+    }{
 
     return (
         <div>
@@ -61,10 +66,15 @@ func Counter() {
 
 - `<{name}> >> value` declares a signal the first time it's seen in a
   component, and mutates it (`set_name.update(..)`) every time after.
-- `¨...¨` is a string literal (matches the `"..."` used for JSX text).
+- `'...'` and `"..."` are fully interchangeable string literals.
+- `yes>` / `no>` are boolean literals; `[a, b, c]` is an array literal.
+- `<<Num>>` / `<<Word>>` / `<<Flag>>` are optional type tags, checked
+  against literal values at compile time and erased in the generated Rust.
 - `craft<expr>` logs via `leptos::logging::log!`.
 - `if>` / `orif>` / `else>` are indentation-delimited (no braces), and use
   `>>` as an equality test.
+- `spin<{item}> in list }{ .. }{` loops over an array, its body fenced by
+  `}{` — a closing brace immediately followed by an opening one.
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
 
@@ -160,6 +170,13 @@ Syntax highlighting and a dedicated file icon for `.kitty` files live in
 [`vscode-kittine/`](vscode-kittine). See
 [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) for install
 instructions (including how to hand a `.vsix` to a friend).
+
+## Community
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose language/compiler changes.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards.
+- [SECURITY.md](SECURITY.md) — reporting a vulnerability.
+- [CHANGELOG.md](CHANGELOG.md) — what changed and when.
 
 ## Author
 
