@@ -129,16 +129,21 @@ grouped by date until the first tagged release.
   have yet — discovered while actually trying to wire up a working
   example, not assumed; see
   [LANGUAGE.md § Known limitations](docs/LANGUAGE.md#known-limitations).
-- **A string literal passed to a same-file `purr`'s `<<Word>>` parameter
-  now renders as an owned `String`.** `greet('World')`, where `greet` is
-  defined as `purr greet(<<Word>> name) <<Word>> { .. }` in the same
-  file, now lowers to `greet("World".to_string())` instead of
-  `greet("World")` — the compiler already knows `greet`'s parameter
-  types from its own definition, so it can render the argument correctly
-  without guessing. A call through an `import`, or to a function Kittine
-  has no signature for, is unaffected (still renders the literal bare) —
-  real cross-file type information isn't available yet; see
-  [LANGUAGE.md § Known limitations](docs/LANGUAGE.md#known-limitations).
+- **A string literal passed to a `<<Word>>`-typed `purr` parameter now
+  renders as an owned `String`, whether the callee is same-file or
+  reached through the whole `import` graph.** `greet('World')`, where
+  `greet` is `purr greet(<<Word>> name) <<Word>> { .. }`, now lowers to
+  `greet("World".to_string())` instead of `greet("World")` — landed in
+  two steps: first for same-file calls (the compiler already knows the
+  callee's signature from its own definition), then extended across
+  `import`s by having `kittine-compiler build` collect every reachable
+  file's `purr` signatures in a first lex+parse-only pass, before
+  generating any single file's code (every file is parsed twice across a
+  full build — cheap next to what `cargo`/`wasm-bindgen` cost
+  downstream). Only a call to a function Kittine has no signature for at
+  all (a real Rust/Leptos function, or a typo) still renders the literal
+  bare. `example-app`'s `Home.kitty` now imports `greet` from a new
+  `Greetings.kitty` to demonstrate exactly this.
 - **Incremental builds for the import graph**: `kittine-compiler build`
   still recompiles every reachable `.kitty` file on every invocation (it
   has to, to know if anything changed), but now only actually *rewrites*
