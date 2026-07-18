@@ -4,6 +4,7 @@
 use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::*;
+use leptos_router::hooks::*;
 
 #[path = "./Home.rs"]
 mod __kittine_mod_home;
@@ -11,6 +12,9 @@ use __kittine_mod_home::{Home};
 #[path = "./About.rs"]
 mod __kittine_mod_about;
 use __kittine_mod_about::{About};
+#[path = "./User.rs"]
+mod __kittine_mod_user;
+use __kittine_mod_user::{User};
 #[path = "./NotFound.rs"]
 mod __kittine_mod_notfound;
 use __kittine_mod_notfound::{NotFound};
@@ -26,11 +30,15 @@ pub fn App() -> impl IntoView {
                 <A href="/about".to_string()>
                     "About"
                 </A>
+                <A href="/user/42".to_string()>
+                    "User 42"
+                </A>
             </nav>
             <main>
                 <Routes fallback=NotFound>
                     <Route path=StaticSegment("") view=Home/>
                     <Route path=StaticSegment("about") view=About/>
+                    <Route path=(StaticSegment("user"), ParamSegment("id")) view=User/>
                 </Routes>
             </main>
         </Router>

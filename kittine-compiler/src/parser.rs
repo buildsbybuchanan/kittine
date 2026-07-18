@@ -654,7 +654,59 @@ impl Parser {
                 right: Box::new(inner),
             });
         }
-        self.parse_primary()
+        self.parse_postfix()
+    }
+
+    /// A primary, followed by zero or more `.method(arg, ..)` suffixes —
+    /// for calling real Rust/Leptos APIs Kittine has no dedicated syntax
+    /// for (e.g. `use_params_map().get().get("id").unwrap_or_default()`).
+    /// Kittine doesn't track receiver types, so any method name parses;
+    /// Rust's own type checker is the source of truth on whether the call
+    /// is valid.
+    fn parse_postfix(&mut self) -> PResult<Expr> {
+        let mut expr = self.parse_primary()?;
+        loop {
+            if matches!(self.peek().kind, TokenKind::Dot) {
+                self.advance();
+                let method = self.expect_ident()?;
+                let args = self.parse_paren_arg_list()?;
+                expr = Expr::MethodCall {
+                    receiver: Box::new(expr),
+                    method,
+                    args,
+                };
+            } else if matches!(self.peek().kind, TokenKind::LParen) {
+                // Calling the *result* of `expr` (not a bare named
+                // function — that's already handled inside `parse_primary`
+                // when it's an `Ident` immediately followed by `(`). This
+                // is what lets `use_navigate()('/', ..)` — calling the
+                // closure `use_navigate()` returns — parse at all.
+                let args = self.parse_paren_arg_list()?;
+                expr = Expr::CallResult {
+                    callee: Box::new(expr),
+                    args,
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    /// Parses `(arg, arg, ..)` — shared by [`Parser::parse_postfix`]'s two
+    /// call-shaped suffixes.
+    fn parse_paren_arg_list(&mut self) -> PResult<Vec<Expr>> {
+        self.expect(TokenKind::LParen)?;
+        let mut args = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RParen) {
+            args.push(self.parse_expr()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                args.push(self.parse_expr()?);
+            }
+        }
+        self.expect(TokenKind::RParen)?;
+        Ok(args)
     }
 
     fn parse_primary(&mut self) -> PResult<Expr> {
@@ -682,9 +734,26 @@ impl Parser {
             }
             TokenKind::LParen => {
                 self.advance();
-                let inner = self.parse_expr()?;
-                self.expect(TokenKind::RParen)?;
-                Ok(inner)
+                let first = self.parse_expr()?;
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    // A comma makes this a tuple literal, not just a
+                    // parenthesized (grouping) expression — needed to
+                    // combine leptos_router path segments into one route:
+                    // `(StaticSegment('user'), ParamSegment('id'))`.
+                    let mut items = vec![first];
+                    while matches!(self.peek().kind, TokenKind::Comma) {
+                        self.advance();
+                        if matches!(self.peek().kind, TokenKind::RParen) {
+                            break; // tolerate a trailing comma
+                        }
+                        items.push(self.parse_expr()?);
+                    }
+                    self.expect(TokenKind::RParen)?;
+                    Ok(Expr::Tuple(items))
+                } else {
+                    self.expect(TokenKind::RParen)?;
+                    Ok(first)
+                }
             }
             TokenKind::LBracket => self.parse_array_literal(),
             TokenKind::Lt => self.parse_type_tag(),
@@ -935,7 +1004,7 @@ fn array_elements_match(array_ty: &str, items: &[Expr]) -> bool {
             ("Num", Expr::Number(_))
                 | ("Word", Expr::Str(_))
                 | ("Flag", Expr::Bool(_))
-                | (_, Expr::Ident(_) | Expr::VarRead(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::InlineAssign { .. } | Expr::Typed { .. })
+                | (_, Expr::Ident(_) | Expr::VarRead(_) | Expr::Call { .. } | Expr::MethodCall { .. } | Expr::CallResult { .. } | Expr::Tuple(_) | Expr::Binary { .. } | Expr::InlineAssign { .. } | Expr::Typed { .. })
         )
     })
 }

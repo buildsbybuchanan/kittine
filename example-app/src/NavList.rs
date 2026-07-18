@@ -4,6 +4,7 @@
 use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::*;
+use leptos_router::hooks::*;
 
 #[component]
 pub fn NavList(items: Vec<String>) -> impl IntoView {

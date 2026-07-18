@@ -26,7 +26,10 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
   arrays (including array-typed props/returns — `<<Num[]>>`/`<<Word[]>>`/
   `<<Flag[]>>`), booleans, type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`),
-  logical `&&`/`||` combining comparisons into one condition.
+  logical `&&`/`||` combining comparisons into one condition, method
+  calls (`receiver.method(arg, ..)`, chains work), calling the result of
+  an expression (`callee(arg, ..)` where `callee` isn't a bare name),
+  tuple literals (`(expr, expr, ..)`).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
   `private func`/`purr` opts an item out of being importable, enforced by
@@ -41,11 +44,18 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   { .. { children() } .. }`) renders whatever JSX a caller nests inside
   `<Card>...</Card>` — no `children=` attribute needed, Leptos's `view!`
   macro wires it through automatically.
-- **Routing**: `leptos_router` is in scope in every generated file;
+- **Routing**: `leptos_router` is in scope in every generated file
+  (including `leptos_router::hooks`, added this round);
   `Router`/`Routes`/`Route`/`A` compose exactly like any other component,
   with no dedicated Kittine syntax at all (see
-  [LANGUAGE.md § Routing](LANGUAGE.md#routing)). CSR-only — no SSR/SSG
-  integration yet.
+  [LANGUAGE.md § Routing](LANGUAGE.md#routing)). Dynamic route segments
+  work end-to-end — a tuple path (`(StaticSegment('user'),
+  ParamSegment('id'))`) plus a method-call chain
+  (`use_params_map().get().get('id')`) to read the value back — verified
+  in `example-app`'s real `/user/:id` page with Playwright against a
+  running dev server. Programmatic navigation (`use_navigate()`) is a
+  known, documented gap (needs a path-qualified expression Kittine
+  doesn't have yet). CSR-only — no SSR/SSG integration yet.
 - **Codegen targets real Leptos 0.7 CSR** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -68,9 +78,7 @@ with a 404 fallback — all work and are verified end-to-end. What's still
 missing specifically for "website" (as opposed to "app"): SSR/SSG (first
 paint is currently blank until WASM loads, and there's nothing for a
 crawler without executing JS — fine for an internal tool, not ideal for a
-public marketing/business site that cares about SEO), and array-typed
-props/returns (so nav menus and card grids can be driven by real data
-instead of hardcoded literals). See [Production readiness](#production-readiness)
+public marketing/business site that cares about SEO). See [Production readiness](#production-readiness)
 for the broader "is this ready to build real things on" answer, and the
 top of [Next up](#next-up) for what's next specifically toward "website."
 
@@ -134,10 +142,13 @@ website (in Kittine) need next":
 3. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
-4. **Dynamic-segment routes and programmatic navigation, demonstrated.**
-   `ParamSegment`/`use_navigate` already work (they're just more
-   `leptos_router` items in scope), but nothing in `example-app` or the
-   docs shows them yet — worth a real example once a page needs one.
+4. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
+   Discovered while wiring up the dynamic-route demo below: Kittine's
+   grammar has no `::`, which blocks constructing
+   `NavigateOptions::default()` — the one piece standing between
+   `use_navigate()` and a real programmatic-navigation demo. Everything
+   else needed to call it (calling the result of an expression,
+   `use_navigate()('/home')`) already works.
 5. **Re-exports.** `private` controls whether an item is importable at
    all, but there's no way to import something into a file and then
    re-expose it under that file's own name for a third file to import.
@@ -157,7 +168,11 @@ import graph~~ (`.rs` files are only rewritten when their content
 actually changed) — landed 2026-07-18. ~~Same-file string-literal ->
 `Word` `purr` parameter~~ (the compiler now knows a same-file callee's
 signature; cross-file calls remain open, see item 2 above) — landed
-2026-07-18.
+2026-07-18. ~~Dynamic-segment routes, demonstrated~~ (method calls, a
+tuple path, and `leptos_router::hooks` in scope, verified end-to-end
+with Playwright; programmatic navigation stayed open as item 4 above,
+once `NavigateOptions::default()` turned out to need path-qualified
+expressions) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 

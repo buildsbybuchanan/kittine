@@ -1,0 +1,9 @@
+func User() {
+    return (
+        <div>
+            <h1>"User"</h1>
+            <p>"This page's route ('/user/:id') is a dynamic segment — reached via a tuple path {(StaticSegment('user'), ParamSegment('id'))}, with the id read back out via use_params_map(), a plain leptos_router hook call."</p>
+            <p>"User id: "{ use_params_map().get().get('id').unwrap_or_default() }</p>
+        </div>
+    )
+}

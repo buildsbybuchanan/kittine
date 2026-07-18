@@ -80,6 +80,39 @@ grouped by date until the first tagged release.
   `func NavList(<<Word[]>> items) { .. }` lowers to `items: Vec<String>`,
   a `purr` can return an array type the same way. Array type tags also
   check literal elements against the declared element type at parse time.
+- **Method calls (`receiver.method(arg, ..)`)**: calls a method on the
+  result of any expression, for interop with real Rust/Leptos APIs that
+  aren't a Kittine `purr` — chains work (`a.b().c(1).d()`), since the
+  receiver of a method call is itself an arbitrary expression. Kittine
+  tracks no receiver/argument types here, so arguments render plain (no
+  forced `f64` the way a same-file `purr` call gets), and Rust's own type
+  checker validates the call.
+- **Calling the result of an expression (`callee(arg, ..)` where `callee`
+  isn't a bare name)**: most useful right after a call that returns a
+  closure — `use_navigate()('/home')` calls the closure `use_navigate()`
+  itself returns.
+- **Tuple literals (`(expr, expr, ..)`)**: needed to combine multiple
+  `leptos_router` path segments into one dynamic route. A single
+  parenthesized expression with no comma is still just grouping, not a
+  1-tuple.
+- **Dynamic route segments, demonstrated end-to-end**: `example-app` now
+  has a real `/user/:id` route (`User.kitty`), reached via a tuple path
+  (`(StaticSegment('user'), ParamSegment('id'))`) and reading the segment
+  back out via a method-call chain
+  (`use_params_map().get().get('id').unwrap_or_default()`) — no dedicated
+  Kittine syntax needed for either half, once method calls and tuples
+  existed. Verified against real Leptos 0.7 and with Playwright driving
+  the actual dev server (clicking the nav link, and navigating directly
+  to `/user/999`, both showed the correct id). `leptos_router::hooks`
+  (`use_params_map`, `use_navigate`, ..) is now in every generated file's
+  fixed preamble alongside `leptos_router::components`/`leptos_router`
+  itself — it wasn't re-exported at the crate root the way those are.
+  Programmatic navigation (`use_navigate()`) remains a documented gap:
+  its second argument needs `NavigateOptions::default()`, which needs a
+  path-qualified expression (`Type::method()`) Kittine's grammar doesn't
+  have yet — discovered while actually trying to wire up a working
+  example, not assumed; see
+  [LANGUAGE.md § Known limitations](docs/LANGUAGE.md#known-limitations).
 - **A string literal passed to a same-file `purr`'s `<<Word>>` parameter
   now renders as an owned `String`.** `greet('World')`, where `greet` is
   defined as `purr greet(<<Word>> name) <<Word>> { .. }` in the same
