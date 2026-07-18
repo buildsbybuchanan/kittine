@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install",
+  "buildCommand": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path && . \"$HOME/.cargo/env\" && rustup target add wasm32-unknown-unknown && WASM_BINDGEN_VERSION=$(grep -A1 'name = \"wasm-bindgen\"' example-app/Cargo.lock | grep version | head -1 | sed -E 's/.*\"([^\"]+)\".*/\\1/') && cargo install wasm-bindgen-cli --version \"$WASM_BINDGEN_VERSION\" --locked && npm run build:plugin && npm run build",
+  "outputDirectory": "example-app/dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*).wasm",
+      "headers": [
+        { "key": "Content-Type", "value": "application/wasm" }
+      ]
+    }
+  ]
+}

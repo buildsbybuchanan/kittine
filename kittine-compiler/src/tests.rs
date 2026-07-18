@@ -11,6 +11,15 @@ fn compile(src: &str) -> String {
     codegen::generate(&program)
 }
 
+/// Returns the parser error message for source that should fail to parse.
+fn compile_err(src: &str) -> String {
+    let tokens = lexer::tokenize(src).expect("lex should succeed");
+    match parser::parse(tokens) {
+        Ok(_) => panic!("expected a parse error, but parsing succeeded"),
+        Err(e) => e.message,
+    }
+}
+
 #[test]
 fn var_init_lowers_to_signal() {
     let out = compile(
@@ -26,16 +35,26 @@ func App() {
 }
 
 #[test]
-fn string_literal_uses_diaeresis_quotes() {
+fn string_literal_uses_single_or_double_quotes() {
     let out = compile(
         r#"
 func App() {
-    <{username}> >> ¨Admin¨
+    <{username}> >> 'Admin'
     return ( <div></div> )
 }
 "#,
     );
     assert!(out.contains(r#"let (username, set_username) = signal("Admin");"#));
+
+    let out2 = compile(
+        r#"
+func App() {
+    <{username}> >> "Admin"
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out2.contains(r#"let (username, set_username) = signal("Admin");"#));
 }
 
 #[test]
@@ -43,7 +62,7 @@ fn craft_lowers_to_leptos_log() {
     let out = compile(
         r#"
 func App() {
-    craft<¨hello world¨>
+    craft<'hello world'>
     return ( <div></div> )
 }
 "#,
@@ -71,14 +90,14 @@ fn if_orif_else_chain() {
     let out = compile(
         r#"
 func App() {
-    <{username}> >> ¨Admin¨
+    <{username}> >> 'Admin'
 
-    if><{username}> >> ¨Admin¨
-        craft<¨Welcome Admin¨>
-    orif><{username}> >> ¨User¨
-        craft<¨Welcome User¨>
+    if><{username}> >> 'Admin'
+        craft<'Welcome Admin'>
+    orif><{username}> >> 'User'
+        craft<'Welcome User'>
     else>
-        craft<¨no output¨>
+        craft<'no output'>
 
     return ( <div></div> )
 }
@@ -134,7 +153,7 @@ fn string_literal_plus_lowers_to_format() {
         r#"
 func App() {
     <{count}> >> 0
-    craft<¨Taps: ¨ + <{count}> >
+    craft<'Taps: ' + <{count}> >
     return ( <div></div> )
 }
 "#,
@@ -162,10 +181,10 @@ fn string_concat_in_jsx_expr_interpolation() {
     let out = compile(
         r#"
 func App() {
-    <{mood}> >> ¨Curious¨
+    <{mood}> >> 'Curious'
     return (
         <div>
-            <p>{ ¨Mood: ¨ + <{mood}> }</p>
+            <p>{ 'Mood: ' + <{mood}> }</p>
         </div>
     )
 }
@@ -179,8 +198,8 @@ fn string_concat_in_mutation() {
     let out = compile(
         r#"
 func App() {
-    <{label}> >> ¨Taps: 0¨
-    <{label}> >> ¨Taps: ¨ + <{label}>
+    <{label}> >> 'Taps: 0'
+    <{label}> >> 'Taps: ' + <{label}>
     return ( <div></div> )
 }
 "#,
@@ -198,11 +217,11 @@ func App() {
 
     if><{a}> >> 0
         if><{b}> >> 0
-            craft<¨both zero¨>
+            craft<'both zero'>
         else>
-            craft<¨only a¨>
+            craft<'only a'>
     else>
-        craft<¨not a¨>
+        craft<'not a'>
 
     return ( <div></div> )
 }
@@ -211,4 +230,134 @@ func App() {
     assert!(out.contains(r#"leptos::logging::log!("both zero");"#));
     assert!(out.contains(r#"leptos::logging::log!("only a");"#));
     assert!(out.contains(r#"leptos::logging::log!("not a");"#));
+}
+
+#[test]
+fn bool_literal_lowers_to_rust_bool() {
+    let out = compile(
+        r#"
+func App() {
+    <{ready}> >> yes>
+    <{done}> >> no>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("let (ready, set_ready) = signal(true);"));
+    assert!(out.contains("let (done, set_done) = signal(false);"));
+}
+
+#[test]
+fn array_literal_lowers_to_vec_macro() {
+    let out = compile(
+        r#"
+func App() {
+    <{scores}> >> [1, 2, 3]
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("let (scores, set_scores) = signal(vec![1, 2, 3]);"));
+}
+
+#[test]
+fn craft_array_uses_debug_format() {
+    let out = compile(
+        r#"
+func App() {
+    craft<[1, 2, 3]>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"leptos::logging::log!("{:?}", vec![1, 2, 3]);"#));
+}
+
+#[test]
+fn type_tag_erases_to_bare_value() {
+    let out = compile(
+        r#"
+func App() {
+    <{count}> >> <<Num>> 0
+    <{label}> >> <<Word>> 'hi'
+    <{ready}> >> <<Flag>> yes>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("let (count, set_count) = signal(0);"));
+    assert!(out.contains(r#"let (label, set_label) = signal("hi");"#));
+    assert!(out.contains("let (ready, set_ready) = signal(true);"));
+}
+
+#[test]
+fn type_tag_accepts_a_dynamic_value() {
+    let out = compile(
+        r#"
+func App() {
+    <{count}> >> 0
+    <{doubled}> >> <<Num>> count
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("let (doubled, set_doubled) = signal(count.get());"));
+}
+
+#[test]
+fn mismatched_type_tag_is_a_parse_error() {
+    let message = compile_err(
+        r#"
+func App() {
+    <{count}> >> <<Num>> 'oops'
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(message.contains("does not match"));
+}
+
+#[test]
+fn unknown_type_tag_is_a_parse_error() {
+    let message = compile_err(
+        r#"
+func App() {
+    <{count}> >> <<Nope>> 0
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(message.contains("unknown type tag"));
+}
+
+#[test]
+fn spin_loop_lowers_to_for_loop() {
+    let out = compile(
+        r#"
+func App() {
+    spin<{score}> in [1, 2, 3] }{
+        craft<score>
+    }{
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("for score in (vec![1, 2, 3]).into_iter() {"));
+    assert!(out.contains(r#"leptos::logging::log!("{}", score);"#));
+}
+
+#[test]
+fn spin_loop_over_declared_variable() {
+    let out = compile(
+        r#"
+func App() {
+    <{scores}> >> [1, 2, 3]
+    spin<{score}> in <{scores}> }{
+        craft<score>
+    }{
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("for score in (scores.get()).into_iter() {"));
 }

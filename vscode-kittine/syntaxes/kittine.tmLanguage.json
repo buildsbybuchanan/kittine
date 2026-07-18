@@ -6,11 +6,15 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#craft" },
+    { "include": "#type-tags" },
+    { "include": "#booleans" },
     { "include": "#control-keywords" },
+    { "include": "#loop-keywords" },
     { "include": "#declaration-keywords" },
     { "include": "#var-bracket" },
     { "include": "#strings" },
     { "include": "#jsx" },
+    { "include": "#arrays" },
     { "include": "#operators" },
     { "include": "#numbers" },
     { "include": "#function-call" },
@@ -28,9 +32,9 @@
     "strings": {
       "patterns": [
         {
-          "name": "string.quoted.other.kitty",
-          "begin": "¨",
-          "end": "¨",
+          "name": "string.quoted.single.kitty",
+          "begin": "'",
+          "end": "'",
           "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.kitty" } },
           "endCaptures": { "0": { "name": "punctuation.definition.string.end.kitty" } },
           "patterns": [{ "include": "#string-escapes" }]
@@ -49,7 +53,52 @@
       "patterns": [
         {
           "name": "constant.character.escape.kitty",
-          "match": "\\\\(n|t|\\\\|¨|\")"
+          "match": "\\\\(n|t|\\\\|'|\")"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.kitty",
+          "match": "\\b(yes|no)(>)"
+        }
+      ]
+    },
+    "type-tags": {
+      "patterns": [
+        {
+          "name": "meta.type-tag.kitty",
+          "match": "(<<)(Num|Word|Flag)(>>)",
+          "captures": {
+            "1": { "name": "punctuation.definition.type-tag.begin.kitty" },
+            "2": { "name": "storage.type.kitty" },
+            "3": { "name": "punctuation.definition.type-tag.end.kitty" }
+          }
+        }
+      ]
+    },
+    "loop-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.loop.kitty",
+          "match": "\\bspin\\b"
+        },
+        {
+          "name": "keyword.control.loop.kitty",
+          "match": "\\bin\\b"
+        },
+        {
+          "name": "punctuation.definition.loop-fence.kitty",
+          "match": "\\}\\{"
+        }
+      ]
+    },
+    "arrays": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.array.kitty",
+          "match": "[\\[\\]]"
         }
       ]
     },
@@ -188,8 +237,11 @@
               "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.kitty" } },
               "endCaptures": { "0": { "name": "punctuation.section.embedded.end.kitty" } },
               "patterns": [
+                { "include": "#type-tags" },
+                { "include": "#booleans" },
                 { "include": "#var-bracket" },
                 { "include": "#strings" },
+                { "include": "#arrays" },
                 { "include": "#operators" },
                 { "include": "#numbers" },
                 { "include": "#identifiers" }

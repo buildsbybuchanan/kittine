@@ -89,6 +89,42 @@ above it somewhere (the Vite plugin walks up from the file to find the
 crate root) — `example-app/` follows this by putting `App.kitty` next to
 `main.rs` inside the crate.
 
+## Deploying to Vercel
+
+`example-app` is a static Vite build once compiled, so it hosts on any
+static host — but the build step itself needs Rust, which Vercel's default
+build image doesn't have. [`vercel.json`](../vercel.json) at the repo root
+handles this already:
+
+- `buildCommand` installs a minimal Rust toolchain via `rustup`, adds the
+  `wasm32-unknown-unknown` target, installs `wasm-bindgen-cli` pinned to
+  whatever version `example-app/Cargo.lock` currently pins (read
+  dynamically, so it never drifts out of sync — see [Matching
+  `wasm-bindgen-cli` to your lockfile](#matching-wasm-bindgen-cli-to-your-lockfile)
+  above), then runs `npm run build:plugin && npm run build`.
+- `outputDirectory` points at `example-app/dist`, Vite's default build
+  output.
+- `headers` sets long-lived immutable caching on `/assets/*` (Vite
+  content-hashes every filename there, so this is always safe) and an
+  explicit `application/wasm` content type on `.wasm` files.
+
+Nothing else to configure — connect the repo on [vercel.com](https://vercel.com)
+and deploy. To size-check a build locally first:
+
+```sh
+npm run build:plugin && npm run build
+du -sh example-app/dist
+```
+
+The `[profile.release]` section of `example-app/Cargo.toml` (`opt-level =
+"s"`, `lto = true`, `codegen-units = 1`, `strip = true`, `panic = "abort"`)
+is what keeps the shipped `.wasm` small; the same settings apply on Vercel
+since the build always runs in release mode for `vite build`.
+
+`.vercelignore` at the repo root excludes `target/`, `node_modules/`,
+`dist/`, and `pkg/` from the upload for platforms or workflows that don't
+already respect `.gitignore`.
+
 ## Troubleshooting
 
 - **`error: linker 'link.exe' not found`** — the MSVC Build Tools aren't

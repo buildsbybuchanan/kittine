@@ -13,8 +13,12 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Components](#components)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
 - [Strings](#strings)
+- [Booleans (`yes>` / `no>`)](#booleans)
+- [Arrays (`[ ]`)](#arrays)
+- [Type tags (`<<Type>>`)](#type-tags)
 - [Printing (`craft<...>`)](#printing-craft)
 - [Control flow (`if>` / `orif>` / `else>`)](#control-flow)
+- [Loops (`spin` / `}{`)](#loops)
 - [Expressions and operators](#expressions-and-operators)
 - [Comments](#comments)
 - [The view syntax (`return ( ... )`)](#the-view-syntax)
@@ -82,48 +86,106 @@ expression lowers to the general `*n = <expr>;` form.
 
 ## Strings
 
-Kittine has **two** interchangeable string forms:
+Kittine has **two** fully interchangeable string forms:
 
-- **`¨...¨`** — diaeresis-quoted strings, the idiomatic Kittine form, usable
-  anywhere a string literal is valid (variable values, `craft<...>`
-  arguments, conditions).
-- **`"..."`** — standard double-quoted strings, primarily used for JSX text
-  content (`"Clicks: "` in the examples), but accepted anywhere `¨...¨` is.
+- **`'...'`** — single-quoted strings.
+- **`"..."`** — double-quoted strings, commonly used for JSX text content
+  (`"Clicks: "` in the examples).
 
-Both forms support the escapes `\n`, `\t`, `\\`, and an escaped version of
-their own quote character (`\¨` inside `¨...¨`, `\"` inside `"..."`). Both
-lower to a standard Rust `"..."` string literal in the generated code.
+Pick whichever quote character lets you avoid escaping the string's own
+contents — both compile to exactly the same thing and can be used anywhere
+a string literal is valid (variable values, `craft<...>` arguments,
+conditions, array elements). Both forms support the escapes `\n`, `\t`,
+`\\`, and an escaped version of their own quote character (`\'` inside
+`'...'`, `\"` inside `"..."`). Both lower to a standard Rust `"..."` string
+literal in the generated code.
+
+## Booleans
+
+```kitty
+<{ready}> >> yes>
+<{done}> >> no>
+```
+
+`yes>` and `no>` are Kittine's boolean literals — the `>` suffix matches the
+same "keyword fused with punctuation" style as `if>` / `orif>` / `else>` /
+`craft<`. They lower to Rust's `true` / `false`.
+
+## Arrays
+
+```kitty
+<{scores}> >> [10, 20, 30]
+craft<[1, 2, 3]>
+```
+
+`[expr, expr, ..]` is an array literal — a comma-separated list of
+expressions inside square brackets. It lowers to Rust's `vec![..]`. Arrays
+can hold any expression, including strings, booleans, and other arrays, and
+can be declared as signal state exactly like any other value.
+
+Because a `Vec` has no `Display` implementation, `craft<[..]>` formats
+arrays with Rust's `{:?}` (`Debug`) formatter instead of `{}`.
+
+## Type tags
+
+```kitty
+<{count}> >> <<Num>> 0
+<{label}> >> <<Word>> 'hi'
+<{ready}> >> <<Flag>> yes>
+```
+
+`<<Type>> value` is an explicit type tag — the idiomatic Kittine way to
+annotate a value's type. There are three type names:
+
+| Tag | Matches |
+|---|---|
+| `<<Num>>` | number literals |
+| `<<Word>>` | string literals |
+| `<<Flag>>` | boolean literals |
+
+When the tagged value is a literal, the compiler checks it against the tag
+at compile time and rejects a mismatch (`<<Num>> 'oops'` is a parse error).
+When the tagged value is a variable read or a computed expression (its
+static type isn't known at parse time), the annotation is trusted rather
+than checked. Either way, the tag itself is erased during code generation —
+Rust's own type inference already gives the underlying value the right
+type, so `<<Num>> 0` and a bare `0` generate identical Rust.
+
+Type tags are optional. They exist for readability and for catching literal
+type mistakes early, not because Kittine has (or needs) a full static type
+system.
 
 ## Printing (`craft<...>`)
 
 ```kitty
-craft<¨hello world¨>
+craft<'hello world'>
 ```
 
 `craft<expr>` logs `expr` to the browser console. String literals are
-inlined directly; any other expression is formatted with Rust's `{}`
-formatter:
+inlined directly; arrays are formatted with `{:?}`; everything else is
+formatted with Rust's `{}` formatter:
 
 | Kittine | Generated Rust |
 |---|---|
-| `craft<¨hello¨>` | `leptos::logging::log!("hello");` |
+| `craft<'hello'>` | `leptos::logging::log!("hello");` |
 | `craft<<{count}>>` | `leptos::logging::log!("{}", count.get());` |
+| `craft<[1, 2, 3]>` | `leptos::logging::log!("{:?}", vec![1, 2, 3]);` |
 
 ## Control flow
 
 ```kitty
-if><{username}> >> ¨Admin¨
-    craft<¨Welcome Admin¨>
-orif><{username}> >> ¨User¨
-    craft<¨Welcome User¨>
+if><{username}> >> 'Admin'
+    craft<'Welcome Admin'>
+orif><{username}> >> 'User'
+    craft<'Welcome User'>
 else>
-    craft<¨no output¨>
+    craft<'no output'>
 ```
 
 - `if>`, `orif>` ("or if", Kittine's `else if`), and `else>` form a single
   chain, exactly like `if` / `else if` / `else` in Rust.
 - **Conditions reuse the `<{name}> >> value` syntax as an equality test**:
-  `if><{username}> >> ¨Admin¨` means "if `username` equals `"Admin"`", not
+  `if><{username}> >> 'Admin'` means "if `username` equals `"Admin"`", not
   "assign". The parser distinguishes this from a variable
   declaration/mutation purely by *position* — inside an `if>` / `orif>`
   condition, `>>` is always `==`.
@@ -152,6 +214,39 @@ if username.get() == "Admin" {
 }
 ```
 
+## Loops
+
+```kitty
+spin<{item}> in [1, 2, 3] }{
+    craft<item>
+}{
+```
+
+`spin<{item}> in <list> }{ .. }{` iterates `list`, binding each element to
+`item` for the body. `list` can be an array literal or a `<{name}>` read of
+a previously declared signal holding an array.
+
+The `}{` fence — a closing brace immediately followed by an opening one — is
+Kittine's loop-body delimiter. It's deliberately the mirror image of `{ }`:
+a loop is a block that folds back on itself. The same two characters open
+and close the body; the parser tracks which is which by position, not by a
+different symbol.
+
+### Compilation
+
+`spin` becomes a plain Rust `for` loop; the loop variable is a bare local
+(not a reactive signal), so reads of it inside the body are unwrapped, not
+`.get()`-ed:
+
+```rust
+for item in (vec![1, 2, 3]).into_iter() {
+    leptos::logging::log!("{}", item);
+}
+```
+
+See [Known limitations](#known-limitations) for what `spin` does not (yet)
+do — namely, render its items into the view.
+
 ## Expressions and operators
 
 Precedence, lowest to highest:
@@ -172,7 +267,7 @@ rendered back as bare Rust integer literals (`0`, `1`, `42`) rather than
 
 Kittine has no type system, so `+` can't be checked ahead of time as "numeric"
 or "string." Instead, the compiler looks at whether either side of a `+` is
-literally a string (`¨...¨` or `"..."`):
+literally a string (`'...'` or `"..."`):
 
 - If **neither** side is a string literal, `+` lowers to Rust's numeric `+`,
   exactly as before (`<{count}> >> count + 1` → `*n += 1`).
@@ -183,12 +278,12 @@ literally a string (`¨...¨` or `"..."`):
 
   | Kittine | Generated Rust | Result (given `count` is `5`) |
   |---|---|---|
-  | `¨Taps: ¨ + <{count}>` | `format!("{}{}", "Taps: ", count.get())` | `"Taps: 5"` |
-  | `<{mood}> + ¨!¨` | `format!("{}{}", mood.get(), "!")` | e.g. `"Curious!"` |
+  | `'Taps: ' + <{count}>` | `format!("{}{}", "Taps: ", count.get())` | `"Taps: 5"` |
+  | `<{mood}> + '!'` | `format!("{}{}", mood.get(), "!")` | e.g. `"Curious!"` |
 
-  Chains resolve left-associatively as usual, so `¨a¨ + x + ¨b¨` parses as
-  `(¨a¨ + x) + ¨b¨` — the inner `+` already sees a string literal and
-  becomes a `format!`, and the outer `+` sees `¨b¨` as a literal and does
+  Chains resolve left-associatively as usual, so `'a' + x + 'b'` parses as
+  `('a' + x) + 'b'` — the inner `+` already sees a string literal and
+  becomes a `format!`, and the outer `+` sees `'b'` as a literal and does
   the same, so the whole chain concatenates as expected regardless of what
   `x` is.
 
@@ -199,9 +294,9 @@ literally a string (`¨...¨` or `"..."`):
 > **Watch out:** because `>` and `>>` are lexed greedily, a `+`-expression
 > ending in a variable read right before a closing `>` can accidentally
 > merge two adjacent `>` characters into a single `>>` token, e.g.
-> `craft<¨Taps: ¨ + <{count}>>` — the `}>` closing the variable read and the
+> `craft<'Taps: ' + <{count}>>` — the `}>` closing the variable read and the
 > `>` closing `craft<...>` collide. Add a space before the final bracket
-> (`craft<¨Taps: ¨ + <{count}> >`) to keep them separate tokens.
+> (`craft<'Taps: ' + <{count}> >`) to keep them separate tokens.
 
 ## Comments
 
@@ -254,27 +349,33 @@ program      := component*
 component    := "func" IDENT "(" ")" "{" stmt* return_stmt? "}"
 return_stmt  := "return" "(" jsx_node ")"
 
-stmt         := var_stmt | craft_stmt | if_stmt | expr_stmt
+stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
 var_stmt     := "<{" IDENT "}>" ">>" expr
 craft_stmt   := "craft<" expr ">"
 if_stmt      := "if>" condition INDENT_BLOCK
                 ("orif>" condition INDENT_BLOCK)*
                 ("else>" INDENT_BLOCK)?
 condition    := "<{" IDENT "}>" ">>" expr
+spin_stmt    := "spin" "<{" IDENT "}>" "in" expr "}{" stmt* "}{"
 expr_stmt    := expr
 
 expr         := additive (">>" additive)?
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
 unary        := "-" unary | primary
-primary      := NUMBER | STRING | IDENT | "<{" IDENT "}>" (">>" expr)?
+primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | IDENT
+              | "<{" IDENT "}>" (">>" expr)?
               | "(" expr ")"
+
+array        := "[" (expr ("," expr)*)? "]"
+type_tag     := "<<" ("Num" | "Word" | "Flag") ">>" unary
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
 jsx_element  := "<" IDENT jsx_attr* ("/>" | ">" jsx_node* "</" IDENT ">")
 jsx_attr     := IDENT "=" (STRING | "{" expr "}")
 
-STRING       := "¨" char* "¨" | '"' char* '"'
+STRING       := "'" char* "'" | '"' char* '"'
+BOOL         := "yes>" | "no>"
 ```
 
 ## Compilation model
@@ -299,9 +400,12 @@ These are intentional scope boundaries of the current prototype, not bugs:
   no syntax yet for passing data into a child component.
 - **No component composition in JSX.** JSX tags are always treated as HTML
   elements, not references to other Kittine components.
-- **No loops or lists.** There is no `for`/`each`-style construct and no
-  list-rendering (`<For>`) support.
-- **`craft<...>` inside `if>`/`orif>`/`else>` runs once, at component setup,
+- **`spin` loops are imperative, not reactive view rendering.** `spin`
+  lowers to a plain Rust `for` loop, which is useful for logic (`craft<...>`,
+  computing values) that runs once at component setup. There is no
+  list-rendering (`<For>`) support yet — a `spin` loop cannot appear inside
+  `return ( ... )` to render one element per item.
+- **`craft<...>` inside `if>`/`orif>`/`else>`/`spin` runs once, at component setup,
   not inside a reactive `Effect`.** The generated `if x.get() == "..." { }`
   is a plain (non-reactive) Rust `if`, evaluated once when the component
   function runs. Leptos may print a dev-mode warning about reading a signal

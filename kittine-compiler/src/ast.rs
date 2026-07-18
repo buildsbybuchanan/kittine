@@ -33,6 +33,13 @@ pub enum Stmt {
     },
     /// A bare expression statement (rare, but kept for completeness).
     Expr(Expr),
+    /// `spin<{item}> in list }{ .. }{` — iterates `list`, binding each
+    /// element to `item` for the duration of `body`.
+    Spin {
+        item: String,
+        list: Expr,
+        body: Vec<Stmt>,
+    },
 }
 
 /// An expression in Kittine source.
@@ -52,6 +59,17 @@ pub enum Expr {
     /// event handler: `onClick={<{count}> >> count + 1}`.
     InlineAssign {
         name: String,
+        value: Box<Expr>,
+    },
+    /// `yes>` / `no>` boolean literal.
+    Bool(bool),
+    /// `[expr, expr, ..]` array literal.
+    Array(Vec<Expr>),
+    /// `<<Type>> expr` — an explicit `Num` / `Word` / `Flag` type tag
+    /// wrapping a value. Checked against literal values at parse time;
+    /// erased (the inner value is emitted as-is) at codegen time.
+    Typed {
+        ty: String,
         value: Box<Expr>,
     },
 }

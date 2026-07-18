@@ -57,7 +57,11 @@ nothing in this extension's structure needs to change to support that.
 | `>>` | `keyword.operator.assignment` |
 | `if>` / `orif>` / `else>` | `keyword.control.conditional` |
 | `craft<...>` | `keyword.other.craft` |
-| `¨...¨` and `"..."` | `string.quoted.*` |
+| `'...'` and `"..."` | `string.quoted.*` |
+| `yes>` / `no>` | `constant.language.boolean` |
+| `<<Num>>` / `<<Word>>` / `<<Flag>>` | `storage.type.kittine` |
+| `spin` / `in` | `keyword.control.loop` |
+| `[` / `]` | `punctuation.definition.array` |
 | `func`, `return` | `storage.type.function` / `keyword.control.flow` |
 | JSX tags/attributes | `entity.name.tag`, `entity.other.attribute-name` |
 | `// comment` | `comment.line.double-slash` |
