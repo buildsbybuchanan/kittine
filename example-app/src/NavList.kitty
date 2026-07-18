@@ -1,7 +1,7 @@
 func NavList(<<Word[]>> items) {
     return (
         <ul>
-            spin<{item}> in items }{
+            spin<{item}> in items key(item.to_uppercase()) }{
                 <li>{ item }</li>
             }{
         </ul>

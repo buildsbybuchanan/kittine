@@ -740,6 +740,55 @@ func List() {
 }
 
 #[test]
+fn spin_in_view_supports_custom_key() {
+    let out = compile(
+        r#"
+purr indexOf(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+
+func List() {
+    <{items}> >> [1, 2, 3]
+    return (
+        <ul>
+            spin<{n}> in <{items}> key(indexOf(n)) }{
+                <li>{ n }</li>
+            }{
+        </ul>
+    )
+}
+"#,
+    );
+    assert!(out.contains(
+        r#"<For each=move || items.get() key=|n| indexOf(n.clone()) let:n>"#
+    ));
+}
+
+#[test]
+fn spin_in_view_key_clause_does_not_shadow_key_identifier() {
+    // `key` isn't a reserved word -- it must stay usable as an ordinary
+    // identifier everywhere a `spin` view isn't specifically expecting a
+    // `key(...)` clause right before the `}{` fence.
+    let out = compile(
+        r#"
+func List() {
+    <{key}> >> 5
+    return (
+        <ul>
+            spin<{n}> in [1, 2, 3] }{
+                <li>{ n }</li>
+            }{
+            <p>{ key }</p>
+        </ul>
+    )
+}
+"#,
+    );
+    assert!(out.contains(r#"key=|n| format!("{n}") let:n"#));
+    assert!(out.contains("{move || key.get()}"));
+}
+
+#[test]
 fn spin_in_view_over_array_literal() {
     let out = compile(
         r#"

@@ -809,19 +809,24 @@ fn jsx_to_rust(node: &JsxNode, scope: &Scope, indent: usize) -> String {
                 &format!("{{move || {}}}", expr_to_rust(expr, scope)),
             );
         }
-        JsxNode::Spin { item, list, body } => {
+        JsxNode::Spin { item, list, key, body } => {
             let list_code = expr_to_rust(list, scope);
+            // `item` needs to render as `item.clone()` inside both the key
+            // expression and the body's reactive closures (see
+            // `render_var_read`) — Leptos's `key` closure receives `&T`
+            // (see `<For>`'s `KF: Fn(&T) -> K`), and `.clone()` on a `&T`
+            // still yields an owned `T`, so the same rendering is correct
+            // in both positions.
+            let body_scope = scope.with_spin_item(item);
+            let key_code = match key {
+                Some(key_expr) => render_top_level(key_expr, &body_scope),
+                None => format!("format!(\"{{{item}}}\")"),
+            };
             push_line(
                 &mut out,
                 indent,
-                &format!(
-                    "<For each=move || {list_code} key=|{item}| format!(\"{{{item}}}\") let:{item}>"
-                ),
+                &format!("<For each=move || {list_code} key=|{item}| {key_code} let:{item}>"),
             );
-            // `item` needs to render as `item.clone()` inside the body's
-            // reactive closures (see `render_var_read`), so recurse with a
-            // scope that knows about it.
-            let body_scope = scope.with_spin_item(item);
             for child in body {
                 out.push_str(&jsx_to_rust(child, &body_scope, indent + 1));
             }

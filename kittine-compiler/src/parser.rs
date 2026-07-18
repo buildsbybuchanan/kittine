@@ -889,6 +889,23 @@ impl Parser {
         }
 
         let list = self.parse_expr()?;
+
+        // An optional `key(expr)` clause, right before the `}{` fence.
+        // `key` isn't a reserved word — it's recognized contextually here,
+        // the same way `in` is above — so it stays available as an
+        // ordinary identifier everywhere else.
+        let key = if let TokenKind::Ident(name) = self.peek().kind.clone()
+            && name == "key"
+        {
+            self.advance();
+            self.expect(TokenKind::LParen)?;
+            let key_expr = self.parse_expr()?;
+            self.expect(TokenKind::RParen)?;
+            Some(key_expr)
+        } else {
+            None
+        };
+
         self.expect_fence()?;
 
         let mut body = Vec::new();
@@ -905,7 +922,7 @@ impl Parser {
             body.push(self.parse_jsx_node()?);
         }
 
-        Ok(JsxNode::Spin { item, list, body })
+        Ok(JsxNode::Spin { item, list, key, body })
     }
 
     fn parse_jsx_element(&mut self) -> PResult<JsxNode> {

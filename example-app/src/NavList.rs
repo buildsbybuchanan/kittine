@@ -10,7 +10,7 @@ use leptos_router::hooks::*;
 pub fn NavList(items: Vec<String>) -> impl IntoView {
     view! {
         <ul>
-            <For each=move || items.clone() key=|item| format!("{item}") let:item>
+            <For each=move || items.clone() key=|item| item.clone().to_uppercase() let:item>
                 <li>
                     {move || item.clone()}
                 </li>

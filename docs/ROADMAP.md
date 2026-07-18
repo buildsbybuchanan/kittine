@@ -39,7 +39,7 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   closures).
 - **List rendering in views**: `spin<{item}> in list }{ .. }{` inside
   `return ( ... )` lowers to a reactive Leptos `<For>`, keyed by
-  `format!("{item}")`.
+  `format!("{item}")` by default, or by an optional `key(expr)` clause.
 - **Component children**: an untyped `children` param (`func Card(children)
   { .. { children() } .. }`) renders whatever JSX a caller nests inside
   `<Card>...</Card>` — no `children=` attribute needed, Leptos's `view!`
@@ -90,7 +90,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (63+ tests, every feature round-tripped against actual
+tested compiler (65+ tests, every feature round-tripped against actual
 Leptos, routing (including dynamic segments) driven end-to-end in a real
 browser) with a language core solid enough for a genuine multi-page
 client-side app. That's real progress, not the same thing as
@@ -162,17 +162,14 @@ website (in Kittine) need next":
      Staying CSR-only is the honest current state; revisit this with a
      scoped design pass, not a quick increment, when it's actually time
      to build the public site.
-2. **`key` control for view-position `spin`.** Always keys by
-   `format!("{item}")` today; no way to key by something else (an id
-   field, an index) once array elements stop being bare scalars.
-3. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
+2. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
    Discovered while wiring up the dynamic-route demo (see Done below):
    Kittine's grammar has no `::`, which blocks constructing
    `NavigateOptions::default()` — the one piece standing between
    `use_navigate()` and a real programmatic-navigation demo. Everything
    else needed to call it (calling the result of an expression,
    `use_navigate()('/home')`) already works.
-4. **Re-exports.** `private` controls whether an item is importable at
+3. **Re-exports.** `private` controls whether an item is importable at
    all, but there's no way to import something into a file and then
    re-expose it under that file's own name for a third file to import.
 
@@ -193,12 +190,15 @@ actually changed) — landed 2026-07-18. ~~Same-file string-literal ->
 signature) — landed 2026-07-18. ~~Dynamic-segment routes, demonstrated~~
 (method calls, a tuple path, and `leptos_router::hooks` in scope,
 verified end-to-end with Playwright; programmatic navigation stayed open
-as item 3 above, once `NavigateOptions::default()` turned out to need
+as item 2 above, once `NavigateOptions::default()` turned out to need
 path-qualified expressions) — landed 2026-07-18. ~~Cross-file
 string-literal -> `Word` `purr` parameter~~ (`kittine-compiler build`
 now collects every reachable file's `purr` signatures before generating
 any single file's code, so an imported callee gets the same coercion a
-same-file one already had) — landed 2026-07-18.
+same-file one already had) — landed 2026-07-18. ~~`key` control for
+view-position `spin`~~ (an optional `key(expr)` clause overrides the
+default `format!("{item}")` key; verified against real Leptos and wired
+into `example-app`'s `NavList.kitty`) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
