@@ -8,7 +8,8 @@ use crate::parser;
 fn compile(src: &str) -> String {
     let tokens = lexer::tokenize(src).expect("lex should succeed");
     let program = parser::parse(tokens).expect("parse should succeed");
-    codegen::generate(&program)
+    let known_functions = codegen::collect_function_signatures(&program.items);
+    codegen::generate(&program, &known_functions)
 }
 
 /// Returns the parser error message for source that should fail to parse.
@@ -494,19 +495,23 @@ func App() {
 
 #[test]
 fn string_literal_argument_to_unknown_function_is_unaffected() {
-    // A call to a function whose signature isn't known at codegen time
-    // (e.g. one brought in via `import`, or a typo) renders the argument
-    // bare, same as before this fix — no known signature means no basis
-    // for the coercion.
+    // A call to a function whose signature genuinely isn't known (a typo,
+    // or a real Rust/Leptos function Kittine has no `purr` definition for
+    // at all) renders the argument bare, same as before this fix — no
+    // known signature means no basis for the coercion. (A call to a
+    // function brought in via `import` *is* covered now — see
+    // `cross_file_string_literal_argument_to_word_param_is_owned`, which
+    // exercises the real `crate::build` CLI path since this file-level
+    // `compile()` helper never sees another file's signatures.)
     let out = compile(
         r#"
 func App() {
-    craft<someImportedFunc('hello')>
+    craft<someUnknownFunc('hello')>
     return ( <div></div> )
 }
 "#,
     );
-    assert!(out.contains(r#"someImportedFunc("hello")"#));
+    assert!(out.contains(r#"someUnknownFunc("hello")"#));
 }
 
 #[test]
@@ -549,6 +554,54 @@ func Home() {
 
     let nav_rs = std::fs::read_to_string(dir.join("Nav.rs")).expect("Nav.rs should be generated");
     assert!(nav_rs.contains("pub fn Nav(active: String) -> impl IntoView"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cross_file_string_literal_argument_to_word_param_is_owned() {
+    // A string literal passed to a `purr` brought in via `import` now
+    // gets the same `Word`-parameter `.to_string()` treatment a same-file
+    // call already had — `crate::build` collects every reachable file's
+    // `purr` signatures (see `main.rs`'s `collect_all_signatures`) before
+    // generating any single file's code, so this needs the real CLI build
+    // path, not the single-file `compile()` helper used elsewhere in this
+    // test file.
+    let dir = std::env::temp_dir().join(format!(
+        "kittine-cross-file-word-arg-test-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+
+    std::fs::write(
+        dir.join("Greeter.kitty"),
+        r#"
+purr greet(<<Word>> name) <<Word>> {
+    return ('Hello, ' + name)
+}
+"#,
+    )
+    .expect("write Greeter.kitty");
+
+    std::fs::write(
+        dir.join("Home.kitty"),
+        r#"
+import { greet } from './Greeter.kitty'
+
+func Home() {
+    craft<greet('World')>
+    return ( <div></div> )
+}
+"#,
+    )
+    .expect("write Home.kitty");
+
+    let home_kitty = dir.join("Home.kitty");
+    let (out_path, _) = crate::build(&home_kitty, None).expect("recursive build should succeed");
+
+    let home_rs = std::fs::read_to_string(&out_path).expect("read generated Home.rs");
+    assert!(home_rs.contains(r#"greet("World".to_string())"#));
 
     std::fs::remove_dir_all(&dir).ok();
 }

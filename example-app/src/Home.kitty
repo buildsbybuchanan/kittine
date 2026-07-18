@@ -1,6 +1,7 @@
 import { Nav } from './Nav.kitty'
 import { Card } from './Card.kitty'
 import { NavList } from './NavList.kitty'
+import { greet } from './Greetings.kitty'
 
 private purr doubled(<<Num>> n) <<Num>> {
     return (n * 2)
@@ -12,10 +13,6 @@ purr isAdult(<<Num>> age) <<Flag>> {
 
 purr isWorkingAge(<<Num>> age) <<Flag>> {
     return (age >= 18 && age <= 65)
-}
-
-private purr greet(<<Word>> name) <<Word>> {
-    return ('Hello, ' + name)
 }
 
 func Home() {

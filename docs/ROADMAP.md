@@ -90,7 +90,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (62+ tests, every feature round-tripped against actual
+tested compiler (63+ tests, every feature round-tripped against actual
 Leptos, routing (including dynamic segments) driven end-to-end in a real
 browser) with a language core solid enough for a genuine multi-page
 client-side app. That's real progress, not the same thing as
@@ -162,23 +162,17 @@ website (in Kittine) need next":
      Staying CSR-only is the honest current state; revisit this with a
      scoped design pass, not a quick increment, when it's actually time
      to build the public site.
-2. **A string literal passed to a *cross-file* `Word`-typed `purr`
-   parameter still doesn't work.** Same-file calls are fixed (the
-   compiler knows the callee's signature from its own definition), but
-   `someFunc('text')` through an `import` still needs real cross-file
-   type information Kittine doesn't have yet; see
-   [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
-3. **`key` control for view-position `spin`.** Always keys by
+2. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
-4. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
+3. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
    Discovered while wiring up the dynamic-route demo (see Done below):
    Kittine's grammar has no `::`, which blocks constructing
    `NavigateOptions::default()` — the one piece standing between
    `use_navigate()` and a real programmatic-navigation demo. Everything
    else needed to call it (calling the result of an expression,
    `use_navigate()('/home')`) already works.
-5. **Re-exports.** `private` controls whether an item is importable at
+4. **Re-exports.** `private` controls whether an item is importable at
    all, but there's no way to import something into a file and then
    re-expose it under that file's own name for a third file to import.
 
@@ -196,12 +190,15 @@ conditions) — landed 2026-07-18. ~~Incremental/cached builds for the
 import graph~~ (`.rs` files are only rewritten when their content
 actually changed) — landed 2026-07-18. ~~Same-file string-literal ->
 `Word` `purr` parameter~~ (the compiler now knows a same-file callee's
-signature; cross-file calls remain open, see item 2 above) — landed
-2026-07-18. ~~Dynamic-segment routes, demonstrated~~ (method calls, a
-tuple path, and `leptos_router::hooks` in scope, verified end-to-end
-with Playwright; programmatic navigation stayed open as item 4 above,
-once `NavigateOptions::default()` turned out to need path-qualified
-expressions) — landed 2026-07-18.
+signature) — landed 2026-07-18. ~~Dynamic-segment routes, demonstrated~~
+(method calls, a tuple path, and `leptos_router::hooks` in scope,
+verified end-to-end with Playwright; programmatic navigation stayed open
+as item 3 above, once `NavigateOptions::default()` turned out to need
+path-qualified expressions) — landed 2026-07-18. ~~Cross-file
+string-literal -> `Word` `purr` parameter~~ (`kittine-compiler build`
+now collects every reachable file's `purr` signatures before generating
+any single file's code, so an imported callee gets the same coercion a
+same-file one already had) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 

@@ -143,17 +143,21 @@ rendered exactly as it would be anywhere else (a signal read becomes
 | `double(21)` | `double(21f64)` |
 | `double(<{count}>)` | `double(count.get())` |
 
-Calling a `purr` defined in the *same file* also gets one more piece of
-real type checking: a bare string-literal argument at a `<<Word>>`
-parameter position renders as an owned `String`, not a borrowed `&str`,
-because the compiler already knows that parameter's declared type:
+Calling a known `purr` — one defined in the same file, *or* reached
+through the whole `import` graph — also gets one more piece of real type
+checking: a bare string-literal argument at a `<<Word>>` parameter
+position renders as an owned `String`, not a borrowed `&str`, because
+`kittine-compiler build` collects every reachable file's `purr` signatures
+before generating any single file's code (see [Compilation
+model](#compilation-model)):
 
 | Kittine | Generated Rust |
 |---|---|
 | `greet('World')` (where `greet(<<Word>> name)`) | `greet("World".to_string())` |
 
-This only applies to same-file calls — see [Known
-limitations](#known-limitations) for the cross-file gap.
+This works whether `greet` is defined in the same file or brought in via
+`import` — only a call to a function Kittine has *no* signature for at
+all (a real Rust/Leptos function, or a typo) renders the argument bare.
 
 ### Method calls
 
@@ -986,14 +990,22 @@ are unconditional (see [Routing](#routing)) — `unused_imports` is
 allowed at the crate level so files that don't route stay warning-free.
 
 `kittine-compiler build <entry>.kitty` compiles the whole reachable
-`import` graph, not just `<entry>` itself — but it only actually
-*rewrites* a dependency's `.rs` file when the freshly generated content
-differs from what's already there. A `.kitty` file whose only edit
-doesn't change codegen (a comment, for instance — comments carry no
-codegen effect at all) leaves its output file's mtime untouched. This
-matters because `cargo`, `wasm-bindgen`, and `vite-plugin-kittine`'s own
-build-freshness check all key off file mtimes to decide whether to redo
-work; unconditionally rewriting every reachable file on every build made
+`import` graph, not just `<entry>` itself, in two passes: first a
+lex+parse-only walk collects every reachable file's `purr` signatures into
+one map (this is what makes the `Word`-parameter string-literal coercion
+above work across `import`s, not just within one file), then each file is
+actually generated using that whole-graph map. Every file gets parsed
+twice across a full build — real, but cheap next to what `cargo`/
+`wasm-bindgen` cost downstream.
+
+`kittine-compiler build` also only actually *rewrites* a dependency's
+`.rs` file when the freshly generated content differs from what's already
+there. A `.kitty` file whose only edit doesn't change codegen (a comment,
+for instance — comments carry no codegen effect at all) leaves its output
+file's mtime untouched. This matters because `cargo`, `wasm-bindgen`, and
+`vite-plugin-kittine`'s own build-freshness check all key off file mtimes
+to decide whether to redo work; unconditionally rewriting every reachable
+file on every build made
 all of them look freshly modified regardless of what actually changed.
 
 ## Known limitations
@@ -1017,23 +1029,20 @@ These are intentional scope boundaries of the current prototype, not bugs:
   be constructed — see [Programmatic navigation](#programmatic-navigation--a-real-current-gap).
   Discovered while actually trying to wire up a working example, not
   assumed up front.
+- **Whole-graph `purr` signature lookup (see [Calling
+  functions](#calling-functions)) is a flat, unnamespaced map by bare
+  name.** Two different files defining a `purr` with the same name is
+  already an ambiguity Kittine has no namespacing to resolve — this just
+  means the `Word`-parameter string-literal coercion could theoretically
+  pick up the wrong one's signature in that exact collision case. Rust's
+  own `use` resolution is what actually binds a call site to a specific
+  function either way; this map only ever informs a codegen *hint*, never
+  which function actually gets called.
 - **No re-exports.** `private` (see [Visibility](#visibility)) controls
   whether an item can be imported *at all*, but there's no way for a file
   to import something and then re-expose it under its own name for a
   third file to import — every import has to go straight to the file that
   actually defines the item.
-- **A string *literal* passed directly to a `Word`-typed `purr` parameter
-  only gets the right `String`/`&str` treatment when the callee is defined
-  in the *same file*.** `someFunc('text')` works when `someFunc` is a
-  `purr` in the same `.kitty` file with a `<<Word>>` parameter at that
-  position — the compiler knows its signature and renders the literal as
-  `"text".to_string()`. A call through an `import`, or to a function
-  Kittine has no signature for at all, still renders the literal bare
-  (`"text"`), same as before — cross-file calls have no real type
-  information to check against yet, and guessing wrong once already broke
-  a real feature (`leptos_router::StaticSegment` requires `&str`, not
-  `String`). Route through a `Word` signal/prop instead for a cross-file
-  callee (both already resolve to owned `String`).
 - **Mutating a `Word` signal directly to a brand-new literal may not
   compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
   first/declaring occurrence) can render a bare `&str` assigned into an

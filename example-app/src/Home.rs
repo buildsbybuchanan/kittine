@@ -15,6 +15,9 @@ use __kittine_mod_card::{Card};
 #[path = "./NavList.rs"]
 mod __kittine_mod_navlist;
 use __kittine_mod_navlist::{NavList};
+#[path = "./Greetings.rs"]
+mod __kittine_mod_greetings;
+use __kittine_mod_greetings::{greet};
 
 fn doubled(n: f64) -> f64 {
     n * 2f64
@@ -26,10 +29,6 @@ pub fn isAdult(age: f64) -> bool {
 
 pub fn isWorkingAge(age: f64) -> bool {
     (age >= 18f64) && (age <= 65f64)
-}
-
-fn greet(name: String) -> String {
-    format!("{}{}", "Hello, ", name.clone())
 }
 
 #[component]
