@@ -62,11 +62,6 @@ grouped by date until the first tagged release.
     build and the same `leptos_axum`-style rendering machinery, just run
     once per route instead of listening on a socket. No smaller path
     existed to find.
-  - **Windows-specific gotcha:** `cargo install cargo-leptos` fails
-    building `openssl-sys` from source on a plain Git-Bash/MSYS Perl
-    install (missing `Locale::Maketext::Simple`). Fixed by using the
-    prebuilt binary from cargo-leptos's GitHub releases instead of
-    building from source — see [docs/SSR.md](docs/SSR.md).
 - **`hold name >> expr`**: a plain, non-reactive local binding — unlike
   `<{name}> >> value`, never declares a signal. Lowers to a bare `let
   name = expr;`, evaluated once. Exists specifically for calling a

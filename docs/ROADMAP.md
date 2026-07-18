@@ -70,8 +70,8 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   needed **zero changes** — the exact same `.kitty` → `.rs` output that
   powers `example-app`'s CSR build powers `example-ssr` too. See
   [SSR.md](SSR.md) for the full setup and the real gotchas found while
-  wiring it up (Windows `cargo-leptos` install, `HydrationScripts`
-  placement, static-asset serving). `example-app`'s Vite-based CSR path
+  wiring it up (`HydrationScripts` placement, static-asset serving).
+  `example-app`'s Vite-based CSR path
   is unaffected and remains the simpler default for apps that don't need
   SEO/first-paint.
 - **Codegen targets real Leptos 0.7** — every language feature above

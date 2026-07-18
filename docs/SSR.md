@@ -34,18 +34,6 @@ response) to see real, pre-rendered HTML content, no JavaScript required.
 Click around — the page hydrates and becomes fully interactive, including
 client-side `<A>` navigation between routes, exactly like `example-app`.
 
-### If `cargo install cargo-leptos` fails on Windows
-
-Building `cargo-leptos` from source pulls in `openssl-sys`, which tries to
-compile OpenSSL from source and needs a Perl installation with modules
-Windows's bundled Perl (via Git Bash / MSYS) often lacks
-(`Locale::Maketext::Simple`, surfacing as `perl reported failure with exit
-code: 2` deep in the build log). The fix that worked here: skip building
-from source entirely and use the prebuilt binary from [cargo-leptos's GitHub
-releases](https://github.com/leptos-rs/cargo-leptos/releases) —
-`cargo-leptos-x86_64-pc-windows-msvc.tar.gz`, extract it, and copy
-`cargo-leptos.exe` into `%USERPROFILE%\.cargo\bin\`.
-
 ## Project structure
 
 ```
