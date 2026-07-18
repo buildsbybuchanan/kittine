@@ -11,6 +11,11 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 ## Table of contents
 
 - [Components](#components)
+- [Props](#props)
+- [Functions (`purr`)](#functions-purr)
+- [Calling functions](#calling-functions)
+- [Modules and imports](#modules-and-imports)
+- [Component composition](#component-composition)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
@@ -28,7 +33,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 
 ## Components
 
-A Kittine file is a sequence of component definitions:
+A Kittine file is a sequence of component and function definitions:
 
 ```kitty
 func App() {
@@ -36,12 +41,158 @@ func App() {
 }
 ```
 
-`func Name() { ... }` declares a component named `Name`. It takes no
-parameters (props are not yet supported — see [Known limitations](#known-limitations)).
+`func Name(<<Type>> prop, ..) { ... }` declares a component named `Name`.
 Every component body may contain any number of statements, followed by
 exactly one `return ( ... )` view expression as its last meaningful element.
 
-A component compiles to a Leptos `#[component] pub fn Name() -> impl IntoView { ... }`.
+A component compiles to a Leptos `#[component] pub fn Name(..) -> impl IntoView { ... }`.
+
+## Props
+
+```kitty
+func Nav(<<Word>> active) {
+    return ( <span>{ active }</span> )
+}
+```
+
+Components can take parameters — Kittine's term for these is **props**,
+matching how they're used: values passed in from a parent when the
+component is composed into another view (see [Component
+composition](#component-composition)). Unlike `<{name}> >> value` signals,
+a prop is a plain value, not reactive state — there's no setter, and
+reading it is just the bare name (`active`, not `<{active}>`).
+
+Every prop must carry an explicit [type tag](#type-tags): `<<Num>>`,
+`<<Word>>`, or `<<Flag>>`. There is no prop-type inference.
+
+### Compilation
+
+| Kittine | Generated Rust |
+|---|---|
+| `func Nav(<<Word>> active) { .. }` | `pub fn Nav(active: String) -> impl IntoView { .. }` |
+| `func Card(<<Num>> price, <<Flag>> onSale) { .. }` | `pub fn Card(price: f64, onSale: bool) -> impl IntoView { .. }` |
+
+Reading a `Word` (`String`) prop clones it (`active.clone()`) rather than
+moving it, since a prop may be read from more than one reactive closure
+inside the component body — `Num`/`Flag` props are `Copy` and don't need
+this.
+
+## Functions (`purr`)
+
+```kitty
+purr double(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+```
+
+`purr name(<<Type>> param, ..) <<ReturnType>> { .. return (expr) }` declares
+a plain function: it computes and returns a value, and does not render a
+view. Unlike a component, its signature also carries an explicit
+**return-type** tag right after the parameter list, before the body's `{`.
+
+A `purr` function is the idiomatic Kittine way to share logic (formatting,
+computed values) between components without duplicating it.
+
+### Compilation
+
+`purr` becomes a plain, non-`#[component]` `pub fn`, with the body's
+`return (expr)` becoming the function's tail expression (no `#[component]`
+attribute, no `view!`):
+
+```kitty
+purr double(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+```
+```rust
+pub fn double(n: f64) -> f64 {
+    n * 2f64
+}
+```
+
+## Calling functions
+
+```kitty
+craft<double(21)>
+```
+
+`name(arg, arg, ..)` calls a function — a `purr` you've defined, or one
+brought into scope with [`import`](#modules-and-imports). A call is an
+expression, valid anywhere an expression is: `craft<...>` arguments, JSX
+`{ expr }` interpolations, variable declarations, conditions.
+
+### Compilation
+
+`name(args)` becomes a direct Rust call `name(args)`, with each argument
+rendered exactly as it would be anywhere else (a signal read becomes
+`.get()`, a `Word` value is cloned, and so on):
+
+| Kittine | Generated Rust |
+|---|---|
+| `double(21)` | `double(21f64)` |
+| `double(<{count}>)` | `double(count.get())` |
+
+## Modules and imports
+
+```kitty
+import { Nav, Footer } from './components/Nav.kitty'
+```
+
+`import { Name, Name2 } from 'path/to/file.kitty'` brings one or more
+components/functions from another `.kitty` file into scope. The path is
+resolved relative to the importing file, and always ends in `.kitty`.
+Imports must appear before any `func`/`purr` declarations in the file.
+
+### Compilation
+
+Each import becomes a Rust `mod` declaration pointing at the sibling `.rs`
+file the imported `.kitty` file compiles to, plus a `use` bringing the
+named items into scope:
+
+```kitty
+import { Nav } from './Nav.kitty'
+```
+```rust
+#[path = "./Nav.rs"]
+mod __kittine_mod_nav;
+use __kittine_mod_nav::{Nav};
+```
+
+`kittine-compiler build` resolves this recursively: compiling a file that
+imports others also compiles each imported file (and anything *it*
+imports), writing every `.kitty` file in the import graph to its sibling
+`.rs` path. An import cycle is a compile error, not an infinite loop.
+
+## Component composition
+
+```kitty
+func Page() {
+    return (
+        <div>
+            <Nav active='home' />
+        </div>
+    )
+}
+```
+
+A JSX tag starting with an **uppercase** letter is a reference to another
+component (defined locally or brought in via `import`) rather than an HTML
+element — exactly the same rule
+[Leptos's own `view!` macro](https://leptos.dev) uses. Attributes on a
+component tag are its props, passed by value rather than as reactive DOM
+attributes.
+
+### Compilation
+
+A component tag's attributes are passed as plain values (a string literal
+prop becomes an owned `.to_string()`, not the bare `&str` an HTML attribute
+would get) instead of being wrapped in the `move || ..` closure a real DOM
+attribute needs for reactivity:
+
+| Kittine | Generated Rust |
+|---|---|
+| `<Nav active='home' />` | `<Nav active="home".to_string()/>` |
+| `<div title={label} />` | `<div title=move \|\| label.get()/>` |
 
 ## Variables and state
 
@@ -73,16 +224,26 @@ keyword.
 
 | Kittine | Generated Rust |
 |---|---|
-| `<{x}> >> 0` (first occurrence) | `let (x, set_x) = signal(0);` |
-| `<{x}> >> x + 1` (later occurrence) | `set_x.update(\|n\| *n += 1);` |
-| `<{x}> >> x - 1` | `set_x.update(\|n\| *n -= 1);` |
-| `<{x}> >> x * 2` | `set_x.update(\|n\| *n *= 2);` |
-| `<{x}> >> 5` (later, non-self-referential) | `set_x.update(\|n\| *n = 5);` |
+| `<{x}> >> 0` (first occurrence) | `let (x, set_x) = signal(0f64);` |
+| `<{x}> >> x + 1` (later occurrence) | `set_x.update(\|n\| *n += 1f64);` |
+| `<{x}> >> x - 1` | `set_x.update(\|n\| *n -= 1f64);` |
+| `<{x}> >> x * 2` | `set_x.update(\|n\| *n *= 2f64);` |
+| `<{x}> >> 5` (later, non-self-referential) | `set_x.update(\|n\| *n = 5f64);` |
 | `<{x}>` (read) | `x.get()` |
 
 The `+= / -= / *= / /=` compound forms are only emitted when the right-hand
 side is exactly `<selfname> <op> <number literal>`; any other mutation
 expression lowers to the general `*n = <expr>;` form.
+
+A whole-number literal always gets an explicit `f64` suffix wherever it's
+an operand next to an already-concretely-typed `f64` value (a signal's
+initializer, an arithmetic operand, a compound-assignment right-hand side).
+This isn't cosmetic: `signal(0)` alone leaves `0`'s type to Rust's generic
+inference, which is free to pick something other than `f64` if nothing else
+in the function pins it down first — and it fails to compile the moment
+that value is later passed somewhere that concretely requires `f64` (a
+`purr` call, for instance). Spelling it `0f64` up front avoids the
+ambiguity entirely.
 
 ## Strings
 
@@ -151,9 +312,13 @@ than checked. Either way, the tag itself is erased during code generation —
 Rust's own type inference already gives the underlying value the right
 type, so `<<Num>> 0` and a bare `0` generate identical Rust.
 
-Type tags are optional. They exist for readability and for catching literal
-type mistakes early, not because Kittine has (or needs) a full static type
-system.
+Type tags are optional on a value (`<{count}> >> 0` and `<{count}> >>
+<<Num>> 0` compile identically) — they exist for readability and for
+catching literal type mistakes early, not because Kittine has (or needs) a
+full static type system. They are **mandatory** in one place: every
+[prop](#props) and [`purr` return type](#functions-purr), since a function
+signature needs a real Rust type and Kittine has no inference for those
+positions yet.
 
 ## Printing (`craft<...>`)
 
@@ -345,9 +510,16 @@ rendered output. The JSX-like tree supports:
 ## Full grammar summary
 
 ```
-program      := component*
-component    := "func" IDENT "(" ")" "{" stmt* return_stmt? "}"
-return_stmt  := "return" "(" jsx_node ")"
+program      := import* item*
+item         := component | function
+import       := "import" "{" IDENT ("," IDENT)* "}" "from" STRING
+component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
+function     := "purr" IDENT param_list type_tag_name
+                "{" stmt* return_stmt? "}"
+param_list   := "(" (param ("," param)*)? ")"
+param        := type_tag_name IDENT
+type_tag_name:= "<<" ("Num" | "Word" | "Flag") ">>"
+return_stmt  := "return" "(" jsx_node | expr ")"
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
 var_stmt     := "<{" IDENT "}>" ">>" expr
@@ -363,12 +535,13 @@ expr         := additive (">>" additive)?
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
 unary        := "-" unary | primary
-primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | IDENT
+primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | CALL | IDENT
               | "<{" IDENT "}>" (">>" expr)?
               | "(" expr ")"
 
 array        := "[" (expr ("," expr)*)? "]"
-type_tag     := "<<" ("Num" | "Word" | "Flag") ">>" unary
+type_tag     := type_tag_name unary
+call         := IDENT "(" (expr ("," expr)*)? ")"
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
 jsx_element  := "<" IDENT jsx_attr* ("/>" | ">" jsx_node* "</" IDENT ">")
@@ -384,22 +557,33 @@ Every generated Rust file starts with:
 
 ```rust
 // Generated by kittine-compiler. Do not edit by hand.
-#![allow(unused_braces, unused_variables)]
+#![allow(unused_braces, unused_variables, dead_code)]
 
 use leptos::prelude::*;
 ```
 
-and then one `#[component] pub fn Name() -> impl IntoView { ... }` per
-`func` in the source file, in source order.
+followed by one `mod` + `use` pair per `import`, and then one item per
+`func`/`purr` in the source file, in source order: a `func` becomes
+`#[component] pub fn Name(..) -> impl IntoView { ... }`; a `purr` becomes a
+plain `pub fn name(..) -> ReturnType { ... }`.
 
 ## Known limitations
 
 These are intentional scope boundaries of the current prototype, not bugs:
 
-- **No component props.** `func Name() { ... }` takes no arguments; there is
-  no syntax yet for passing data into a child component.
-- **No component composition in JSX.** JSX tags are always treated as HTML
-  elements, not references to other Kittine components.
+- **No prop type inference.** Every prop and `purr` return type needs an
+  explicit `<<Num>>`/`<<Word>>`/`<<Flag>>` tag — there's no way to omit it
+  and have the compiler figure it out.
+- **No children for composed components.** `<Nav>...</Nav>` parses fine,
+  but nothing wires JSX children through to a Kittine-defined component's
+  props (there's no `children`-prop concept yet) — compose with
+  attributes only (`<Nav active='home' />`), or self-close.
+- **`import` only brings in items, not re-exports.** There's no `export`
+  concept — every `func`/`purr` in a file is implicitly `pub` and
+  importable; you can't restrict what a file exposes.
+- **No array element/return types.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
+  scalars; there's no tag (yet) for "an array of `Num`", so array-typed
+  props or `purr` returns aren't expressible.
 - **`spin` loops are imperative, not reactive view rendering.** `spin`
   lowers to a plain Rust `for` loop, which is useful for logic (`craft<...>`,
   computing values) that runs once at component setup. There is no

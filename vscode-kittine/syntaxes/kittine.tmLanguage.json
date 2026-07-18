@@ -10,6 +10,7 @@
     { "include": "#booleans" },
     { "include": "#control-keywords" },
     { "include": "#loop-keywords" },
+    { "include": "#import-keywords" },
     { "include": "#declaration-keywords" },
     { "include": "#var-bracket" },
     { "include": "#strings" },
@@ -129,11 +130,19 @@
     "declaration-keywords": {
       "patterns": [
         {
-          "match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(func|purr)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.type.function.kitty" },
             "2": { "name": "entity.name.function.kitty" }
           }
+        }
+      ]
+    },
+    "import-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.import.kitty",
+          "match": "\\b(import|from)\\b"
         }
       ]
     },

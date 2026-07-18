@@ -45,8 +45,8 @@ subprocess boundary — there's no shared in-memory state between them.
   to single characters, so e.g. `<{` is never accidentally split into `<`
   and `{`. Every token carries `line`/`col` so the parser can implement
   indentation-based blocks.
-- **`ast.rs`** — plain data types (`Program`, `Component`, `Stmt`, `Expr`,
-  `JsxNode`) with no behavior.
+- **`ast.rs`** — plain data types (`Program`, `Import`, `Item` [`Component`
+  or `Function`], `Stmt`, `Expr`, `JsxNode`) with no behavior.
 - **`parser.rs`** — recursive-descent parser. The one non-obvious piece is
   how `if>` / `orif>` / `else>` blocks get delimited without braces: each
   block records the source column of its own keyword as `base_col`, then
@@ -63,7 +63,11 @@ subprocess boundary — there's no shared in-memory state between them.
   current component to decide `let (x, set_x) = signal(..)` vs.
   `set_x.update(..)` for each `<{x}> >> ..`.
 - **`main.rs`** — thin `clap`-based CLI wrapper around the three passes
-  above.
+  above, plus recursive `import` resolution: compiling a file that
+  `import`s others also compiles each imported `.kitty` file (and anything
+  *it* imports) to its own sibling `.rs`, tracking already-compiled files
+  to avoid duplicate work and detecting import cycles as an error instead
+  of recursing forever.
 
 ## `vite-plugin-kittine/` — the build integration
 

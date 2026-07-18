@@ -32,6 +32,21 @@ grouped by date until the first tagged release.
   then runs the existing `npm run build:plugin && npm run build` pipeline.
 - Immutable long-term caching headers for Vite's content-hashed
   `example-app/dist/assets/*` output.
+- **Component props**: `func Name(<<Type>> prop, ..) { .. }`. Props are
+  plain typed values (not signals) — a `Word` prop is cloned at read sites
+  to avoid Rust move-checker conflicts across multiple reactive closures.
+- **`purr` functions**: `purr name(<<Type>> param, ..) <<ReturnType>> { ..
+  return (expr) }` — a plain, non-view-rendering function.
+- **Function calls**: `name(arg, ..)`, valid anywhere an expression is.
+- **Component composition**: a PascalCase JSX tag (`<Nav .. />`) is a
+  reference to another component, matching Leptos's own `view!` macro
+  convention — its attributes are passed as plain prop values instead of
+  the reactive `move || ..` closures a real HTML attribute gets.
+- **Modules**: `import { A, B } from './file.kitty'`. `kittine-compiler
+  build` resolves and compiles the whole import graph recursively (cycle
+  detection included), emitting a `#[path] mod .. use ..;` per import.
+- `docs/ROADMAP.md`: a living plan (status / next-up / full vision) for
+  where Kittine is headed, replacing ad-hoc scope discussions.
 
 ### Fixed
 
@@ -39,6 +54,17 @@ grouped by date until the first tagged release.
   `codegen-units = 1`, `strip = true`, and `panic = "abort"` alongside the
   existing `opt-level = "s"`, cutting the shipped `.wasm` from ~227 KB to
   ~76 KB (~54 KB → ~28 KB gzipped) for the example app.
+- Whole-number literals are now spelled with an explicit `f64` suffix
+  wherever they're an operand next to an already-concrete `f64` value: a
+  signal initializer (`signal(0)` → `signal(0f64)`), a compound-assignment
+  right-hand side (`*n += 1` → `*n += 1f64`), a general arithmetic operand,
+  and a direct function-call argument. Without this, Rust's generic
+  inference for `signal(..)`'s type parameter is free to resolve to
+  something other than `f64` when nothing *else* pins it down first — and
+  it silently fails to compile the moment that value is later required to
+  be concretely `f64` (e.g. passed into a `purr` call). Found by actually
+  compiling generated output against real Leptos, not just asserting on
+  generated-string snapshots.
 
 ### Repository
 
