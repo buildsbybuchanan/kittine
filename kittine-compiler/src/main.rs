@@ -37,8 +37,12 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::Build { input, output } => match build(&input, output.as_deref()) {
-            Ok(out_path) => {
-                println!("kittine-compiler: wrote {}", out_path.display());
+            Ok((out_path, was_written)) => {
+                if was_written {
+                    println!("kittine-compiler: wrote {}", out_path.display());
+                } else {
+                    println!("kittine-compiler: {} is already up to date", out_path.display());
+                }
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -54,8 +58,10 @@ fn main() -> ExitCode {
 /// `.rs` path `codegen::rs_path_for_import` expects (same relative path,
 /// `.kitty` swapped for `.rs`), before writing `input`'s own output. Each
 /// distinct file is compiled at most once per invocation; an import cycle
-/// is reported as an error instead of recursing forever.
-fn build(input: &Path, output: Option<&Path>) -> Result<PathBuf, String> {
+/// is reported as an error instead of recursing forever. The returned
+/// `bool` is whether `input`'s own output file was actually (re)written, as
+/// opposed to already being byte-identical and left untouched.
+fn build(input: &Path, output: Option<&Path>) -> Result<(PathBuf, bool), String> {
     let mut compiled = HashSet::new();
     let mut stack = Vec::new();
     compile_recursive(input, output, &mut compiled, &mut stack)
@@ -66,7 +72,7 @@ fn compile_recursive(
     output: Option<&Path>,
     compiled: &mut HashSet<PathBuf>,
     stack: &mut Vec<PathBuf>,
-) -> Result<PathBuf, String> {
+) -> Result<(PathBuf, bool), String> {
     let canonical = input
         .canonicalize()
         .map_err(|e| format!("failed to resolve '{}': {e}", input.display()))?;
@@ -89,7 +95,7 @@ fn compile_recursive(
     };
 
     if compiled.contains(&canonical) {
-        return Ok(out_path);
+        return Ok((out_path, false));
     }
 
     stack.push(canonical.clone());
@@ -114,10 +120,22 @@ fn compile_recursive(
     }
 
     let rust_code = codegen::generate(&program);
-    std::fs::write(&out_path, rust_code)
-        .map_err(|e| format!("failed to write '{}': {e}", out_path.display()))?;
+    // Only touch the output file's mtime if its content actually changed.
+    // `kittine-compiler build` recompiles the whole reachable import graph
+    // on every invocation (simple, always-correct), but downstream tools
+    // (cargo, wasm-bindgen, Vite's own file watcher) decide whether *they*
+    // need to redo work by looking at file mtimes — rewriting every `.rs`
+    // file unconditionally, even byte-for-byte identical ones, made every
+    // reachable dependency look freshly modified on every single build and
+    // defeated that caching entirely.
+    let already_up_to_date = std::fs::read_to_string(&out_path)
+        .is_ok_and(|existing| existing == rust_code);
+    if !already_up_to_date {
+        std::fs::write(&out_path, rust_code)
+            .map_err(|e| format!("failed to write '{}': {e}", out_path.display()))?;
+    }
 
     stack.pop();
     compiled.insert(canonical);
-    Ok(out_path)
+    Ok((out_path, !already_up_to_date))
 }

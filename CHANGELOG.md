@@ -80,6 +80,23 @@ grouped by date until the first tagged release.
   `func NavList(<<Word[]>> items) { .. }` lowers to `items: Vec<String>`,
   a `purr` can return an array type the same way. Array type tags also
   check literal elements against the declared element type at parse time.
+- **Incremental builds for the import graph**: `kittine-compiler build`
+  still recompiles every reachable `.kitty` file on every invocation (it
+  has to, to know if anything changed), but now only actually *rewrites*
+  a `.rs` file when its freshly generated content differs from what's
+  already on disk — a `.kitty` file that recompiles to byte-identical
+  Rust (including one whose only edit was a comment, since comments carry
+  no codegen effect) leaves its output file's mtime untouched. This
+  matters because downstream tooling decides whether to redo work by
+  looking at file mtimes: `cargo build` recompiles a Rust module when its
+  source file's mtime changes, and `vite-plugin-kittine`'s own
+  `buildWasmIfNeeded` freshness check (`newestMtime` over the crate's
+  `.rs`/`.kitty`/`.toml` files) was being defeated every single time,
+  since unconditionally rewriting every reachable dependency made the
+  whole crate look freshly modified on every build regardless of what
+  actually changed. Editing one leaf `.kitty` file in `example-app` now
+  triggers only that leaf's Rust module recompiling, verified with a real
+  `npm run build` (~31s → ~5s for a no-op rebuild).
 - **Logical `&&` / `||`**: combine two or more comparisons into one
   condition — `age >= 18 && status >> 'active'`, `age < 13 || age >= 65`.
   `&&` binds tighter than `||` (`a || b && c` reads as `a || (b && c)`).

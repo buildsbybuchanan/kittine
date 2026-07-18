@@ -484,7 +484,7 @@ func Home() {
     .expect("write Home.kitty");
 
     let home_kitty = dir.join("Home.kitty");
-    let out_path = crate::build(&home_kitty, None).expect("recursive build should succeed");
+    let (out_path, _) = crate::build(&home_kitty, None).expect("recursive build should succeed");
 
     let home_rs = std::fs::read_to_string(&out_path).expect("read generated Home.rs");
     assert!(home_rs.contains("mod __kittine_mod_nav;"));
@@ -492,6 +492,86 @@ func Home() {
 
     let nav_rs = std::fs::read_to_string(dir.join("Nav.rs")).expect("Nav.rs should be generated");
     assert!(nav_rs.contains("pub fn Nav(active: String) -> impl IntoView"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn unchanged_output_is_not_rewritten() {
+    // Rebuilding a dependency whose source didn't change must not touch its
+    // already-up-to-date .rs file's mtime — downstream tools (cargo,
+    // wasm-bindgen, Vite's own file watcher) decide whether to redo work by
+    // looking at file mtimes, and rewriting byte-identical content still
+    // bumps them, making every reachable file look freshly modified on
+    // every single build.
+    let dir = std::env::temp_dir().join(format!(
+        "kittine-incremental-test-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+
+    std::fs::write(
+        dir.join("Nav.kitty"),
+        r#"
+func Nav(<<Word>> active) {
+    return ( <span>{ active }</span> )
+}
+"#,
+    )
+    .expect("write Nav.kitty");
+
+    std::fs::write(
+        dir.join("Home.kitty"),
+        r#"
+import { Nav } from './Nav.kitty'
+
+func Home() {
+    return ( <div><Nav active='home'/></div> )
+}
+"#,
+    )
+    .expect("write Home.kitty");
+
+    let home_kitty = dir.join("Home.kitty");
+    let (_, was_written) = crate::build(&home_kitty, None).expect("first build should succeed");
+    assert!(was_written, "a fresh build should report the file as written");
+
+    let nav_rs_path = dir.join("Nav.rs");
+    let first_mtime = std::fs::metadata(&nav_rs_path)
+        .expect("Nav.rs should exist")
+        .modified()
+        .expect("mtime");
+
+    // Sleep past typical filesystem mtime resolution, then rebuild with
+    // Nav.kitty completely unchanged — only Home.kitty's own generated
+    // output (a different prop value passed to Nav) should change.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(
+        dir.join("Home.kitty"),
+        r#"
+import { Nav } from './Nav.kitty'
+
+func Home() {
+    return ( <div><Nav active='away'/></div> )
+}
+"#,
+    )
+    .expect("rewrite Home.kitty");
+    let (_, was_written) = crate::build(&home_kitty, None).expect("second build should succeed");
+    assert!(
+        was_written,
+        "Home.kitty's own content changed, so Home.rs should be reported as written"
+    );
+
+    let second_mtime = std::fs::metadata(&nav_rs_path)
+        .expect("Nav.rs should still exist")
+        .modified()
+        .expect("mtime");
+    assert_eq!(
+        first_mtime, second_mtime,
+        "Nav.rs was rewritten even though Nav.kitty's content didn't change"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }

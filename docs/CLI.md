@@ -6,7 +6,15 @@ dependency on Vite or Node — the Vite plugin just shells out to it.
 
 ## `kittine-compiler build <input> [--output <path>]`
 
-Compiles `<input>` and writes the generated Rust source.
+Compiles `<input>` and writes the generated Rust source. Every `import { .. }
+from '<path>'` reachable from `<input>` is compiled too, recursively (cycle
+detection included), into the sibling `.rs` path each import expects — so
+running this on your app's entry point regenerates the whole import graph in
+one call. A dependency's output file is only actually rewritten if its
+generated content changed; a `.kitty` file that recompiles to
+byte-identical Rust leaves its `.rs` file's mtime untouched, so downstream
+tools that key off mtimes (`cargo`, `wasm-bindgen`, Vite's own file watcher)
+don't redo work for files that didn't really change.
 
 ```sh
 kittine-compiler build src/App.kitty
@@ -22,7 +30,9 @@ kittine-compiler build src/App.kitty --output src/generated.rs
 
 ### Exit status
 
-- `0` on success; prints `kittine-compiler: wrote <path>` to stdout.
+- `0` on success; prints `kittine-compiler: wrote <path>` to stdout if
+  `<input>`'s own output changed, or `kittine-compiler: <path> is already
+  up to date` if it recompiled to byte-identical content.
 - non-zero on any lex, parse, or I/O error; prints
   `kittine-compiler: error: <message>` to stderr, including a `line:col`
   position for syntax errors.

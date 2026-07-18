@@ -890,6 +890,17 @@ plain `pub fn name(..) -> ReturnType { ... }`. The `leptos_router` imports
 are unconditional (see [Routing](#routing)) — `unused_imports` is
 allowed at the crate level so files that don't route stay warning-free.
 
+`kittine-compiler build <entry>.kitty` compiles the whole reachable
+`import` graph, not just `<entry>` itself — but it only actually
+*rewrites* a dependency's `.rs` file when the freshly generated content
+differs from what's already there. A `.kitty` file whose only edit
+doesn't change codegen (a comment, for instance — comments carry no
+codegen effect at all) leaves its output file's mtime untouched. This
+matters because `cargo`, `wasm-bindgen`, and `vite-plugin-kittine`'s own
+build-freshness check all key off file mtimes to decide whether to redo
+work; unconditionally rewriting every reachable file on every build made
+all of them look freshly modified regardless of what actually changed.
+
 ## Known limitations
 
 These are intentional scope boundaries of the current prototype, not bugs:
