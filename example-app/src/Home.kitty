@@ -14,6 +14,10 @@ purr isWorkingAge(<<Num>> age) <<Flag>> {
     return (age >= 18 && age <= 65)
 }
 
+private purr greet(<<Word>> name) <<Word>> {
+    return ('Hello, ' + name)
+}
+
 func Home() {
     <{count}> >> <<Num>> 0
     <{username}> >> 'Admin'
@@ -42,6 +46,7 @@ func Home() {
 
     craft<isAdult(age)>
     craft<isWorkingAge(age)>
+    craft<greet('World')>
 
     spin<{n}> in [1, 2, 3] }{
         craft<n>

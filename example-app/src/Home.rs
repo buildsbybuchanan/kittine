@@ -27,6 +27,10 @@ pub fn isWorkingAge(age: f64) -> bool {
     (age >= 18f64) && (age <= 65f64)
 }
 
+fn greet(name: String) -> String {
+    format!("{}{}", "Hello, ", name.clone())
+}
+
 #[component]
 pub fn Home() -> impl IntoView {
     let (count, set_count) = signal(0f64);
@@ -55,6 +59,7 @@ pub fn Home() -> impl IntoView {
     }
     leptos::logging::log!("{}", isAdult(age.get()));
     leptos::logging::log!("{}", isWorkingAge(age.get()));
+    leptos::logging::log!("{}", greet("World".to_string()));
     for n in (vec![1, 2, 3]).into_iter() {
         leptos::logging::log!("{}", n);
     }

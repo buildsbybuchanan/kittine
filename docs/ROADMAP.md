@@ -125,10 +125,11 @@ website (in Kittine) need next":
    static generation, Kittine just doesn't expose either yet. The biggest
    remaining blocker specifically for "website" now that routing and
    array-typed props both exist.
-2. **A string literal can't be passed directly to a `Word`-typed `purr`
-   parameter.** `someFunc('text')` doesn't work when `someFunc` takes a
-   `Word` — only a `Word` signal/prop does (`someFunc(name)`). Needs real
-   type information about the callee to fix safely; see
+2. **A string literal passed to a *cross-file* `Word`-typed `purr`
+   parameter still doesn't work.** Same-file calls are fixed (the
+   compiler knows the callee's signature from its own definition), but
+   `someFunc('text')` through an `import` still needs real cross-file
+   type information Kittine doesn't have yet; see
    [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
 3. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
@@ -153,7 +154,10 @@ privacy rules) — landed 2026-07-18. ~~Logical `&&`/`||`~~ (combine
 comparisons into one condition, usable generally not just in
 conditions) — landed 2026-07-18. ~~Incremental/cached builds for the
 import graph~~ (`.rs` files are only rewritten when their content
-actually changed) — landed 2026-07-18.
+actually changed) — landed 2026-07-18. ~~Same-file string-literal ->
+`Word` `purr` parameter~~ (the compiler now knows a same-file callee's
+signature; cross-file calls remain open, see item 2 above) — landed
+2026-07-18.
 
 ## Full vision (phased, honest)
 

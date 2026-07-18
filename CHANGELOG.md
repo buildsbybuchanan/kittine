@@ -80,6 +80,16 @@ grouped by date until the first tagged release.
   `func NavList(<<Word[]>> items) { .. }` lowers to `items: Vec<String>`,
   a `purr` can return an array type the same way. Array type tags also
   check literal elements against the declared element type at parse time.
+- **A string literal passed to a same-file `purr`'s `<<Word>>` parameter
+  now renders as an owned `String`.** `greet('World')`, where `greet` is
+  defined as `purr greet(<<Word>> name) <<Word>> { .. }` in the same
+  file, now lowers to `greet("World".to_string())` instead of
+  `greet("World")` — the compiler already knows `greet`'s parameter
+  types from its own definition, so it can render the argument correctly
+  without guessing. A call through an `import`, or to a function Kittine
+  has no signature for, is unaffected (still renders the literal bare) —
+  real cross-file type information isn't available yet; see
+  [LANGUAGE.md § Known limitations](docs/LANGUAGE.md#known-limitations).
 - **Incremental builds for the import graph**: `kittine-compiler build`
   still recompiles every reachable `.kitty` file on every invocation (it
   has to, to know if anything changed), but now only actually *rewrites*

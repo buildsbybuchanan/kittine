@@ -43,16 +43,23 @@ const INDENT: &str = "    ";
 /// Threads both "which signals have been declared so far" (mutated as
 /// statements are lowered) and "which names are typed parameters" (fixed
 /// for the lifetime of a single component/function) through codegen.
-struct Scope {
+struct Scope<'a> {
     declared: HashSet<String>,
     params: HashMap<String, String>,
     /// Names bound by an enclosing view-position `spin` (`JsxNode::Spin`).
     /// Reads of these are always `.clone()`d — see `render_var_read`.
     spin_items: HashSet<String>,
+    /// Every same-file `purr`'s parameter types, by function name, in
+    /// declaration order — lets a call site tell whether a bare string
+    /// literal argument needs `.to_string()` (see `render_call`). Shared
+    /// (not owned) across every `Scope` in a file, since it's the same
+    /// program-wide map regardless of which component/function is being
+    /// lowered right now.
+    known_functions: &'a HashMap<String, Vec<String>>,
 }
 
-impl Scope {
-    fn for_params(params: &[Param]) -> Self {
+impl<'a> Scope<'a> {
+    fn for_params(params: &[Param], known_functions: &'a HashMap<String, Vec<String>>) -> Self {
         Scope {
             declared: HashSet::new(),
             params: params
@@ -60,6 +67,7 @@ impl Scope {
                 .map(|p| (p.name.clone(), p.ty.clone()))
                 .collect(),
             spin_items: HashSet::new(),
+            known_functions,
         }
     }
 
@@ -72,8 +80,28 @@ impl Scope {
             declared: self.declared.clone(),
             params: self.params.clone(),
             spin_items,
+            known_functions: self.known_functions,
         }
     }
+}
+
+/// Maps every same-file `purr`'s name to its parameter types, in order —
+/// built once per file and threaded through every `Scope` so a call site
+/// (`Expr::Call`) can tell whether an argument needs to be coerced (see
+/// `render_call`). Cross-file calls (through an `import`) aren't covered —
+/// Kittine doesn't have real cross-file type information yet, see
+/// `docs/LANGUAGE.md` § Known limitations.
+fn collect_function_signatures(items: &[Item]) -> HashMap<String, Vec<String>> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Function(f) => Some((
+                f.name.clone(),
+                f.params.iter().map(|p| p.ty.clone()).collect(),
+            )),
+            Item::Component(_) => None,
+        })
+        .collect()
 }
 
 pub fn generate(program: &Program) -> String {
@@ -91,10 +119,11 @@ pub fn generate(program: &Program) -> String {
     out.push_str("use leptos_router::components::*;\n");
     out.push_str("use leptos_router::*;\n\n");
     out.push_str(&gen_imports(&program.imports));
+    let known_functions = collect_function_signatures(&program.items);
     for item in &program.items {
         match item {
-            Item::Component(c) => out.push_str(&gen_component(c)),
-            Item::Function(f) => out.push_str(&gen_function(f)),
+            Item::Component(c) => out.push_str(&gen_component(c, &known_functions)),
+            Item::Function(f) => out.push_str(&gen_function(f, &known_functions)),
         }
         out.push('\n');
     }
@@ -196,7 +225,7 @@ fn visibility(is_private: bool) -> &'static str {
     if is_private { "" } else { "pub " }
 }
 
-fn gen_component(component: &Component) -> String {
+fn gen_component(component: &Component, known_functions: &HashMap<String, Vec<String>>) -> String {
     let mut out = String::new();
     out.push_str("#[component]\n");
     out.push_str(&format!(
@@ -206,7 +235,7 @@ fn gen_component(component: &Component) -> String {
         param_list_rust(&component.params)
     ));
 
-    let mut scope = Scope::for_params(&component.params);
+    let mut scope = Scope::for_params(&component.params, known_functions);
     for stmt in &component.body {
         gen_stmt(stmt, &mut scope, &mut out, 1);
     }
@@ -224,7 +253,7 @@ fn gen_component(component: &Component) -> String {
     out
 }
 
-fn gen_function(function: &Function) -> String {
+fn gen_function(function: &Function, known_functions: &HashMap<String, Vec<String>>) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "{}fn {}({}) -> {} {{\n",
@@ -234,7 +263,7 @@ fn gen_function(function: &Function) -> String {
         rust_type(&function.return_type)
     ));
 
-    let mut scope = Scope::for_params(&function.params);
+    let mut scope = Scope::for_params(&function.params, known_functions);
     for stmt in &function.body {
         gen_stmt(stmt, &mut scope, &mut out, 1);
     }
@@ -397,7 +426,9 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
         Expr::Bool(b) => b.to_string(),
         Expr::Array(items) => render_array(items, &|e| substitute_self(e, name, scope)),
         Expr::Typed { value, .. } => substitute_self(value, name, scope),
-        Expr::Call { name: fname, args } => render_call(fname, args, &|e| substitute_self(e, name, scope)),
+        Expr::Call { name: fname, args } => {
+            render_call(fname, args, &|e| substitute_self(e, name, scope), scope)
+        }
     }
 }
 
@@ -405,12 +436,45 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
 /// safety as an arithmetic operand (see [`render_arith_operand`]) — a
 /// number literal passed directly as a call argument doesn't type-check
 /// against an `f64` parameter without an explicit `f64` suffix either.
-fn render_call(name: &str, args: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
+///
+/// Additionally, if `name` is a same-file `purr` whose parameter at this
+/// argument's position is `Word` (known via `scope.known_functions`), a
+/// bare string-literal argument gets `.to_string()` appended — otherwise
+/// it renders as `&str`, which doesn't type-check against a `Word`
+/// parameter's `String`. This is real type information, not a guess, which
+/// is why it's safe here in a way that always-owning every string literal
+/// (tried once, reverted — see `expr_to_rust`'s `Expr::Str` arm) wasn't: an
+/// import'ed (cross-file) callee's signature isn't known, so a literal
+/// passed to one still doesn't get this treatment — see
+/// `docs/LANGUAGE.md` § Known limitations.
+fn render_call(name: &str, args: &[Expr], render: &dyn Fn(&Expr) -> String, scope: &Scope) -> String {
+    let param_types = scope.known_functions.get(name);
     let rendered: Vec<String> = args
         .iter()
-        .map(|e| render_arith_operand(e, render))
+        .enumerate()
+        .map(|(i, arg)| {
+            let rendered_arg = render_arith_operand(arg, render);
+            let needs_owned_string = is_bare_string_literal(arg)
+                && param_types.and_then(|types| types.get(i)).is_some_and(|ty| ty == "Word");
+            if needs_owned_string {
+                format!("{rendered_arg}.to_string()")
+            } else {
+                rendered_arg
+            }
+        })
         .collect();
     format!("{name}({})", rendered.join(", "))
+}
+
+/// `true` for a string literal, optionally wrapped in a `<<Word>>` type
+/// tag — used by [`render_call`] to decide whether an argument needs
+/// `.to_string()` for a known `Word` parameter.
+fn is_bare_string_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Str(_) => true,
+        Expr::Typed { ty, value } => ty == "Word" && is_bare_string_literal(value),
+        _ => false,
+    }
 }
 
 /// Renders `[a, b, c]` as `vec![a, b, c]`.
@@ -543,7 +607,7 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
         Expr::Bool(b) => b.to_string(),
         Expr::Array(items) => render_array(items, &|e| expr_to_rust(e, scope)),
         Expr::Typed { value, .. } => expr_to_rust(value, scope),
-        Expr::Call { name, args } => render_call(name, args, &|e| expr_to_rust(e, scope)),
+        Expr::Call { name, args } => render_call(name, args, &|e| expr_to_rust(e, scope), scope),
     }
 }
 
