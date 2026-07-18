@@ -90,12 +90,17 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (36+ tests, every feature round-tripped against actual
-Leptos, routing driven end-to-end in a real browser) with a language core
-solid enough for a genuine multi-page client-side app. That's real
-progress, not the same thing as production-ready. What's still missing:
+tested compiler (62+ tests, every feature round-tripped against actual
+Leptos, routing (including dynamic segments) driven end-to-end in a real
+browser) with a language core solid enough for a genuine multi-page
+client-side app. That's real progress, not the same thing as
+production-ready. What's still missing:
 
-1. **SSR/SSG.** Covered above — CSR-only today.
+1. **SSR/SSG.** CSR-only today — and, per the investigation above, not a
+   quick follow-up: it's a real architecture fork (adopt `cargo-leptos`
+   and retire Vite for SSR-mode projects, or hand-roll an Axum server +
+   dual `ssr`/`hydrate` build alongside Vite), not an increment on the
+   current toolchain.
 2. **No error-handling story.** Kittine has no `Result`/`Option`-shaped
    construct; a runtime panic in generated Rust is a hard crash reported
    only in the browser devtools console, with nothing a `.kitty` author
@@ -128,11 +133,35 @@ these get addressed.
 Roughly in priority order, driven by "what does writing the actual Kittine
 website (in Kittine) need next":
 
-1. **SSR/SSG.** Currently CSR-only. A marketing/business site cares about
-   first paint and SEO; Leptos already supports both server rendering and
-   static generation, Kittine just doesn't expose either yet. The biggest
-   remaining blocker specifically for "website" now that routing and
-   array-typed props both exist.
+1. **SSR/SSG — investigated, not a bounded task like the rest of this
+   list.** Currently CSR-only. Checked what SSR actually requires for
+   Leptos 0.7 directly (Leptos's own book, `cargo-leptos`'s own docs)
+   rather than assuming, and it's a real architecture fork, not an
+   increment:
+   - Leptos SSR needs a Rust HTTP server (`leptos_axum` or
+     `leptos_actix`) plus **two separate builds of the same crate**
+     behind Cargo feature flags — `hydrate` (client, `wasm32-unknown-
+     unknown`) and `ssr` (server, native) — and a different client entry
+     point (`hydrate()` instead of `mount_to_body()`).
+   - **`cargo-leptos`** (the standard tool for this) explicitly *replaces*
+     Vite-style dev-server/build orchestration — its own docs describe
+     it as "not designed for parallel use with Vite or similar tools." It
+     runs both builds, wires up hydration, and serves everything itself
+     from its own dev server (`127.0.0.1:3000` by default).
+   - That means adopting it isn't "add a flag to vite-plugin-kittine" —
+     it's retiring Vite as the dev/build tool for any Kittine project
+     that wants SSR, in favor of `cargo-leptos`'s own toolchain. The
+     alternative (hand-rolling Axum + a dual `ssr`/`hydrate` build
+     *alongside* Vite, without `cargo-leptos`) avoids that specific
+     conflict but is more custom code to build and maintain, not less
+     work overall.
+   - **Conclusion:** this is real Phase 4 material — a dedicated
+     architecture decision (which of the two paths above, and what that
+     means for `vite-plugin-kittine`'s role) — not a same-shape "next up"
+     item alongside things like logical operators or dynamic routes.
+     Staying CSR-only is the honest current state; revisit this with a
+     scoped design pass, not a quick increment, when it's actually time
+     to build the public site.
 2. **A string literal passed to a *cross-file* `Word`-typed `purr`
    parameter still doesn't work.** Same-file calls are fixed (the
    compiler knows the callee's signature from its own definition), but

@@ -8,6 +8,22 @@ grouped by date until the first tagged release.
 
 ## [Unreleased] - 2026-07-18
 
+### Investigated
+
+- **SSR/SSG feasibility.** Checked Leptos 0.7's actual SSR requirements
+  directly (the Leptos book, `cargo-leptos`'s own docs) rather than
+  assuming: it needs a Rust HTTP server (`leptos_axum`/`leptos_actix`),
+  a dual `hydrate`/`ssr`-feature-gated build of the same crate, and a
+  `hydrate()` client entry point instead of `mount_to_body()`.
+  `cargo-leptos`, the standard tool for this, explicitly isn't designed
+  to run alongside Vite — it replaces the dev-server/build-orchestration
+  role `vite-plugin-kittine` currently fills. Conclusion: this is a real
+  architecture decision (retire Vite for SSR-mode projects and adopt
+  `cargo-leptos`, or hand-roll Axum + a dual build alongside Vite), not
+  a same-shape increment like the items below — staying CSR-only for
+  now rather than force-fitting a partial answer. See
+  [ROADMAP.md § Next up](docs/ROADMAP.md#next-up).
+
 ### Changed
 
 - **Breaking:** removed the `¨...¨` diaeresis-quoted string form. Strings are
