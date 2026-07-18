@@ -22,8 +22,9 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
 - **Core language**: components (`func`), plain functions (`purr`),
   reactive state (`<{name}> >> value`), `if>`/`orif>`/`else>` control flow,
   `spin` loops (both imperative-statement and reactive-list-in-view forms),
-  function calls, arithmetic/string-concat expressions, arrays, booleans,
-  type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
+  function calls, arithmetic/string-concat expressions, comparisons
+  (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
+  arrays, booleans, type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
 - **Component composition**: `<Name prop='x' />` for a PascalCase tag,
@@ -122,9 +123,8 @@ website (in Kittine) need next":
 3. **`export` / visibility control.** Every top-level `func`/`purr` is
    implicitly importable by any file today; there's no way to keep
    something file-private.
-4. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
-   `<=`, `>=`, `!=`. Needed for anything beyond exact-match conditionals
-   (pagination, validation ranges, sort order).
+4. **Logical `&&`/`||`.** Each of `>>`/`<`/`<=`/`>`/`>=`/`!=` works alone;
+   there's no way to combine two comparisons into one `if>` condition yet.
 5. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
@@ -139,7 +139,9 @@ website (in Kittine) need next":
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
 param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
-composed with zero new syntax) — landed 2026-07-18.
+composed with zero new syntax) — landed 2026-07-18. ~~Comparison
+operators~~ (`<`/`<=`/`>`/`>=`/`!=`, usable generally not just in
+conditions) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 

@@ -25,6 +25,13 @@ pub enum TokenKind {
     SlashGt, // />
     LtSlash, // </
 
+    // Comparison operators (`<` / `>` above double as these when they
+    // appear after an already-parsed left-hand side; see `parser::
+    // parse_comparison_tail`)
+    LtEq,  // <=
+    GtEq,  // >=
+    BangEq, // !=
+
     // Keywords
     KeywordFunc,
     KeywordReturn,
@@ -71,6 +78,9 @@ impl fmt::Display for TokenKind {
             TokenKind::Gt => write!(f, ">"),
             TokenKind::SlashGt => write!(f, "/>"),
             TokenKind::LtSlash => write!(f, "</"),
+            TokenKind::LtEq => write!(f, "<="),
+            TokenKind::GtEq => write!(f, ">="),
+            TokenKind::BangEq => write!(f, "!="),
             TokenKind::KeywordFunc => write!(f, "func"),
             TokenKind::KeywordReturn => write!(f, "return"),
             TokenKind::KeywordSpin => write!(f, "spin"),
@@ -290,6 +300,36 @@ impl Lexer {
                 self.advance();
                 tokens.push(Token {
                     kind: TokenKind::SlashGt,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with("<=") {
+                self.advance();
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::LtEq,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with(">=") {
+                self.advance();
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::GtEq,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with("!=") {
+                self.advance();
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::BangEq,
                     line,
                     col,
                 });

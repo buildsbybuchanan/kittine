@@ -126,6 +126,11 @@ pub enum BinOp {
     Mul,
     Div,
     Eq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    Ne,
 }
 
 /// A node in the JSX-like `return ( ... )` tree.
