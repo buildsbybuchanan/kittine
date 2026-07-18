@@ -21,14 +21,17 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
 
 - **Core language**: components (`func`), plain functions (`purr`),
   reactive state (`<{name}> >> value`), `if>`/`orif>`/`else>` control flow,
-  `spin` loops (imperative, not view-rendering), function calls,
-  arithmetic/string-concat expressions, arrays, booleans, type tags
-  (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
+  `spin` loops (both imperative-statement and reactive-list-in-view forms),
+  function calls, arithmetic/string-concat expressions, arrays, booleans,
+  type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
 - **Component composition**: `<Name prop='x' />` for a PascalCase tag,
   passing typed props as plain values (not reactive DOM-attribute
   closures).
+- **List rendering in views**: `spin<{item}> in list }{ .. }{` inside
+  `return ( ... )` lowers to a reactive Leptos `<For>`, keyed by
+  `format!("{item}")`.
 - **Codegen targets real Leptos 0.7 CSR** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -46,25 +49,27 @@ authoritative day-to-day list; this file is about direction, not spec.
 Roughly in priority order, driven by "what does writing the actual Kittine
 website (in Kittine) need next":
 
-1. **List rendering in views.** `spin` only works as imperative logic today
-   — it can't appear inside `return ( ... )` to render one element per
-   array item (a real Leptos `<For>` integration). Needed for anything
-   list-shaped: nav menus, blog indexes, product grids.
-2. **Component children.** `<Card>...</Card>` composition with JSX children
+1. **Component children.** `<Card>...</Card>` composition with JSX children
    passed through to the child component (a `children` prop concept).
    Currently composition is attributes-only.
-3. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
+2. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
    scalars; there's no tag for "a list of `Num`" yet, so a `purr` can't
    return one and a component can't take one as a prop.
-4. **`export` / visibility control.** Every top-level `func`/`purr` is
+3. **`export` / visibility control.** Every top-level `func`/`purr` is
    implicitly importable by any file today; there's no way to keep
    something file-private.
-5. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
+4. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
    `<=`, `>=`, `!=`. Needed for anything beyond exact-match conditionals
    (pagination, validation ranges, sort order).
-6. **Incremental/cached builds for the import graph.** `kittine-compiler
+5. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
+6. **`key` control for view-position `spin`.** Always keys by
+   `format!("{item}")` today; no way to key by something else (an id
+   field, an index) once array elements stop being bare scalars.
+
+Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
+`<For>`) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
@@ -125,6 +130,7 @@ stable v1.0 grammar freeze.
 The plan (per explicit instruction) is to build **buildsbybuchanan-style
 kittine.dev in Kittine itself**, once — and only once — enough of [Next
 up](#next-up) lands to make that practical: multi-page composition (needs
-imports ✅ done, props ✅ done, list rendering ❌ not yet for any
-page listing content). Do not start building the site itself until told to
-— this roadmap is preparation, not a green light.
+imports ✅ done, props ✅ done, list rendering ✅ done — component
+children and array-typed props are still open and would matter for a real
+site's card grids/nav data). Do not start building the site itself until
+told to — this roadmap is preparation, not a green light.

@@ -47,6 +47,12 @@ grouped by date until the first tagged release.
   detection included), emitting a `#[path] mod .. use ..;` per import.
 - `docs/ROADMAP.md`: a living plan (status / next-up / full vision) for
   where Kittine is headed, replacing ad-hoc scope discussions.
+- **List rendering in views**: `spin<{item}> in list }{ .. }{` can now
+  appear inside `return ( ... )` (not just as a statement), lowering to a
+  reactive Leptos `<For each=.. key=|item| format!("{item}") let:item>`
+  instead of a plain imperative `for` loop. The key is always
+  `format!("{item}")`, which works uniformly across `Num`/`Word`/`Flag`
+  since all three implement `Display`.
 
 ### Fixed
 

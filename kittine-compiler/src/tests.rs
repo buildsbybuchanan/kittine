@@ -527,3 +527,64 @@ func App() {
     );
     assert!(out.contains("for score in (scores.get()).into_iter() {"));
 }
+
+#[test]
+fn spin_in_view_lowers_to_leptos_for() {
+    let out = compile(
+        r#"
+func List() {
+    <{items}> >> [1, 2, 3]
+    return (
+        <ul>
+            spin<{n}> in <{items}> }{
+                <li>{ n }</li>
+            }{
+        </ul>
+    )
+}
+"#,
+    );
+    assert!(out.contains(r#"<For each=move || items.get() key=|n| format!("{n}") let:n>"#));
+    assert!(out.contains("</For>"));
+    assert!(out.contains("{move || n}"));
+}
+
+#[test]
+fn spin_in_view_over_array_literal() {
+    let out = compile(
+        r#"
+func List() {
+    return (
+        <ul>
+            spin<{n}> in [1, 2, 3] }{
+                <li>{ n }</li>
+            }{
+        </ul>
+    )
+}
+"#,
+    );
+    assert!(out.contains(r#"<For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>"#));
+}
+
+#[test]
+fn spin_in_view_supports_multiple_children() {
+    let out = compile(
+        r#"
+func List() {
+    return (
+        <ul>
+            spin<{n}> in [1, 2] }{
+                <li>"Item: "</li>
+                <li>{ n }</li>
+            }{
+        </ul>
+    )
+}
+"#,
+    );
+    // Both sibling <li>s inside one iteration should be emitted, not just
+    // the last one.
+    assert!(out.contains(r#""Item: ""#));
+    assert!(out.contains("{move || n}"));
+}

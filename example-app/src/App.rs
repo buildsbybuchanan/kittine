@@ -36,6 +36,13 @@ pub fn App() -> impl IntoView {
                 {move || doubled(count.get())}
                 ")"
             </button>
+            <ul>
+                <For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>
+                    <li>
+                        {move || n}
+                    </li>
+                </For>
+            </ul>
         </div>
     }
 }
