@@ -36,61 +36,110 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   { .. { children() } .. }`) renders whatever JSX a caller nests inside
   `<Card>...</Card>` — no `children=` attribute needed, Leptos's `view!`
   macro wires it through automatically.
+- **Routing**: `leptos_router` is in scope in every generated file;
+  `Router`/`Routes`/`Route`/`A` compose exactly like any other component,
+  with no dedicated Kittine syntax at all (see
+  [LANGUAGE.md § Routing](LANGUAGE.md#routing)). CSR-only — no SSR/SSG
+  integration yet.
 - **Codegen targets real Leptos 0.7 CSR** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
-  snapshots.
+  snapshots. Routing was additionally driven end-to-end with Playwright
+  against a real running dev server (navigation, the 404 fallback, and
+  continued reactivity all actually observed, not just compiled).
 - **Tooling**: `kittine-compiler` CLI (build), a Vite plugin driving the
   full compiler → cargo → wasm-bindgen pipeline, a VS Code extension
   (TextMate grammar only — no language server), Vercel deployment config.
 
-**Can it build a full website yet? No.** Everything above adds up to a
-solid *single-page app* — one component mounted to one root, with state,
-composition, lists, and shared logic. A website needs multiple navigable
-pages and (usually) fast/SEO-able first paint, and neither exists yet:
-there is no routing at all, and rendering is CSR-only (blank page until
-the WASM bundle loads and mounts — nothing for a crawler to see without
-executing JS). See the top of [Next up](#next-up).
+**Can it build a full website yet? Getting close, for the right kind of
+site.** A real multi-page app — composed components, typed props, list
+rendering, children, shared logic, and now genuine client-side routing
+with a 404 fallback — all work and are verified end-to-end. What's still
+missing specifically for "website" (as opposed to "app"): SSR/SSG (first
+paint is currently blank until WASM loads, and there's nothing for a
+crawler without executing JS — fine for an internal tool, not ideal for a
+public marketing/business site that cares about SEO), and array-typed
+props/returns (so nav menus and card grids can be driven by real data
+instead of hardcoded literals). See [Production readiness](#production-readiness)
+for the broader "is this ready to build real things on" answer, and the
+top of [Next up](#next-up) for what's next specifically toward "website."
 
 See [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations) for
 the precise, current boundary of what's supported — that section is the
 authoritative day-to-day list; this file is about direction, not spec.
+
+## Production readiness
+
+**Not yet.** This is answered honestly here every time something changes
+— per standing instruction, not a one-time verdict. Kittine is a real,
+tested compiler (36+ tests, every feature round-tripped against actual
+Leptos, routing driven end-to-end in a real browser) with a language core
+solid enough for a genuine multi-page client-side app. That's real
+progress, not the same thing as production-ready. What's still missing:
+
+1. **SSR/SSG.** Covered above — CSR-only today.
+2. **No error-handling story.** Kittine has no `Result`/`Option`-shaped
+   construct; a runtime panic in generated Rust is a hard crash reported
+   only in the browser devtools console, with nothing a `.kitty` author
+   can catch or recover from.
+3. **No way for a Kittine *program* to have its own tests.** The compiler
+   is well-tested; a person writing `.kitty` files has no test runner
+   surfaced to them at all.
+4. **No versioned releases.** Kittine itself has no v1.0/semver — several
+   breaking syntax changes have already happened in rapid succession
+   (removing `¨...¨`, adding four new constructs) with no migration story
+   or deprecation window, because there's no released version to be
+   compatible *with* yet.
+5. **No dedicated security review.** Kittine source becomes Rust source;
+   the string-escaping logic (`escape_str` in `codegen.rs`) that stands
+   between a `.kitty` string literal and a generated Rust string literal
+   hasn't had a focused audit for injection-style edge cases.
+6. **Tooling stops at "does it compile."** The VS Code extension is
+   TextMate-only — no diagnostics, no autocomplete, no go-to-definition —
+   so mistakes surface at `kittine-compiler build` time, not while typing.
+
+None of these are hard blockers to *experimenting* with Kittine or
+building the planned example site — they're what stands between "this
+works" and "I'd stake a real product on this." Phase 1 (real error
+handling, a real type system) and Phase 6 (security review, semver,
+grammar freeze) in [Full vision](#full-vision-phased-honest) are where
+these get addressed.
 
 ## Next up
 
 Roughly in priority order, driven by "what does writing the actual Kittine
 website (in Kittine) need next":
 
-1. **Routing / multi-page navigation.** Not started at all — there is no
-   way to define more than one page or navigate between URLs. This is the
-   single biggest blocker to calling anything built in Kittine "a website"
-   rather than "a single-page app." Leptos has a router
-   (`leptos_router`); Kittine needs syntax + codegen to expose it (route
-   definitions, links, at minimum).
-2. **SSR/SSG.** Currently CSR-only. A marketing/business site cares about
+1. **SSR/SSG.** Currently CSR-only. A marketing/business site cares about
    first paint and SEO; Leptos already supports both server rendering and
-   static generation, Kittine just doesn't expose either yet.
-3. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
+   static generation, Kittine just doesn't expose either yet. The biggest
+   remaining blocker specifically for "website" now that routing exists.
+2. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
    scalars; there's no tag for "a list of `Num`" yet, so a `purr` can't
    return one and a component can't take one as a prop — this blocks
    anything data-driven (nav menus, card grids) that isn't a hardcoded
    literal.
-4. **`export` / visibility control.** Every top-level `func`/`purr` is
+3. **`export` / visibility control.** Every top-level `func`/`purr` is
    implicitly importable by any file today; there's no way to keep
    something file-private.
-5. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
+4. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
    `<=`, `>=`, `!=`. Needed for anything beyond exact-match conditionals
    (pagination, validation ranges, sort order).
-6. **Incremental/cached builds for the import graph.** `kittine-compiler
+5. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
-7. **`key` control for view-position `spin`.** Always keys by
+6. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
+7. **Dynamic-segment routes and programmatic navigation, demonstrated.**
+   `ParamSegment`/`use_navigate` already work (they're just more
+   `leptos_router` items in scope), but nothing in `example-app` or the
+   docs shows them yet — worth a real example once a page needs one.
 
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
-param + `children()`) — landed 2026-07-18.
+param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
+composed with zero new syntax) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
@@ -118,7 +167,8 @@ logging, environment/config access, encryption/hashing primitives.
 
 ### Phase 3 — Backend & data
 
-An HTTP server + routing + middleware story; database connectivity (SQLite
+An HTTP server + middleware story (client-side *routing* is already done —
+see [Status](#status-what-works-today)); database connectivity (SQLite
 → Postgres/MySQL/MSSQL), a query builder or ORM, migrations, sessions/
 cookies/JWT/OAuth, background jobs/queues/scheduling, caching (Redis-style),
 rate limiting, WebSockets/SSE.
@@ -150,9 +200,10 @@ stable v1.0 grammar freeze.
 
 The plan (per explicit instruction) is to build **buildsbybuchanan-style
 kittine.dev in Kittine itself**, once — and only once — enough of [Next
-up](#next-up) lands to make that practical. Composing a *single* page
-is ready (imports ✅, props ✅, list rendering ✅, component children ✅).
-A real multi-page site additionally needs routing ❌ (not started — see
-[Next up](#next-up) #1) and ideally SSR/SSG ❌ for first paint and SEO, plus
-array-typed props for structured nav/card data. Do not start building the
-site itself until told to — this roadmap is preparation, not a green light.
+up](#next-up) lands to make that practical. Multi-page composition is
+ready: imports ✅, props ✅, list rendering ✅, component children ✅,
+routing ✅. What's left that would matter for a *real* public site is
+SSR/SSG ❌ (first paint + SEO) and array-typed props ❌ (structured
+nav/card data instead of hardcoded literals) — both still open in [Next
+up](#next-up). Do not start building the site itself until told to — this
+roadmap is preparation, not a green light.

@@ -634,3 +634,51 @@ func Page() {
     assert!(out.contains(r#""hello""#));
     assert!(out.contains("</Card>"));
 }
+
+#[test]
+fn generated_file_brings_leptos_router_into_scope() {
+    // Kittine has no routing syntax of its own — <Router>/<Routes>/<Route>/<A>
+    // are just ordinary component composition, and StaticSegment(..) is a
+    // plain function call. Both already work through existing codegen; all
+    // that's needed is leptos_router in scope everywhere, unconditionally.
+    let out = compile(
+        r#"
+func App() {
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("use leptos_router::components::*;"));
+    assert!(out.contains("use leptos_router::*;"));
+    assert!(out.contains("unused_imports"));
+}
+
+#[test]
+fn route_composition_uses_plain_calls_and_bare_component_refs() {
+    let out = compile(
+        r#"
+func Home() {
+    return ( <h1>"Home"</h1> )
+}
+
+func App() {
+    return (
+        <Router>
+            <Routes fallback={Home}>
+                <Route path={StaticSegment('')} view={Home}/>
+            </Routes>
+        </Router>
+    )
+}
+"#,
+    );
+    // `view={Home}` and `fallback={Home}` are bare component references (no
+    // `.get()`/`.clone()`/call parens) — Home isn't a signal or a prop, so
+    // it renders as a plain identifier, exactly what `ChooseView`/`FnOnce()
+    // -> Fallback` expect.
+    assert!(out.contains("fallback=Home"));
+    assert!(out.contains("view=Home"));
+    // StaticSegment('') is an ordinary function call, rendered the same way
+    // any other `name(args)` call would be.
+    assert!(out.contains(r#"path=StaticSegment("")"#));
+}

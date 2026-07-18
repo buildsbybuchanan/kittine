@@ -93,11 +93,14 @@ trigger a spurious reload loop.
 
 ## `example-app/` — the reference integration
 
-A minimal Leptos CSR crate (`leptos = { version = "0.7", features =
-["csr"] }`) whose `main.rs` mounts the compiled `App` component to
-`#[id="root"]` in `index.html`, and whose `vite.config.ts` registers the
-plugin with zero configuration (it infers the crate root and output
-directory automatically).
+A Leptos CSR crate (`leptos = { version = "0.7", features = ["csr"] }`,
+`leptos_router = "0.7"`) whose `main.rs` mounts the compiled `App`
+component to `#[id="root"]` in `index.html`, and whose `vite.config.ts`
+registers the plugin with zero configuration (it infers the crate root and
+output directory automatically). `App` wraps `Home`/`About`/`NotFound`
+pages in `leptos_router`'s `<Router>` — see
+[LANGUAGE.md § Routing](LANGUAGE.md#routing) for why that needed no
+compiler changes beyond bringing `leptos_router` into scope.
 
 ## `vscode-kittine/` — editor support
 

@@ -1,0 +1,8 @@
+func About() {
+    return (
+        <div>
+            <h1>"About"</h1>
+            <p>"This page is compiled from About.kitty and reached entirely through leptos_router — Kittine has no routing syntax of its own, Router/Routes/Route/A are just ordinary components."</p>
+        </div>
+    )
+}

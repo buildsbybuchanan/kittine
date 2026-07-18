@@ -9,7 +9,10 @@
 Kittine (`.kitty`) is a small custom language with its own variable/state
 syntax and an embedded JSX-like view syntax, compiled to idiomatic
 [Leptos 0.7](https://leptos.dev) Rust and run in the browser via
-WebAssembly.
+WebAssembly. It's deliberately not a from-scratch ecosystem: plain HTML
+elements, and Leptos/Rust items like `leptos_router`'s components, are
+first-class inside a `.kitty` file right alongside Kittine's own syntax —
+lean on the real framework underneath instead of reinventing it.
 
 Part of the [BuildsByBuchanan](https://buildsbybuchanan.com) code
 portfolio.
@@ -27,10 +30,13 @@ This repository is a monorepo with four parts:
   `.kitty` files, builds the host Rust crate to `wasm32-unknown-unknown`,
   post-processes it with `wasm-bindgen`, and serves the result to the
   browser.
-- **`example-app/`** — a minimal Leptos CSR app (`App.kitty`) demonstrating
-  a signal-backed counter, an `if>`/`orif>`/`else>` block, a `spin` loop, a
-  `purr` function, and a composed `Nav` component brought in via `import`
-  — wired up through the Vite plugin.
+- **`example-app/`** — a real multi-page Leptos CSR app: `App.kitty` wraps
+  `Home`/`About`/`NotFound` pages in a `leptos_router` `<Router>`, with
+  client-side `<A>` navigation and a 404 fallback. `Home.kitty`
+  demonstrates a signal-backed counter, an `if>`/`orif>`/`else>` block, a
+  `spin` loop (both imperative and list-rendering forms), a `purr`
+  function, and composed `Nav`/`Card` components — all wired up through
+  the Vite plugin.
 - **`vscode-kittine/`** — a VS Code extension providing syntax highlighting
   and a file icon for `.kitty` files. See
   [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) to install it.
@@ -101,6 +107,10 @@ func Counter() {
 - `import { Name } from './file.kitty'` brings another file's
   components/functions into scope; `kittine-compiler` resolves and
   compiles the whole import graph recursively.
+- **Routing has no Kittine-specific syntax** — `leptos_router` is in scope
+  everywhere, and `<Router>`/`<Routes>`/`<Route>`/`<A>` compose exactly
+  like any other component: `<Route path={StaticSegment('about')}
+  view={About}/>`. See [Routing](docs/LANGUAGE.md#routing).
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
 

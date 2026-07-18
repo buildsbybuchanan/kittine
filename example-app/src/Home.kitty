@@ -1,0 +1,44 @@
+import { Nav } from './Nav.kitty'
+import { Card } from './Card.kitty'
+
+purr doubled(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+
+func Home() {
+    <{count}> >> <<Num>> 0
+    <{username}> >> 'Admin'
+    <{ready}> >> yes>
+
+    if><{username}> >> 'Admin'
+        craft<'Welcome Admin'>
+    orif><{username}> >> "User"
+        craft<"Welcome User">
+    else>
+        craft<'no output'>
+
+    spin<{n}> in [1, 2, 3] }{
+        craft<n>
+    }{
+
+    return (
+        <div>
+            <Nav active='Counter'/>
+            <button onClick={<{count}> >> count + 1}>
+                "Clicks: "
+                <{count}>
+                " (doubled: "
+                { doubled(count) }
+                ")"
+            </button>
+            <ul>
+                spin<{n}> in [1, 2, 3] }{
+                    <li>{ n }</li>
+                }{
+            </ul>
+            <Card title='About this page'>
+                <p>"This card's children came from the composing view."</p>
+            </Card>
+        </div>
+    )
+}
