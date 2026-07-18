@@ -260,6 +260,37 @@ together. One correctness guarantee, enforced for free by the compiler
 Kittine already targets, instead of a second one Kittine would have to
 reimplement and keep in sync.
 
+### Re-exports
+
+```kitty
+export import { Nav } from './Nav.kitty'
+```
+
+An ordinary `import` only brings a name into scope for use *within* that
+file — a third file can't reach it by importing from the file that just
+imported it. `export` before `import` re-exposes the imported names under
+this file's own name, so a third file's `import { Nav } from
+'./this-file.kitty'` works without reaching all the way back to wherever
+`Nav` is actually defined. Useful for a "barrel" file that re-exports
+several components from one convenient path — `example-app`'s
+`components.kitty` does exactly this for `Nav`/`Card`/`NavList`.
+
+#### Compilation
+
+`export import` becomes `pub use` instead of a plain `use`:
+
+```rust
+#[path = "./Nav.rs"]
+mod __kittine_mod_nav;
+pub use __kittine_mod_nav::{Nav};
+```
+
+The `mod` declaration itself stays a plain (non-`pub`) Rust item either
+way — a `pub use` re-export doesn't need its *source* module to be `pub`
+too, only the item it's re-exporting (which is already `pub`, or the
+import wouldn't have compiled in the first place — see
+[Visibility](#visibility)).
+
 ## Component composition
 
 ```kitty
