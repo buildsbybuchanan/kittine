@@ -561,9 +561,14 @@ expr`.
 
 Everything else `leptos_router` supports — nested routes (`<ParentRoute>`
 + `<Outlet/>`), wildcard/catch-all segments — is available the same
-zero-new-syntax way. Server-side rendering / static generation (Leptos
-supports both) is a separate, bigger piece of work — see
-[ROADMAP.md](ROADMAP.md#next-up).
+zero-new-syntax way.
+
+Everything on this page describes `example-app`'s **client-side rendered**
+(CSR) setup, via Vite. Server-side rendering (real HTML in the first
+response, for SEO/fast first paint) is also real, via a separate
+toolchain (`cargo-leptos` + Axum, not Vite) — `kittine-compiler` needs no
+changes for it. See [docs/SSR.md](SSR.md) for the full setup and
+`example-ssr/` for a working multi-page example.
 
 ## Path-qualified expressions
 

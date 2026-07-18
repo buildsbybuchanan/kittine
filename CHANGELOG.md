@@ -23,6 +23,7 @@ grouped by date until the first tagged release.
   a same-shape increment like the items below — staying CSR-only for
   now rather than force-fitting a partial answer. See
   [ROADMAP.md § Next up](docs/ROADMAP.md#next-up).
+  **Resolved below** — see "Server-side rendering" under Added.
 
 ### Changed
 
@@ -32,6 +33,40 @@ grouped by date until the first tagged release.
 
 ### Added
 
+- **Server-side rendering (SSR), via a new `example-ssr/` project and
+  [docs/SSR.md](docs/SSR.md).** `kittine-compiler` needed **zero
+  changes** — the same `.kitty` → `.rs` compiler that powers
+  `example-app`'s CSR build powers `example-ssr` too; the only
+  difference is which Cargo features the *downstream* crate enables on
+  `leptos`, which Kittine's codegen has no concept of either way. Uses
+  `cargo-leptos` + Axum (`leptos_axum`) — a second toolchain, run
+  *alongside* `vite-plugin-kittine`/Vite, not a replacement for it;
+  `example-app`'s CSR path is completely unaffected. Verified for real,
+  not just compiled: `curl`'d the raw HTTP response and confirmed
+  genuine pre-rendered HTML content (no JavaScript involved), then used
+  Playwright against the running server to confirm hydration actually
+  wires up interactivity and that client-side `<A>` routing between
+  pages works after that.
+  - **Two real runtime gotchas found by actually running this, not
+    assumed:** `<HydrationScripts>` comes from `leptos`'s own prelude
+    (not `leptos_meta`, where `MetaTags` lives) — omit it and the page
+    renders correctly server-side but silently never becomes
+    interactive, since nothing ever loads the client bundle. Separately,
+    `.leptos_routes(..)` alone doesn't serve the wasm/JS bundle itself —
+    `.fallback(leptos_axum::file_and_error_handler(shell))` is needed too,
+    or the hydration script's own asset request 404s.
+  - **Investigated and ruled out a smaller "SSG-only" scope** before
+    committing to this: Leptos 0.7 has no built-in "prerender once at
+    build time, ship static files" mode distinct from request-time SSR —
+    generating static HTML at all still needs the same native `ssr`-feature
+    build and the same `leptos_axum`-style rendering machinery, just run
+    once per route instead of listening on a socket. No smaller path
+    existed to find.
+  - **Windows-specific gotcha:** `cargo install cargo-leptos` fails
+    building `openssl-sys` from source on a plain Git-Bash/MSYS Perl
+    install (missing `Locale::Maketext::Simple`). Fixed by using the
+    prebuilt binary from cargo-leptos's GitHub releases instead of
+    building from source — see [docs/SSR.md](docs/SSR.md).
 - **`hold name >> expr`**: a plain, non-reactive local binding — unlike
   `<{name}> >> value`, never declares a signal. Lowers to a bare `let
   name = expr;`, evaluated once. Exists specifically for calling a

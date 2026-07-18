@@ -61,19 +61,31 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   works, via [path-qualified expressions](LANGUAGE.md#path-qualified-expressions)
   (`NavigateOptions::default()`) and calling the hook eagerly (see
   [LANGUAGE.md § Programmatic navigation](LANGUAGE.md#programmatic-navigation)
-  for the non-obvious but necessary pattern). CSR-only — no SSR/SSG
-  integration yet.
-- **Codegen targets real Leptos 0.7 CSR** — every language feature above
+  for the non-obvious but necessary pattern).
+- **Server-side rendering (SSR) is real**, via a second toolchain
+  (`cargo-leptos` + Axum, not Vite) — `example-ssr/` is a working
+  multi-page site verified with real `curl` (genuine HTML content in the
+  first response, no JS needed) and Playwright (hydration + client-side
+  routing both confirmed against a running server). `kittine-compiler`
+  needed **zero changes** — the exact same `.kitty` → `.rs` output that
+  powers `example-app`'s CSR build powers `example-ssr` too. See
+  [SSR.md](SSR.md) for the full setup and the real gotchas found while
+  wiring it up (Windows `cargo-leptos` install, `HydrationScripts`
+  placement, static-asset serving). `example-app`'s Vite-based CSR path
+  is unaffected and remains the simpler default for apps that don't need
+  SEO/first-paint.
+- **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
-  snapshots. Routing was additionally driven end-to-end with Playwright
-  against a real running dev server (navigation, the 404 fallback, and
-  continued reactivity all actually observed, not just compiled). A
-  non-`Copy` value (a `Word`/array prop, a `spin` loop variable, or a
-  `hold`-bound local) read from more than one reactive closure in the same
-  component now correctly compiles too — a real move-conflict bug found
-  by actually compiling that exact pattern, not assumed away by the
-  earlier "always `.clone()`" fix.
+  snapshots, under **both** CSR/hydrate and SSR feature configurations.
+  Routing was additionally driven end-to-end with Playwright against a
+  real running dev server (navigation, the 404 fallback, and continued
+  reactivity all actually observed, not just compiled). A non-`Copy`
+  value (a `Word`/array prop, a `spin` loop variable, or a `hold`-bound
+  local) read from more than one reactive closure in the same component
+  now correctly compiles too — a real move-conflict bug found by actually
+  compiling that exact pattern, not assumed away by the earlier "always
+  `.clone()`" fix.
 - **Tooling**: `kittine-compiler` CLI (build), a Vite plugin driving the
   full compiler → cargo → wasm-bindgen pipeline, a VS Code extension
   (TextMate grammar only — no language server), Vercel deployment config.
@@ -83,16 +95,17 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   skip redoing work — verified with a real `npm run build` (~31s → ~5s
   for a no-op rebuild of `example-app`).
 
-**Can it build a full website yet? Getting close, for the right kind of
-site.** A real multi-page app — composed components, typed props, list
-rendering, children, shared logic, and now genuine client-side routing
-with a 404 fallback — all work and are verified end-to-end. What's still
-missing specifically for "website" (as opposed to "app"): SSR/SSG (first
-paint is currently blank until WASM loads, and there's nothing for a
-crawler without executing JS — fine for an internal tool, not ideal for a
-public marketing/business site that cares about SEO). See [Production readiness](#production-readiness)
-for the broader "is this ready to build real things on" answer, and the
-top of [Next up](#next-up) for what's next specifically toward "website."
+**Can it build a full website yet? Yes — the language and rendering gaps
+that were blocking it are both closed.** A real multi-page app — composed
+components, typed props, list rendering, children, shared logic, genuine
+client-side routing with a 404 fallback — all work and are verified
+end-to-end. The remaining "website, not just app" gap (SSR/SSG for real
+first paint and SEO) is now real too, via `example-ssr/` — see
+[SSR.md](SSR.md). See [Production readiness](#production-readiness) for
+the broader "is this ready to build real things on" answer (still "not
+yet," for reasons unrelated to rendering — see below), and [The Kittine
+website](#the-kittine-website) for what this means for actually building
+kittine.dev.
 
 See [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations) for
 the precise, current boundary of what's supported — that section is the
@@ -103,33 +116,29 @@ authoritative day-to-day list; this file is about direction, not spec.
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
 tested compiler (76+ tests, every feature round-tripped against actual
-Leptos, routing (including dynamic segments) driven end-to-end in a real
-browser) with a language core solid enough for a genuine multi-page
-client-side app. That's real progress, not the same thing as
-production-ready. What's still missing:
+Leptos under both CSR/hydrate and SSR configurations, routing (including
+dynamic segments) driven end-to-end in a real browser) with a language
+core solid enough for a genuine multi-page site, CSR or server-rendered.
+That's real progress, not the same thing as production-ready. What's
+still missing:
 
-1. **SSR/SSG.** CSR-only today — and, per the investigation above, not a
-   quick follow-up: it's a real architecture fork (adopt `cargo-leptos`
-   and retire Vite for SSR-mode projects, or hand-roll an Axum server +
-   dual `ssr`/`hydrate` build alongside Vite), not an increment on the
-   current toolchain.
-2. **No error-handling story.** Kittine has no `Result`/`Option`-shaped
+1. **No error-handling story.** Kittine has no `Result`/`Option`-shaped
    construct; a runtime panic in generated Rust is a hard crash reported
    only in the browser devtools console, with nothing a `.kitty` author
    can catch or recover from.
-3. **No way for a Kittine *program* to have its own tests.** The compiler
+2. **No way for a Kittine *program* to have its own tests.** The compiler
    is well-tested; a person writing `.kitty` files has no test runner
    surfaced to them at all.
-4. **No versioned releases.** Kittine itself has no v1.0/semver — several
+3. **No versioned releases.** Kittine itself has no v1.0/semver — several
    breaking syntax changes have already happened in rapid succession
    (removing `¨...¨`, adding four new constructs) with no migration story
    or deprecation window, because there's no released version to be
    compatible *with* yet.
-5. **No dedicated security review.** Kittine source becomes Rust source;
+4. **No dedicated security review.** Kittine source becomes Rust source;
    the string-escaping logic (`escape_str` in `codegen.rs`) that stands
    between a `.kitty` string literal and a generated Rust string literal
    hasn't had a focused audit for injection-style edge cases.
-6. **Tooling stops at "does it compile."** The VS Code extension is
+5. **Tooling stops at "does it compile."** The VS Code extension is
    TextMate-only — no diagnostics, no autocomplete, no go-to-definition —
    so mistakes surface at `kittine-compiler build` time, not while typing.
 
@@ -142,44 +151,11 @@ these get addressed.
 
 ## Next up
 
-Roughly in priority order, driven by "what does writing the actual Kittine
-website (in Kittine) need next":
-
-1. **SSR/SSG — investigated, not a bounded task like the rest of this
-   list.** Currently CSR-only. Checked what SSR actually requires for
-   Leptos 0.7 directly (Leptos's own book, `cargo-leptos`'s own docs)
-   rather than assuming, and it's a real architecture fork, not an
-   increment:
-   - Leptos SSR needs a Rust HTTP server (`leptos_axum` or
-     `leptos_actix`) plus **two separate builds of the same crate**
-     behind Cargo feature flags — `hydrate` (client, `wasm32-unknown-
-     unknown`) and `ssr` (server, native) — and a different client entry
-     point (`hydrate()` instead of `mount_to_body()`).
-   - **`cargo-leptos`** (the standard tool for this) explicitly *replaces*
-     Vite-style dev-server/build orchestration — its own docs describe
-     it as "not designed for parallel use with Vite or similar tools." It
-     runs both builds, wires up hydration, and serves everything itself
-     from its own dev server (`127.0.0.1:3000` by default).
-   - That means adopting it isn't "add a flag to vite-plugin-kittine" —
-     it's retiring Vite as the dev/build tool for any Kittine project
-     that wants SSR, in favor of `cargo-leptos`'s own toolchain. The
-     alternative (hand-rolling Axum + a dual `ssr`/`hydrate` build
-     *alongside* Vite, without `cargo-leptos`) avoids that specific
-     conflict but is more custom code to build and maintain, not less
-     work overall.
-   - **Conclusion:** this is real Phase 4 material — a dedicated
-     architecture decision (which of the two paths above, and what that
-     means for `vite-plugin-kittine`'s role) — not a same-shape "next up"
-     item alongside things like logical operators or dynamic routes.
-     Staying CSR-only is the honest current state; revisit this with a
-     scoped design pass, not a quick increment, when it's actually time
-     to build the public site.
-
-No other bounded items remain in this list right now — everything else
-that was here has landed (see Done below); the only other open item is
-SSR/SSG above, which needs a real architecture decision, not a quick
-increment. Add here the moment a real gap turns up (per the standing
-rule at the top of this file).
+No bounded items remain in this list right now — everything that was here
+has landed (see Done below). SSR/SSG (previously the one open item, flagged
+as needing a real architecture decision rather than a quick increment) is
+done too — see [SSR.md](SSR.md) and the Done entry below. Add here the
+moment a real gap turns up (per the standing rule at the top of this file).
 
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
@@ -225,7 +201,13 @@ before its closure) — landed 2026-07-18. ~~Word-signal mutation to a
 brand-new literal~~ (`<{label}> >> 'reset'` now owns the string, same
 class of fix as the `Word`-parameter string-literal work; wired into
 `example-app`'s `Home.kitty` as a "Reset to Guest" button) — landed
-2026-07-18.
+2026-07-18. ~~SSR/SSG~~ (real server-side rendering via `cargo-leptos` +
+Axum — a second toolchain alongside Vite, not a replacement for it —
+verified with real `curl` output and Playwright-confirmed hydration +
+client-side routing in `example-ssr/`; `kittine-compiler` needed zero
+changes, since CSR vs. SSR is entirely a downstream Cargo-feature
+decision, not anything Kittine's codegen is aware of; see
+[SSR.md](SSR.md)) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
@@ -261,7 +243,7 @@ rate limiting, WebSockets/SSE.
 
 ### Phase 4 — Full web framework
 
-SSR/SSG (Leptos already supports both — Kittine needs to expose them),
+~~SSR/SSG~~ (done — see [Status](#status-what-works-today), [SSR.md](SSR.md)),
 form handling + validation, file uploads, image optimization, CSRF/security
 headers, SEO/metadata management, streaming responses. A "backend
 framework" and "frontend framework" in the vision doc are really this phase
@@ -296,12 +278,24 @@ stable v1.0 grammar freeze.
 ## The Kittine website
 
 The plan (per explicit instruction) is to build **buildsbybuchanan-style
-kittine.dev in Kittine itself**, once — and only once — enough of [Next
-up](#next-up) lands to make that practical. Multi-page composition with
-real, structured data is ready: imports ✅, props ✅, list rendering ✅,
-component children ✅, routing ✅, array-typed props/returns ✅ (nav/card
-data can be real arrays now, not just hardcoded literals). What's left
-that would matter for a *real public* site — as opposed to what's
-buildable today — is mainly SSR/SSG ❌ (first paint + SEO), still open in
-[Next up](#next-up). Do not start building the site itself until told to — this
-roadmap is preparation, not a green light.
+kittine.dev in Kittine itself**. Every technical gap that was blocking
+this is now closed: imports ✅, props ✅, list rendering ✅, component
+children ✅, routing (including dynamic segments and programmatic
+navigation) ✅, array-typed props/returns ✅ (nav/card data can be real
+arrays, not just hardcoded literals), and SSR/SSG ✅ (real first paint +
+SEO, via `example-ssr`'s `cargo-leptos` + Axum setup — see
+[SSR.md](SSR.md)). [Production readiness](#production-readiness) still
+lists real, honest gaps (error handling, no program-level test runner, no
+versioned releases, no security review, no LSP) — none of them are
+rendering/language gaps, and none of them block *starting* the site, but
+they're worth knowing about before treating anything built on Kittine as
+hardened.
+
+**Do not start building the site itself until told to** — this roadmap
+is preparation, not a green light. The moment that instruction comes, the
+right starting decision is CSR (`example-app`-style, via Vite) vs. SSR
+(`example-ssr`-style, via `cargo-leptos`) for kittine.dev specifically —
+see the [comparison table in SSR.md](SSR.md#why-this-needs-a-different-toolchain)
+for the trade-off (SSR gets real SEO/first-paint; CSR keeps the simpler
+"just static files" deployment story this repo's `vercel.json` already
+relies on for `example-app`).
