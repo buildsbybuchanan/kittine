@@ -186,9 +186,20 @@ plus Phase 3, built on the same compiler rather than as separate products.
 A real package registry, publishing, dependency resolution and lock files,
 workspaces; a production Tree-sitter grammar; a minimal-but-real Language
 Server Protocol implementation (diagnostics, hover, go-to-definition,
-rename); GitHub Linguist submission so `.kitty` shows as **Kittine** in
-repo language stats; VS Code Marketplace publication; a formatter and
-linter; a REPL and debugger.
+rename); VS Code Marketplace publication; a formatter and linter; a REPL
+and debugger.
+
+**Explicitly not pursuing right now: GitHub Linguist submission.**
+Checked Linguist's actual current contribution requirements directly
+(not from memory) — they require at least 2000 indexed files using the
+`.kitty` extension across a reasonable spread of distinct public
+repositories before a new-language PR will even be reviewed, and will
+close PRs for languages that don't clear that bar. Kittine exists in one
+private repo today, which doesn't just fall short of that — it isn't
+visible to the assessment at all (private repos don't show up in the
+public GitHub Code Search Linguist's maintainers use). Getting `.kitty`
+recognized as "Kittine" with its own color on GitHub.com requires real
+public adoption first; revisit this once that's true, not before.
 
 ### Phase 6 — Production hardening
 
