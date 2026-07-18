@@ -32,6 +32,10 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
 - **List rendering in views**: `spin<{item}> in list }{ .. }{` inside
   `return ( ... )` lowers to a reactive Leptos `<For>`, keyed by
   `format!("{item}")`.
+- **Component children**: an untyped `children` param (`func Card(children)
+  { .. { children() } .. }`) renders whatever JSX a caller nests inside
+  `<Card>...</Card>` — no `children=` attribute needed, Leptos's `view!`
+  macro wires it through automatically.
 - **Codegen targets real Leptos 0.7 CSR** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -49,27 +53,25 @@ authoritative day-to-day list; this file is about direction, not spec.
 Roughly in priority order, driven by "what does writing the actual Kittine
 website (in Kittine) need next":
 
-1. **Component children.** `<Card>...</Card>` composition with JSX children
-   passed through to the child component (a `children` prop concept).
-   Currently composition is attributes-only.
-2. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
+1. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
    scalars; there's no tag for "a list of `Num`" yet, so a `purr` can't
    return one and a component can't take one as a prop.
-3. **`export` / visibility control.** Every top-level `func`/`purr` is
+2. **`export` / visibility control.** Every top-level `func`/`purr` is
    implicitly importable by any file today; there's no way to keep
    something file-private.
-4. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
+3. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
    `<=`, `>=`, `!=`. Needed for anything beyond exact-match conditionals
    (pagination, validation ranges, sort order).
-5. **Incremental/cached builds for the import graph.** `kittine-compiler
+4. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
-6. **`key` control for view-position `spin`.** Always keys by
+5. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
 
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
-`<For>`) — landed 2026-07-18.
+`<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
+param + `children()`) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
@@ -130,7 +132,7 @@ stable v1.0 grammar freeze.
 The plan (per explicit instruction) is to build **buildsbybuchanan-style
 kittine.dev in Kittine itself**, once — and only once — enough of [Next
 up](#next-up) lands to make that practical: multi-page composition (needs
-imports ✅ done, props ✅ done, list rendering ✅ done — component
-children and array-typed props are still open and would matter for a real
-site's card grids/nav data). Do not start building the site itself until
-told to — this roadmap is preparation, not a green light.
+imports ✅ done, props ✅ done, list rendering ✅ done, component
+children ✅ done — array-typed props are still open and would matter for
+a real site's structured nav/card data). Do not start building the site
+itself until told to — this roadmap is preparation, not a green light.

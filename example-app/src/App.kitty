@@ -1,4 +1,5 @@
 import { Nav } from './Nav.kitty'
+import { Card } from './Card.kitty'
 
 purr doubled(<<Num>> n) <<Num>> {
     return (n * 2)
@@ -35,6 +36,9 @@ func App() {
                     <li>{ n }</li>
                 }{
             </ul>
+            <Card title='About'>
+                <p>"This card's children came from the composing view."</p>
+            </Card>
         </div>
     )
 }

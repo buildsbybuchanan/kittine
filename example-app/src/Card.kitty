@@ -1,0 +1,8 @@
+func Card(<<Word>> title, children) {
+    return (
+        <div class='card'>
+            <h3>{ title }</h3>
+            { children() }
+        </div>
+    )
+}

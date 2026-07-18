@@ -166,8 +166,20 @@ impl Parser {
         Ok(ty)
     }
 
-    /// Parses a single `<<Type>> name` parameter.
+    /// Parses a single `<<Type>> name` parameter — or the special
+    /// untyped `children` shorthand, which needs no type tag since it
+    /// isn't one of `Num`/`Word`/`Flag`: it's Leptos's `Children`, bound to
+    /// whatever JSX content a caller nests inside `<ThisComponent>..</ThisComponent>`.
     fn parse_param(&mut self) -> PResult<Param> {
+        if let TokenKind::Ident(name) = self.peek().kind.clone()
+            && name == "children"
+        {
+            self.advance();
+            return Ok(Param {
+                ty: "Children".to_string(),
+                name,
+            });
+        }
         let ty = self.parse_signature_type()?;
         let name = self.expect_ident()?;
         Ok(Param { ty, name })
