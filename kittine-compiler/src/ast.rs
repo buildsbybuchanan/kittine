@@ -39,6 +39,10 @@ pub struct Component {
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
     pub return_view: Option<JsxNode>,
+    /// `true` for `private func ..` — emitted as a plain (non-`pub`) Rust
+    /// `fn`, so `import`ing it from another file is a Rust-enforced
+    /// compile error (E0603), not something Kittine has to check itself.
+    pub is_private: bool,
 }
 
 /// A single `purr name(<<Type>> param, ..) <<ReturnType>> { .. return (expr) }`
@@ -51,6 +55,8 @@ pub struct Function {
     pub return_type: String,
     pub body: Vec<Stmt>,
     pub return_expr: Expr,
+    /// `true` for `private purr ..` — see `Component::is_private`.
+    pub is_private: bool,
 }
 
 /// A statement inside a component body or an `if>`/`orif>`/`else>` block.

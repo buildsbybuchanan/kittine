@@ -2,7 +2,7 @@ import { Nav } from './Nav.kitty'
 import { Card } from './Card.kitty'
 import { NavList } from './NavList.kitty'
 
-purr doubled(<<Num>> n) <<Num>> {
+private purr doubled(<<Num>> n) <<Num>> {
     return (n * 2)
 }
 

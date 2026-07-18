@@ -112,10 +112,16 @@ impl Parser {
 
         let mut items = Vec::new();
         while !matches!(self.peek().kind, TokenKind::Eof) {
+            // `private` is optional and precedes `func`/`purr`; see
+            // `Component::is_private`/`Function::is_private`.
+            let is_private = matches!(self.peek().kind, TokenKind::KeywordPrivate);
+            if is_private {
+                self.advance();
+            }
             let item = match self.peek().kind {
-                TokenKind::KeywordFunc => Item::Component(self.parse_component()?),
-                TokenKind::KeywordPurr => Item::Function(self.parse_function()?),
-                _ => return Err(self.err("expected 'func' or 'purr' at the top level")),
+                TokenKind::KeywordFunc => Item::Component(self.parse_component(is_private)?),
+                TokenKind::KeywordPurr => Item::Function(self.parse_function(is_private)?),
+                _ => return Err(self.err("expected 'func' or 'purr' (optionally preceded by 'private') at the top level")),
             };
             items.push(item);
         }
@@ -210,7 +216,7 @@ impl Parser {
     }
 
     /// Parses `purr name(<<Type>> param, ..) <<ReturnType>> { stmt* return (expr) }`.
-    fn parse_function(&mut self) -> PResult<Function> {
+    fn parse_function(&mut self, is_private: bool) -> PResult<Function> {
         self.expect(TokenKind::KeywordPurr)?;
         let name = self.expect_ident()?;
         let params = self.parse_param_list()?;
@@ -250,10 +256,11 @@ impl Parser {
             return_type,
             body,
             return_expr,
+            is_private,
         })
     }
 
-    fn parse_component(&mut self) -> PResult<Component> {
+    fn parse_component(&mut self, is_private: bool) -> PResult<Component> {
         self.expect(TokenKind::KeywordFunc)?;
         let name = self.expect_ident()?;
         let params = self.parse_param_list()?;
@@ -288,6 +295,7 @@ impl Parser {
             params,
             body,
             return_view,
+            is_private,
         })
     }
 

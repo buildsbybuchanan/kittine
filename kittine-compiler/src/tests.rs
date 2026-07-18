@@ -849,3 +849,46 @@ func App() {
     );
     assert!(message.contains("does not match"));
 }
+
+#[test]
+fn private_purr_is_not_pub() {
+    let out = compile(
+        r#"
+private purr helper(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+"#,
+    );
+    assert!(out.contains("fn helper(n: f64) -> f64 {"));
+    assert!(!out.contains("pub fn helper"));
+}
+
+#[test]
+fn private_component_is_not_pub() {
+    let out = compile(
+        r#"
+private func Internal() {
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("fn Internal() -> impl IntoView {"));
+    assert!(!out.contains("pub fn Internal"));
+}
+
+#[test]
+fn non_private_items_stay_pub_by_default() {
+    let out = compile(
+        r#"
+func Home() {
+    return ( <div></div> )
+}
+
+purr doubled(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+"#,
+    );
+    assert!(out.contains("pub fn Home()"));
+    assert!(out.contains("pub fn doubled(n: f64) -> f64"));
+}

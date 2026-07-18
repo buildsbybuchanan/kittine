@@ -36,7 +36,8 @@ pub enum TokenKind {
     KeywordFunc,
     KeywordReturn,
     KeywordSpin, // spin<{item}> in <list> }{ .. }{
-    KeywordPurr,   // purr name(..) <<Type>> { .. }
+    KeywordPurr,    // purr name(..) <<Type>> { .. }
+    KeywordPrivate, // private func/purr ..
     KeywordImport, // import { A, B } from '...'
     KeywordFrom,
 
@@ -85,6 +86,7 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordReturn => write!(f, "return"),
             TokenKind::KeywordSpin => write!(f, "spin"),
             TokenKind::KeywordPurr => write!(f, "purr"),
+            TokenKind::KeywordPrivate => write!(f, "private"),
             TokenKind::KeywordImport => write!(f, "import"),
             TokenKind::KeywordFrom => write!(f, "from"),
             TokenKind::Ident(s) => write!(f, "{s}"),
@@ -353,6 +355,7 @@ impl Lexer {
                     "return" => TokenKind::KeywordReturn,
                     "spin" => TokenKind::KeywordSpin,
                     "purr" => TokenKind::KeywordPurr,
+                    "private" => TokenKind::KeywordPrivate,
                     "import" => TokenKind::KeywordImport,
                     "from" => TokenKind::KeywordFrom,
                     "if" if self.peek() == Some('>') => {

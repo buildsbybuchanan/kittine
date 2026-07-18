@@ -15,6 +15,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Functions (`purr`)](#functions-purr)
 - [Calling functions](#calling-functions)
 - [Modules and imports](#modules-and-imports)
+  - [Visibility](#visibility)
 - [Component composition](#component-composition)
   - [Children](#children)
 - [Routing](#routing)
@@ -168,6 +169,36 @@ use __kittine_mod_nav::{Nav};
 imports others also compiles each imported file (and anything *it*
 imports), writing every `.kitty` file in the import graph to its sibling
 `.rs` path. An import cycle is a compile error, not an infinite loop.
+
+### Visibility
+
+```kitty
+private purr internalHelper(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+```
+
+Every top-level `func`/`purr` is importable from any other file by
+default. `private` before `func`/`purr` opts a specific one out — trying
+to `import` a `private` item is then a compile error.
+
+#### Compilation
+
+`private` becomes a plain (non-`pub`) Rust item, instead of `pub`:
+
+```rust
+fn internalHelper(n: f64) -> f64 {
+    n * 2f64
+}
+```
+
+Kittine doesn't check `import`s against `private` itself — a plain Rust
+item is only visible within its own module, so trying to `use` a `private`
+one from another file's generated `mod` is *already* a Rust compile error
+(`E0603: function \`..\` is private`) once the two files are compiled
+together. One correctness guarantee, enforced for free by the compiler
+Kittine already targets, instead of a second one Kittine would have to
+reimplement and keep in sync.
 
 ## Component composition
 
@@ -755,7 +786,7 @@ rendered output. The JSX-like tree supports:
 
 ```
 program      := import* item*
-item         := component | function
+item         := "private"? (component | function)
 import       := "import" "{" IDENT ("," IDENT)* "}" "from" STRING
 component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
 function     := "purr" IDENT param_list type_tag_name
@@ -832,9 +863,11 @@ These are intentional scope boundaries of the current prototype, not bugs:
   dynamic segment (`use_params_map`) or navigating programmatically
   (`use_navigate`) means calling `leptos_router::hooks::*` directly rather
   than through anything Kittine-specific.
-- **`import` only brings in items, not re-exports.** There's no `export`
-  concept — every `func`/`purr` in a file is implicitly `pub` and
-  importable; you can't restrict what a file exposes.
+- **No re-exports.** `private` (see [Visibility](#visibility)) controls
+  whether an item can be imported *at all*, but there's no way for a file
+  to import something and then re-expose it under its own name for a
+  third file to import — every import has to go straight to the file that
+  actually defines the item.
 - **A string *literal* can't be passed directly to a `Word`-typed `purr`
   parameter or array element position that specifically needs an owned
   `String`.** Passing a `Word` *signal* or prop works fine (both already

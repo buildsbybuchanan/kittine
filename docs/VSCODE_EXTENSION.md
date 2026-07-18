@@ -18,7 +18,7 @@ language before a full language server exists.
 ```sh
 cd vscode-kittine
 npx @vscode/vsce package --no-rewrite-relative-links
-code --install-extension kittine-lang-0.2.0.vsix
+code --install-extension kittine-lang-0.3.0.vsix
 ```
 
 Restart VS Code (or reload the window: `Ctrl+Shift+P` → "Developer: Reload
@@ -39,7 +39,7 @@ file — send it directly, or attach it to a GitHub release, and anyone can
 run:
 
 ```sh
-code --install-extension kittine-lang-0.2.0.vsix
+code --install-extension kittine-lang-0.3.0.vsix
 ```
 
 No marketplace publishing step is required for this. If you do want it
@@ -54,17 +54,18 @@ nothing in this extension's structure needs to change to support that.
 | Kittine syntax | Scope |
 |---|---|
 | `<{name}>` | `punctuation.definition.variable.*` / `variable.other.kittine` |
-| `>>` | `keyword.operator.assignment` |
+| `>>` / `<` / `<=` / `>` / `>=` / `!=` | `keyword.operator.assignment` / `keyword.operator.comparison` |
 | `if>` / `orif>` / `else>` | `keyword.control.conditional` |
 | `craft<...>` | `keyword.other.craft` |
 | `'...'` and `"..."` | `string.quoted.*` |
 | `yes>` / `no>` | `constant.language.boolean` |
-| `<<Num>>` / `<<Word>>` / `<<Flag>>` | `storage.type.kittine` |
+| `<<Num>>` / `<<Word>>` / `<<Flag>>` (or `[]` for an array of one) | `storage.type.kittine` |
 | `spin` / `in` | `keyword.control.loop` |
 | `[` / `]` | `punctuation.definition.array` |
 | `func`, `purr`, `return` | `storage.type.function` / `keyword.control.flow` |
+| `private` | `storage.modifier` |
 | `import`, `from` | `keyword.control.import` |
-| JSX tags/attributes | `entity.name.tag`, `entity.other.attribute-name` |
+| JSX tags/attributes (incl. `leptos_router`'s `Router`/`Routes`/`Route`/`A`) | `entity.name.tag`, `entity.other.attribute-name` |
 | `// comment` | `comment.line.double-slash` |
 
 Any VS Code color theme that styles the standard TextMate scopes above

@@ -28,6 +28,8 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `<<Flag[]>>`), booleans, type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
+  `private func`/`purr` opts an item out of being importable, enforced by
+  Rust's own privacy rules.
 - **Component composition**: `<Name prop='x' />` for a PascalCase tag,
   passing typed props as plain values (not reactive DOM-attribute
   closures).
@@ -117,26 +119,26 @@ website (in Kittine) need next":
    static generation, Kittine just doesn't expose either yet. The biggest
    remaining blocker specifically for "website" now that routing and
    array-typed props both exist.
-2. **`export` / visibility control.** Every top-level `func`/`purr` is
-   implicitly importable by any file today; there's no way to keep
-   something file-private.
-3. **Logical `&&`/`||`.** Each of `>>`/`<`/`<=`/`>`/`>=`/`!=` works alone;
+2. **Logical `&&`/`||`.** Each of `>>`/`<`/`<=`/`>`/`>=`/`!=` works alone;
    there's no way to combine two comparisons into one `if>` condition yet.
-4. **A string literal can't be passed directly to a `Word`-typed `purr`
+3. **A string literal can't be passed directly to a `Word`-typed `purr`
    parameter.** `someFunc('text')` doesn't work when `someFunc` takes a
    `Word` — only a `Word` signal/prop does (`someFunc(name)`). Needs real
    type information about the callee to fix safely; see
    [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
-5. **Incremental/cached builds for the import graph.** `kittine-compiler
+4. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
-6. **`key` control for view-position `spin`.** Always keys by
+5. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
-7. **Dynamic-segment routes and programmatic navigation, demonstrated.**
+6. **Dynamic-segment routes and programmatic navigation, demonstrated.**
    `ParamSegment`/`use_navigate` already work (they're just more
    `leptos_router` items in scope), but nothing in `example-app` or the
    docs shows them yet — worth a real example once a page needs one.
+7. **Re-exports.** `private` controls whether an item is importable at
+   all, but there's no way to import something into a file and then
+   re-expose it under that file's own name for a third file to import.
 
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
@@ -144,7 +146,9 @@ param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
 composed with zero new syntax) — landed 2026-07-18. ~~Comparison
 operators~~ (`<`/`<=`/`>`/`>=`/`!=`, usable generally not just in
 conditions) — landed 2026-07-18. ~~Array-typed props/returns~~
-(`<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`) — landed 2026-07-18.
+(`<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`) — landed 2026-07-18. ~~`export`/
+visibility control~~ (`private func`/`purr`, enforced by Rust's own
+privacy rules) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 

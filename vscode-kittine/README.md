@@ -35,6 +35,10 @@ parent [`kittine`](..) project.
   | `func Name(<<Type>> prop) { .. }` | Component with typed props | `storage.type.function` |
   | `purr name(<<Type>> arg) <<Type>> { .. }` | Plain value-returning function | `storage.type.function` |
   | `import { A, B } from '...'` | Bring components/functions in from another file | `keyword.control.import` |
+  | `private func/purr Name(..)` | Not importable elsewhere (Rust-enforced) | `storage.modifier` |
+  | `>>` / `<` / `<=` / `>` / `>=` / `!=` | Comparisons, usable generally not just in conditions | `keyword.operator.assignment` / `keyword.operator.comparison` |
+  | `<<Num[]>>` / `<<Word[]>>` / `<<Flag[]>>` | Array-typed prop/return tags | `storage.type.kittine` |
+  | `<Router>`/`<Routes>`/`<Route>`/`<A>` | `leptos_router`, composed like any component — no Kittine-specific syntax | `entity.name.tag` |
   | `return ( <jsx> )` | The embedded JSX-like view syntax that closes a component | `entity.name.tag`, `entity.other.attribute-name` |
   | `// comment` | Line comments (no block comment form exists) | `comment.line.double-slash` |
 
@@ -98,7 +102,7 @@ install it from the `.vsix` file directly.
 ```sh
 cd vscode-kittine
 npx @vscode/vsce package --no-rewrite-relative-links
-code --install-extension kittine-lang-0.2.0.vsix
+code --install-extension kittine-lang-0.3.0.vsix
 ```
 
 Restart VS Code, or reload the window (`Ctrl+Shift+P` → "Developer: Reload
@@ -106,7 +110,7 @@ Window"), if `.kitty` files don't pick up highlighting immediately.
 
 ### From the VS Code UI
 
-1. Build (or download) `kittine-lang-0.2.0.vsix`.
+1. Build (or download) `kittine-lang-0.3.0.vsix`.
 2. Open the Extensions view (`Ctrl+Shift+X`).
 3. Click the `...` menu → **Install from VSIX...** → select the file.
 
@@ -128,9 +132,8 @@ anyone to install it with `code --install-extension`.
 This extension mirrors the compiler's current scope; it does not add
 features beyond what Kittine itself supports yet (see
 [Known limitations](../docs/LANGUAGE.md#known-limitations) in the language
-reference for the full list — no array-typed props/returns, no
-`export`/visibility control, equality-only comparisons). There is also no
-language server: no diagnostics, no completions, no hover info, no
+reference for the full list — no logical `&&`/`||`, no SSR/SSG). There is
+also no language server: no diagnostics, no completions, no hover info, no
 go-to-definition — purely TextMate-grammar-based highlighting.
 
 ## Rebuilding after changes

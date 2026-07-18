@@ -130,6 +130,14 @@
     "declaration-keywords": {
       "patterns": [
         {
+          "match": "\\b(private)\\s+(func|purr)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.kitty" },
+            "2": { "name": "storage.type.function.kitty" },
+            "3": { "name": "entity.name.function.kitty" }
+          }
+        },
+        {
           "match": "\\b(func|purr)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.type.function.kitty" },
