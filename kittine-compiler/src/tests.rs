@@ -259,6 +259,25 @@ func App() {
 }
 
 #[test]
+fn word_signal_mutation_to_a_brand_new_literal_is_owned() {
+    // `<{label}> >> 'reset'` as a *mutation* (not the signal's
+    // first/declaring occurrence) used to render `*n = "reset"` -- a bare
+    // `&'static str` assigned into `*n: &mut String`, which doesn't
+    // type-check. Same class of fix as `render_signal_init`'s treatment
+    // of a signal's first occurrence, just for a later mutation.
+    let out = compile(
+        r#"
+func App() {
+    <{label}> >> 'Taps: 0'
+    <{label}> >> 'reset'
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"set_label.update(|n| *n = "reset".to_string());"#));
+}
+
+#[test]
 fn nested_if_inside_if_block() {
     let out = compile(
         r#"

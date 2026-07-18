@@ -622,11 +622,19 @@ keyword.
 | `<{x}> >> x - 1` | `set_x.update(\|n\| *n -= 1f64);` |
 | `<{x}> >> x * 2` | `set_x.update(\|n\| *n *= 2f64);` |
 | `<{x}> >> 5` (later, non-self-referential) | `set_x.update(\|n\| *n = 5f64);` |
+| `<{label}> >> 'reset'` (later, `Word` signal) | `set_label.update(\|n\| *n = "reset".to_string());` |
 | `<{x}>` (read) | `x.get()` |
 
 The `+= / -= / *= / /=` compound forms are only emitted when the right-hand
 side is exactly `<selfname> <op> <number literal>`; any other mutation
-expression lowers to the general `*n = <expr>;` form.
+expression lowers to the general `*n = <expr>;` form. A bare string
+literal on the right-hand side of a mutation gets the same
+`.to_string()` treatment a signal's first/declaring occurrence already
+had — `*n = "reset"` doesn't type-check when `*n: &mut String` (a `Word`
+signal), since a literal alone is `&'static str`. Concatenation
+(`<{label}> >> 'x' + <{label}>`) was never affected by this, since a `+`
+involving a string literal already always lowers to an owned
+`format!(..)` regardless of position.
 
 A whole-number literal always gets an explicit `f64` suffix wherever it's
 an operand next to an already-concretely-typed `f64` value (a signal's
@@ -1207,12 +1215,6 @@ These are intentional scope boundaries of the current prototype, not bugs:
   own `use` resolution is what actually binds a call site to a specific
   function either way; this map only ever informs a codegen *hint*, never
   which function actually gets called.
-- **Mutating a `Word` signal directly to a brand-new literal may not
-  compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
-  first/declaring occurrence) can render a bare `&str` assigned into an
-  owned `String` — concatenation (`<{label}> >> 'x' + <{label}>`) is
-  unaffected, since `format!(..)` always produces an owned `String`
-  regardless of its inputs.
 - **`craft<...>` inside `if>`/`orif>`/`else>`/(statement-position) `spin` runs once,
   at component setup,
   not inside a reactive `Effect`.** The generated `if x.get() == "..." { }`

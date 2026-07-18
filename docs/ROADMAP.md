@@ -102,7 +102,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (75+ tests, every feature round-tripped against actual
+tested compiler (76+ tests, every feature round-tripped against actual
 Leptos, routing (including dynamic segments) driven end-to-end in a real
 browser) with a language core solid enough for a genuine multi-page
 client-side app. That's real progress, not the same thing as
@@ -174,14 +174,12 @@ website (in Kittine) need next":
      Staying CSR-only is the honest current state; revisit this with a
      scoped design pass, not a quick increment, when it's actually time
      to build the public site.
-2. **Mutating a `Word` signal directly to a brand-new literal may not
-   compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
-   first/declaring occurrence) can render a bare `&str` assigned into an
-   owned `String` — concatenation (`<{label}> >> 'x' + <{label}>`) is
-   unaffected, since `format!(..)` always produces an owned `String`
-   regardless of its inputs. Same class of fix as the same-file/cross-file
-   `Word`-parameter string-literal work already done; see
-   [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
+
+No other bounded items remain in this list right now — everything else
+that was here has landed (see Done below); the only other open item is
+SSR/SSG above, which needs a real architecture decision, not a quick
+increment. Add here the moment a real gap turns up (per the standing
+rule at the top of this file).
 
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
@@ -223,7 +221,11 @@ programmatic navigation had used, wired into `example-app`'s
 value read from more than one reactive closure~~ (a real bug found by
 actually compiling that exact pattern against Leptos, not assumed —
 every non-`Copy` scope-tracked read now pre-clones into its own local
-before its closure) — landed 2026-07-18.
+before its closure) — landed 2026-07-18. ~~Word-signal mutation to a
+brand-new literal~~ (`<{label}> >> 'reset'` now owns the string, same
+class of fix as the `Word`-parameter string-literal work; wired into
+`example-app`'s `Home.kitty` as a "Reset to Guest" button) — landed
+2026-07-18.
 
 ## Full vision (phased, honest)
 
