@@ -236,6 +236,16 @@ grouped by date until the first tagged release.
 
 ### Fixed
 
+- **Mutating a `Word` signal directly to a brand-new literal now
+  compiles.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
+  first/declaring occurrence) used to render `*n = "reset"` — a bare
+  `&'static str` assigned into `*n: &mut String`, which doesn't
+  type-check. Same class of fix as `render_signal_init`'s existing
+  treatment of a signal's first occurrence, just for a later mutation.
+  Concatenation (`<{label}> >> 'x' + <{label}>`) was never affected.
+  Verified against real Leptos 0.7, then wired a "Reset to Guest" button
+  into `example-app`'s `Home.kitty`, confirmed with Playwright against
+  the running dev server.
 - **A non-`Copy` value (a `Word`/array prop, a view-position `spin`'s loop
   variable, or a `hold`-bound local) read from more than one reactive
   closure within the same component now compiles.** A `move` closure

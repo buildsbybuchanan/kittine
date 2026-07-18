@@ -67,6 +67,13 @@ pub fn Home() -> impl IntoView {
                 {move || doubled(count.get())}
                 ")"
             </button>
+            <p>
+                "Username: "
+                {move || username.get()}
+                <button on:click=move |_| set_username.update(|n| *n = "Guest".to_string())>
+                    "Reset to Guest"
+                </button>
+            </p>
             <ul>
                 <For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>
                     <li>

@@ -409,6 +409,16 @@ fn mutation_body(name: &str, value: &Expr, scope: &Scope) -> String {
             return format!("*n {op_str} {}", fmt_num_unambiguous(n));
         }
     }
+    if is_bare_string_literal(value) {
+        // Same reasoning as `render_signal_init`, just for a *later*
+        // mutation instead of the signal's first/declaring occurrence:
+        // `*n = "reset"` doesn't type-check when `*n: &mut String` (a
+        // `Word` signal) — a bare string literal is `&'static str`, not
+        // `String`. Concatenation (`<{label}> >> 'x' + <{label}>`) is
+        // already unaffected, since `render_binary`'s string-`+` case
+        // already lowers to an owned `format!(..)` regardless.
+        return format!("*n = {}.to_string()", substitute_self(value, name, scope));
+    }
     format!("*n = {}", substitute_self(value, name, scope))
 }
 
