@@ -1,3 +1,9 @@
+import { Nav } from './Nav.kitty'
+
+purr doubled(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+
 func App() {
     <{count}> >> <<Num>> 0
     <{username}> >> 'Admin'
@@ -16,9 +22,13 @@ func App() {
 
     return (
         <div>
+            <Nav active='Counter'/>
             <button onClick={<{count}> >> count + 1}>
                 "Clicks: "
                 <{count}>
+                " (doubled: "
+                { doubled(count) }
+                ")"
             </button>
         </div>
     )

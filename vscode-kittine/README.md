@@ -32,6 +32,9 @@ parent [`kittine`](..) project.
   | `[a, b, c]` | Array literal | `punctuation.definition.array` |
   | `<<Num>>` / `<<Word>>` / `<<Flag>>` | Optional type tags, checked against literals at compile time | `storage.type.kittine` |
   | `spin<{item}> in list }{ .. }{` | Loop over an array, fenced by `}{` | `keyword.control.loop` |
+  | `func Name(<<Type>> prop) { .. }` | Component with typed props | `storage.type.function` |
+  | `purr name(<<Type>> arg) <<Type>> { .. }` | Plain value-returning function | `storage.type.function` |
+  | `import { A, B } from '...'` | Bring components/functions in from another file | `keyword.control.import` |
   | `return ( <jsx> )` | The embedded JSX-like view syntax that closes a component | `entity.name.tag`, `entity.other.attribute-name` |
   | `// comment` | Line comments (no block comment form exists) | `comment.line.double-slash` |
 

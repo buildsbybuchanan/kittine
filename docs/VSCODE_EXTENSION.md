@@ -62,7 +62,8 @@ nothing in this extension's structure needs to change to support that.
 | `<<Num>>` / `<<Word>>` / `<<Flag>>` | `storage.type.kittine` |
 | `spin` / `in` | `keyword.control.loop` |
 | `[` / `]` | `punctuation.definition.array` |
-| `func`, `return` | `storage.type.function` / `keyword.control.flow` |
+| `func`, `purr`, `return` | `storage.type.function` / `keyword.control.flow` |
+| `import`, `from` | `keyword.control.import` |
 | JSX tags/attributes | `entity.name.tag`, `entity.other.attribute-name` |
 | `// comment` | `comment.line.double-slash` |
 

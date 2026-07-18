@@ -1,17 +1,56 @@
 //! Abstract Syntax Tree definitions for the Kittine language.
 
-/// A full parsed `.kitty` source file.
+/// A full parsed `.kitty` source file: an optional run of `import`
+/// declarations, followed by any number of components/functions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub components: Vec<Component>,
+    pub imports: Vec<Import>,
+    pub items: Vec<Item>,
 }
 
-/// A single `func Name() { ... }` component definition.
+/// `import { Name, Name2 } from 'path/to/file.kitty'`
+#[derive(Debug, Clone, PartialEq)]
+pub struct Import {
+    pub names: Vec<String>,
+    pub path: String,
+}
+
+/// A top-level declaration: either a view-rendering component (`func`) or a
+/// plain value-returning function (`purr`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Item {
+    Component(Component),
+    Function(Function),
+}
+
+/// A typed parameter in a `func`/`purr` signature: `<<Type>> name`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param {
+    pub ty: String,
+    pub name: String,
+}
+
+/// A single `func Name(<<Type>> prop, ..) { ... }` component definition.
+/// Params become the component's props; there is no implicit state tied to
+/// them (unlike `<{name}> >> value` signals).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Component {
     pub name: String,
+    pub params: Vec<Param>,
     pub body: Vec<Stmt>,
     pub return_view: Option<JsxNode>,
+}
+
+/// A single `purr name(<<Type>> param, ..) <<ReturnType>> { .. return (expr) }`
+/// plain function definition — computes and returns a value, does not
+/// render a view.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: String,
+    pub body: Vec<Stmt>,
+    pub return_expr: Expr,
 }
 
 /// A statement inside a component body or an `if>`/`orif>`/`else>` block.
@@ -71,6 +110,12 @@ pub enum Expr {
     Typed {
         ty: String,
         value: Box<Expr>,
+    },
+    /// `name(arg, arg, ..)` — a call to a `purr` function (or, in principle,
+    /// any function in scope, e.g. one brought in via `import`).
+    Call {
+        name: String,
+        args: Vec<Expr>,
     },
 }
 

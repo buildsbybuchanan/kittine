@@ -1,0 +1,8 @@
+func Nav(<<Word>> active) {
+    return (
+        <nav>
+            "Section: "
+            { active }
+        </nav>
+    )
+}

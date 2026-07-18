@@ -17,7 +17,7 @@ portfolio.
 📖 **[Full documentation](docs/)** — [language reference](docs/LANGUAGE.md) ·
 [getting started](docs/GETTING_STARTED.md) · [CLI reference](docs/CLI.md) ·
 [VS Code extension](docs/VSCODE_EXTENSION.md) ·
-[architecture](docs/ARCHITECTURE.md)
+[architecture](docs/ARCHITECTURE.md) · [roadmap](docs/ROADMAP.md)
 
 This repository is a monorepo with four parts:
 
@@ -28,8 +28,9 @@ This repository is a monorepo with four parts:
   post-processes it with `wasm-bindgen`, and serves the result to the
   browser.
 - **`example-app/`** — a minimal Leptos CSR app (`App.kitty`) demonstrating
-  a signal-backed counter and an `if>`/`orif>`/`else>` block, wired up
-  through the Vite plugin.
+  a signal-backed counter, an `if>`/`orif>`/`else>` block, a `spin` loop, a
+  `purr` function, and a composed `Nav` component brought in via `import`
+  — wired up through the Vite plugin.
 - **`vscode-kittine/`** — a VS Code extension providing syntax highlighting
   and a file icon for `.kitty` files. See
   [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) to install it.
@@ -37,6 +38,12 @@ This repository is a monorepo with four parts:
 ## Language quick reference
 
 ```kitty
+import { Nav } from './Nav.kitty'
+
+purr doubled(<<Num>> n) <<Num>> {
+    return (n * 2)
+}
+
 func Counter() {
     <{count}> >> <<Num>> 0
     <{username}> >> 'Admin'
@@ -55,9 +62,13 @@ func Counter() {
 
     return (
         <div>
+            <Nav active='home' />
             <button onClick={<{count}> >> count + 1}>
                 "Clicks: "
                 <{count}>
+                " (doubled: "
+                { doubled(count) }
+                ")"
             </button>
         </div>
     )
@@ -68,13 +79,23 @@ func Counter() {
   component, and mutates it (`set_name.update(..)`) every time after.
 - `'...'` and `"..."` are fully interchangeable string literals.
 - `yes>` / `no>` are boolean literals; `[a, b, c]` is an array literal.
-- `<<Num>>` / `<<Word>>` / `<<Flag>>` are optional type tags, checked
-  against literal values at compile time and erased in the generated Rust.
+- `<<Num>>` / `<<Word>>` / `<<Flag>>` are type tags — optional on a value,
+  mandatory on a prop or a `purr` return type — checked against literal
+  values at compile time and erased in the generated Rust.
 - `craft<expr>` logs via `leptos::logging::log!`.
 - `if>` / `orif>` / `else>` are indentation-delimited (no braces), and use
   `>>` as an equality test.
 - `spin<{item}> in list }{ .. }{` loops over an array, its body fenced by
   `}{` — a closing brace immediately followed by an opening one.
+- `func Name(<<Type>> prop) { .. }` takes typed props; `<Name prop='x' />`
+  composes it into another view (a capitalized JSX tag is a component
+  reference, lowercase is a plain HTML element).
+- `purr name(<<Type>> param) <<Type>> { .. return (expr) }` is a plain
+  function — computes and returns a value, renders no view — called like
+  `name(arg)` anywhere an expression is valid.
+- `import { Name } from './file.kitty'` brings another file's
+  components/functions into scope; `kittine-compiler` resolves and
+  compiles the whole import graph recursively.
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
 

@@ -105,18 +105,137 @@ impl Parser {
     // ---- top level --------------------------------------------------------
 
     pub fn parse_program(&mut self) -> PResult<Program> {
-        let mut components = Vec::new();
-        while !matches!(self.peek().kind, TokenKind::Eof) {
-            components.push(self.parse_component()?);
+        let mut imports = Vec::new();
+        while matches!(self.peek().kind, TokenKind::KeywordImport) {
+            imports.push(self.parse_import()?);
         }
-        Ok(Program { components })
+
+        let mut items = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::Eof) {
+            let item = match self.peek().kind {
+                TokenKind::KeywordFunc => Item::Component(self.parse_component()?),
+                TokenKind::KeywordPurr => Item::Function(self.parse_function()?),
+                _ => return Err(self.err("expected 'func' or 'purr' at the top level")),
+            };
+            items.push(item);
+        }
+        Ok(Program { imports, items })
+    }
+
+    /// Parses `import { Name, Name2 } from 'path/to/file.kitty'`.
+    fn parse_import(&mut self) -> PResult<Import> {
+        self.expect(TokenKind::KeywordImport)?;
+        self.expect(TokenKind::LBrace)?;
+        let mut names = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RBrace) {
+            names.push(self.expect_ident()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                names.push(self.expect_ident()?);
+            }
+        }
+        self.expect(TokenKind::RBrace)?;
+        self.expect(TokenKind::KeywordFrom)?;
+        let path = match self.peek().kind.clone() {
+            TokenKind::Str(s) => {
+                self.advance();
+                s
+            }
+            other => {
+                return Err(self.err(format!(
+                    "expected a string path after 'from', found '{other}'"
+                )));
+            }
+        };
+        Ok(Import { names, path })
+    }
+
+    /// Parses a signature-position type tag `<<Type>>` (no value follows —
+    /// used for parameter and return-type annotations, as opposed to
+    /// [`Parser::parse_type_tag`] which wraps a value).
+    fn parse_signature_type(&mut self) -> PResult<String> {
+        self.expect(TokenKind::Lt)?;
+        self.expect(TokenKind::Lt)?;
+        let ty = self.expect_ident()?;
+        if !matches!(ty.as_str(), "Num" | "Word" | "Flag") {
+            return Err(self.err(format!(
+                "unknown type tag '<<{ty}>>': expected one of Num, Word, Flag"
+            )));
+        }
+        self.expect(TokenKind::OpAssign)?;
+        Ok(ty)
+    }
+
+    /// Parses a single `<<Type>> name` parameter.
+    fn parse_param(&mut self) -> PResult<Param> {
+        let ty = self.parse_signature_type()?;
+        let name = self.expect_ident()?;
+        Ok(Param { ty, name })
+    }
+
+    /// Parses `(<<Type>> name, <<Type>> name, ..)`.
+    fn parse_param_list(&mut self) -> PResult<Vec<Param>> {
+        self.expect(TokenKind::LParen)?;
+        let mut params = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RParen) {
+            params.push(self.parse_param()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                params.push(self.parse_param()?);
+            }
+        }
+        self.expect(TokenKind::RParen)?;
+        Ok(params)
+    }
+
+    /// Parses `purr name(<<Type>> param, ..) <<ReturnType>> { stmt* return (expr) }`.
+    fn parse_function(&mut self) -> PResult<Function> {
+        self.expect(TokenKind::KeywordPurr)?;
+        let name = self.expect_ident()?;
+        let params = self.parse_param_list()?;
+        let return_type = self.parse_signature_type()?;
+        self.expect(TokenKind::LBrace)?;
+
+        let mut body = Vec::new();
+        let mut return_expr = None;
+        loop {
+            match self.peek().kind {
+                TokenKind::RBrace => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::KeywordReturn => {
+                    self.advance();
+                    self.expect(TokenKind::LParen)?;
+                    let expr = self.parse_expr()?;
+                    self.expect(TokenKind::RParen)?;
+                    return_expr = Some(expr);
+                }
+                TokenKind::Eof => {
+                    return Err(self.err("unexpected end of file inside 'purr' function body"));
+                }
+                _ => {
+                    body.push(self.parse_stmt()?);
+                }
+            }
+        }
+
+        let return_expr = return_expr
+            .ok_or_else(|| self.err(format!("'purr {name}' must end with a 'return ( expr )'")))?;
+
+        Ok(Function {
+            name,
+            params,
+            return_type,
+            body,
+            return_expr,
+        })
     }
 
     fn parse_component(&mut self) -> PResult<Component> {
         self.expect(TokenKind::KeywordFunc)?;
         let name = self.expect_ident()?;
-        self.expect(TokenKind::LParen)?;
-        self.expect(TokenKind::RParen)?;
+        let params = self.parse_param_list()?;
         self.expect(TokenKind::LBrace)?;
 
         let mut body = Vec::new();
@@ -145,6 +264,7 @@ impl Parser {
 
         Ok(Component {
             name,
+            params,
             body,
             return_view,
         })
@@ -383,7 +503,11 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 self.advance();
-                Ok(Expr::Ident(name))
+                if matches!(self.peek().kind, TokenKind::LParen) {
+                    self.parse_call(name)
+                } else {
+                    Ok(Expr::Ident(name))
+                }
             }
             TokenKind::LParen => {
                 self.advance();
@@ -395,6 +519,22 @@ impl Parser {
             TokenKind::Lt => self.parse_type_tag(),
             other => Err(self.err(format!("unexpected token '{other}' in expression"))),
         }
+    }
+
+    /// Parses `(arg, arg, ..)` following an already-consumed function name,
+    /// producing `Expr::Call`.
+    fn parse_call(&mut self, name: String) -> PResult<Expr> {
+        self.expect(TokenKind::LParen)?;
+        let mut args = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RParen) {
+            args.push(self.parse_expr()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                args.push(self.parse_expr()?);
+            }
+        }
+        self.expect(TokenKind::RParen)?;
+        Ok(Expr::Call { name, args })
     }
 
     /// Parses `[expr, expr, ..]`.
@@ -418,15 +558,7 @@ impl Parser {
     /// from inside an expression instead of a `<{name}>` or JSX position.
     fn parse_type_tag(&mut self) -> PResult<Expr> {
         let start = self.peek().clone();
-        self.expect(TokenKind::Lt)?;
-        self.expect(TokenKind::Lt)?;
-        let ty = self.expect_ident()?;
-        if !matches!(ty.as_str(), "Num" | "Word" | "Flag") {
-            return Err(self.err(format!(
-                "unknown type tag '<<{ty}>>': expected one of Num, Word, Flag"
-            )));
-        }
-        self.expect(TokenKind::OpAssign)?;
+        let ty = self.parse_signature_type()?;
         let value = self.parse_unary()?;
 
         let matches_ty = match (ty.as_str(), &value) {

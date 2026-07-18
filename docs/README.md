@@ -10,6 +10,8 @@
   `.kitty` syntax highlighting extension, including how to share it.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the compiler, Vite plugin,
   example app, and VS Code extension fit together.
+- **[ROADMAP.md](ROADMAP.md)** — what works today, what's next, and the
+  full long-term vision. Update this whenever you find a gap.
 
 New to Kittine? Start with [GETTING_STARTED.md](GETTING_STARTED.md), then
 skim [LANGUAGE.md](LANGUAGE.md) alongside `example-app/src/App.kitty`.
