@@ -12,7 +12,7 @@ pub fn NavList(items: Vec<String>) -> impl IntoView {
         <ul>
             <For each=move || items.clone() key=|item| item.clone().to_uppercase() let:item>
                 <li>
-                    {move || item.clone()}
+                    {{ let item = item.clone(); move || item.clone() }}
                 </li>
             </For>
         </ul>

@@ -49,6 +49,13 @@ struct Scope<'a> {
     /// Names bound by an enclosing view-position `spin` (`JsxNode::Spin`).
     /// Reads of these are always `.clone()`d — see `render_var_read`.
     spin_items: HashSet<String>,
+    /// Names bound by `hold name >> expr` (see `ast::Stmt::Hold`) — a
+    /// plain, non-reactive local. Reads of these are always `.clone()`d
+    /// too, same reasoning as `spin_items`: a held value may need to be
+    /// captured by more than one reactive closure (e.g. two different
+    /// event handlers), and moving a non-`Copy` value out of the first one
+    /// would make it unavailable to the second.
+    hold_items: HashSet<String>,
     /// Every same-file `purr`'s parameter types, by function name, in
     /// declaration order — lets a call site tell whether a bare string
     /// literal argument needs `.to_string()` (see `render_call`). Shared
@@ -67,6 +74,7 @@ impl<'a> Scope<'a> {
                 .map(|p| (p.name.clone(), p.ty.clone()))
                 .collect(),
             spin_items: HashSet::new(),
+            hold_items: HashSet::new(),
             known_functions,
         }
     }
@@ -80,6 +88,7 @@ impl<'a> Scope<'a> {
             declared: self.declared.clone(),
             params: self.params.clone(),
             spin_items,
+            hold_items: self.hold_items.clone(),
             known_functions: self.known_functions,
         }
     }
@@ -369,6 +378,11 @@ fn gen_stmt(stmt: &Stmt, scope: &mut Scope, out: &mut String, indent: usize) {
             }
             push_line(out, indent, "}");
         }
+        Stmt::Hold { name, value } => {
+            let value_code = expr_to_rust(value, scope);
+            push_line(out, indent, &format!("let {name} = {value_code};"));
+            scope.hold_items.insert(name.clone());
+        }
     }
 }
 
@@ -496,7 +510,19 @@ fn render_call(name: &str, args: &[Expr], render: &dyn Fn(&Expr) -> String, scop
             }
         })
         .collect();
-    format!("{name}({})", rendered.join(", "))
+    // A `hold`-bound local can be a closure (`use_navigate()`'s result,
+    // for instance) — calling it needs the same `.clone()` any other read
+    // of it gets (see `render_var_read`), since it may need to be called
+    // from more than one reactive closure and moving it out of the first
+    // would make it unavailable to the second. A same-file `purr`/unknown
+    // function name is never in `hold_items`, so this doesn't affect the
+    // ordinary named-call case at all.
+    let callee = if scope.hold_items.contains(name) {
+        format!("{name}.clone()")
+    } else {
+        name.to_string()
+    };
+    format!("{callee}({})", rendered.join(", "))
 }
 
 /// `true` for a string literal, optionally wrapped in a `<<Word>>` type
@@ -630,17 +656,18 @@ fn mutation_expr(name: &str, value: &Expr, scope: &Scope) -> String {
 /// Reads a name that isn't a signal mutation target: a declared signal
 /// becomes `name.get()`. A non-`Copy`-typed parameter (`Word`, or any
 /// array type) is cloned, since Leptos view closures may capture the same
-/// prop more than once; a view-position `spin`'s loop variable is
-/// *always* cloned, regardless of its element type — a `{move || item}`
-/// reactive closure needs to be callable more than once (`Fn`, not just
-/// `FnOnce`), which requires not moving a non-`Copy` `item` out of it, and
-/// `.clone()`ing a `Copy` type (e.g. `Num`) costs nothing extra, so there's
-/// no reason to special-case per element type here. Anything else
-/// (`Num`/`Flag` params, plain locals) is read bare.
+/// prop more than once; a view-position `spin`'s loop variable and a
+/// `hold`-bound local are *always* cloned, regardless of type — a
+/// `{move || item}` reactive closure needs to be callable more than once
+/// (`Fn`, not just `FnOnce`), which requires not moving a non-`Copy` value
+/// out of it, and `.clone()`ing a `Copy` type (e.g. `Num`) costs nothing
+/// extra, so there's no reason to special-case per element/value type
+/// here. Anything else (`Num`/`Flag` params, plain locals) is read bare.
 fn render_var_read(name: &str, scope: &Scope) -> String {
     if scope.declared.contains(name) {
         format!("{name}.get()")
     } else if scope.spin_items.contains(name)
+        || scope.hold_items.contains(name)
         || scope
             .params
             .get(name)
@@ -775,6 +802,99 @@ fn jsx_attr_leptos_name(name: &str) -> (String, bool) {
     }
 }
 
+/// Collects every distinct name referenced anywhere in `expr` that's a
+/// non-`Copy` scope-tracked value — a `Word`/array prop, a view-position
+/// `spin`'s loop variable, or a `hold` binding (see
+/// [`wrap_reactive_closure`] for why this matters). Order is
+/// first-encountered, deduplicated.
+fn non_copy_tracked_names(expr: &Expr, scope: &Scope, out: &mut Vec<String>) {
+    let note = |name: &str, out: &mut Vec<String>| {
+        let is_tracked = scope.spin_items.contains(name)
+            || scope.hold_items.contains(name)
+            || scope
+                .params
+                .get(name)
+                .is_some_and(|ty| is_non_copy_param_type(ty));
+        if is_tracked && !out.iter().any(|n| n == name) {
+            out.push(name.to_string());
+        }
+    };
+    match expr {
+        Expr::Ident(name) | Expr::VarRead(name) => note(name, out),
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Path(_) => {}
+        Expr::Binary { left, right, .. } => {
+            non_copy_tracked_names(left, scope, out);
+            non_copy_tracked_names(right, scope, out);
+        }
+        Expr::InlineAssign { value, .. } => non_copy_tracked_names(value, scope, out),
+        Expr::Array(items) | Expr::Tuple(items) => {
+            for item in items {
+                non_copy_tracked_names(item, scope, out);
+            }
+        }
+        Expr::Typed { value, .. } => non_copy_tracked_names(value, scope, out),
+        Expr::Call { name, args } => {
+            // The callee itself matters, not just the arguments — a
+            // `hold`-bound closure called by bare name (`navigate(..)`,
+            // see `render_call`'s own `.clone()` on the callee) is exactly
+            // as much a "read of a non-Copy tracked name" as using it any
+            // other way.
+            note(name, out);
+            for arg in args {
+                non_copy_tracked_names(arg, scope, out);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            non_copy_tracked_names(receiver, scope, out);
+            for arg in args {
+                non_copy_tracked_names(arg, scope, out);
+            }
+        }
+        Expr::CallResult { callee, args } => {
+            non_copy_tracked_names(callee, scope, out);
+            for arg in args {
+                non_copy_tracked_names(arg, scope, out);
+            }
+        }
+    }
+}
+
+/// Wraps `body_code` (already-rendered Rust) in a `move CLOSURE_PARAMS
+/// body_code` closure — pre-cloning, into their own local bindings just
+/// before the closure, any non-`Copy` scope-tracked names `source_expr`
+/// references.
+///
+/// This matters because a `move` closure captures every variable it uses
+/// *by value*, not by reference — including ones only ever read via
+/// `.clone()` inside the closure body. If the same original prop/spin-item
+/// /`hold` value is read from a *second*, sibling closure elsewhere in the
+/// same component (a name shown in two places, or a `hold`-bound closure
+/// called from two event handlers), the second `move` closure tries to
+/// move the same already-moved original and fails to compile (`E0382: use
+/// of moved value`) — confirmed by actually compiling exactly that pattern
+/// against real Leptos, not assumed. Pre-cloning into a fresh local first
+/// gives *each* closure its own independently-owned copy to move, which is
+/// also literally what rustc's own E0382 diagnostic suggests for this
+/// shape of error.
+fn wrap_reactive_closure(
+    closure_params: &str,
+    source_expr: &Expr,
+    body_code: &str,
+    scope: &Scope,
+) -> String {
+    let mut names = Vec::new();
+    non_copy_tracked_names(source_expr, scope, &mut names);
+    if names.is_empty() {
+        format!("move {closure_params} {body_code}")
+    } else {
+        let pre_clones: String = names
+            .iter()
+            .map(|n| format!("let {n} = {n}.clone(); "))
+            .collect();
+        format!("{{ {pre_clones}move {closure_params} {body_code} }}")
+    }
+}
+
 fn jsx_attr_value(value: &JsxAttrValue, is_event: bool, is_component: bool, scope: &Scope) -> String {
     match value {
         // A component prop typed `Word` is a concrete `String`, so a
@@ -785,16 +905,21 @@ fn jsx_attr_value(value: &JsxAttrValue, is_event: bool, is_component: bool, scop
         }
         JsxAttrValue::Str(s) => format!("\"{}\"", escape_str(s)),
         JsxAttrValue::Expr(Expr::InlineAssign { name, value }) => {
-            format!("move |_| {}", mutation_expr(name, value, scope))
+            let body = format!("{}", mutation_expr(name, value, scope));
+            wrap_reactive_closure("|_|", value, &body, scope)
         }
         JsxAttrValue::Expr(expr) if is_event => {
-            format!("move |_| {}", expr_to_rust(expr, scope))
+            let body = expr_to_rust(expr, scope);
+            wrap_reactive_closure("|_|", expr, &body, scope)
         }
         // Component props are plain typed values, not reactive DOM
         // attributes — pass them through bare rather than wrapping in a
         // `move || ..` tracking closure.
         JsxAttrValue::Expr(expr) if is_component => expr_to_rust(expr, scope),
-        JsxAttrValue::Expr(expr) => format!("move || {}", expr_to_rust(expr, scope)),
+        JsxAttrValue::Expr(expr) => {
+            let body = expr_to_rust(expr, scope);
+            wrap_reactive_closure("||", expr, &body, scope)
+        }
     }
 }
 
@@ -805,11 +930,10 @@ fn jsx_to_rust(node: &JsxNode, scope: &Scope, indent: usize) -> String {
             push_line(&mut out, indent, &format!("\"{}\"", escape_str(s)));
         }
         JsxNode::VarInterp(name) => {
-            push_line(
-                &mut out,
-                indent,
-                &format!("{{move || {}}}", render_var_read(name, scope)),
-            );
+            let var_read_expr = Expr::VarRead(name.clone());
+            let body = render_var_read(name, scope);
+            let closure = wrap_reactive_closure("||", &var_read_expr, &body, scope);
+            push_line(&mut out, indent, &format!("{{{closure}}}"));
         }
         JsxNode::ExprInterp(expr) if is_children_call(expr) => {
             // `Children` is `FnOnce() -> Fragment` — call it bare, exactly
@@ -820,11 +944,9 @@ fn jsx_to_rust(node: &JsxNode, scope: &Scope, indent: usize) -> String {
             push_line(&mut out, indent, &format!("{{{}}}", expr_to_rust(expr, scope)));
         }
         JsxNode::ExprInterp(expr) => {
-            push_line(
-                &mut out,
-                indent,
-                &format!("{{move || {}}}", expr_to_rust(expr, scope)),
-            );
+            let body = expr_to_rust(expr, scope);
+            let closure = wrap_reactive_closure("||", expr, &body, scope);
+            push_line(&mut out, indent, &format!("{{{closure}}}"));
         }
         JsxNode::Spin { item, list, key, body } => {
             let list_code = expr_to_rust(list, scope);

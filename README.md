@@ -85,6 +85,9 @@ func Counter() {
 
 - `<{name}> >> value` declares a signal the first time it's seen in a
   component, and mutates it (`set_name.update(..)`) every time after.
+  `hold name >> expr` is a plain, non-reactive local binding instead
+  (`let name = expr;`) — for calling a Leptos hook that needs to run
+  eagerly at component setup, like `use_navigate()`.
 - `'...'` and `"..."` are fully interchangeable string literals.
 - `yes>` / `no>` are boolean literals; `[a, b, c]` is an array literal.
 - `<<Num>>` / `<<Word>>` / `<<Flag>>` (or `<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`

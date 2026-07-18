@@ -1,13 +1,16 @@
 func User() {
-    <{navigate}> >> use_navigate()
+    hold navigate >> use_navigate()
 
     return (
         <div>
             <h1>"User"</h1>
             <p>"This page's route ('/user/:id') is a dynamic segment — reached via a tuple path {(StaticSegment('user'), ParamSegment('id'))}, with the id read back out via use_params_map(), a plain leptos_router hook call."</p>
             <p>"User id: "{ use_params_map().get().get('id').unwrap_or_default() }</p>
-            <button onClick={<{navigate}>('/', NavigateOptions::default())}>
+            <button onClick={navigate('/', NavigateOptions::default())}>
                 "Go home (programmatic navigation)"
+            </button>
+            <button onClick={navigate('/about', NavigateOptions::default())}>
+                "Go to About (same held navigate, called from a second button)"
             </button>
         </div>
     )

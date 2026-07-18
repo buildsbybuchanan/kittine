@@ -36,6 +36,56 @@ func App() {
 }
 
 #[test]
+fn hold_lowers_to_a_plain_let_not_a_signal() {
+    let out = compile(
+        r#"
+func App() {
+    hold navigate >> use_navigate()
+
+    return (
+        <button onClick={navigate('/', NavigateOptions::default())}>
+            "Go"
+        </button>
+    )
+}
+"#,
+    );
+    assert!(out.contains("let navigate = use_navigate();"));
+    assert!(!out.contains("signal(use_navigate())"));
+    // A bare call to a hold-bound name pre-clones it before the closure
+    // (so a second, sibling closure calling `navigate` elsewhere doesn't
+    // fight over moving the same original) and `.clone()`s it again to
+    // actually call it, same as any other read.
+    assert!(out.contains(
+        r#"on:click={ let navigate = navigate.clone(); move |_| navigate.clone()("/", NavigateOptions::default()) }"#
+    ));
+}
+
+#[test]
+fn hold_bound_value_is_cloned_at_every_read() {
+    // Same reasoning as a view-position spin's loop variable: a held
+    // value may need to be captured by more than one reactive closure, so
+    // reads are always `.clone()`d regardless of the held type.
+    let out = compile(
+        r#"
+func App() {
+    hold label >> 'fixed'
+    return ( <div>{ label }<p>{ label }</p></div> )
+}
+"#,
+    );
+    assert!(out.contains("let label = \"fixed\""));
+    // Each of the two sibling interpolations pre-clones `label` into its
+    // own local before its closure (so neither fights the other over
+    // moving the original), then `.clone()`s again inside.
+    assert_eq!(
+        out.matches("{ let label = label.clone(); move || label.clone() }")
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn string_literal_uses_single_or_double_quotes() {
     let out = compile(
         r#"
@@ -357,9 +407,36 @@ func Nav(<<Word>> active) {
 "#,
     );
     assert!(out.contains("pub fn Nav(active: String) -> impl IntoView"));
-    // A Word-typed prop is cloned at read sites, since it isn't `Copy` and
-    // Leptos view closures may capture it more than once.
-    assert!(out.contains("{move || active.clone()}"));
+    // A Word-typed prop is pre-cloned into its own local before the
+    // closure (so a second, sibling closure elsewhere doesn't fight over
+    // moving the same original -- see `wrap_reactive_closure`), and read
+    // via `.clone()` again inside (so the closure itself can be called
+    // more than once without moving its own copy out).
+    assert!(out.contains("{{ let active = active.clone(); move || active.clone() }}"));
+}
+
+#[test]
+fn word_prop_used_in_two_places_does_not_conflict_over_moving() {
+    // Regression test for a real bug found by actually compiling this
+    // exact pattern against Leptos: a `move` closure captures every
+    // variable it uses *by value*, including ones only ever read via
+    // `.clone()` inside. Without pre-cloning each usage site into its own
+    // local first, two sibling closures both reading the same original
+    // `active` fail with E0382 ("use of moved value") -- confirmed with a
+    // real `cargo check`, not assumed. Each of the two interpolations
+    // below must pre-clone `active` independently.
+    let out = compile(
+        r#"
+func Nav(<<Word>> active) {
+    return ( <div><h1>{ active }</h1><p>{ active }</p></div> )
+}
+"#,
+    );
+    assert_eq!(
+        out.matches("{ let active = active.clone(); move || active.clone() }")
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -826,7 +903,9 @@ func List() {
     );
     assert!(out.contains(r#"<For each=move || items.get() key=|n| format!("{n}") let:n>"#));
     assert!(out.contains("</For>"));
-    assert!(out.contains("{move || n.clone()}"));
+    // Pre-cloned into its own local before the closure, then `.clone()`d
+    // again inside -- see `wrap_reactive_closure`.
+    assert!(out.contains("{{ let n = n.clone(); move || n.clone() }}"));
 }
 
 #[test]
@@ -915,7 +994,7 @@ func List() {
     // Both sibling <li>s inside one iteration should be emitted, not just
     // the last one.
     assert!(out.contains(r#""Item: ""#));
-    assert!(out.contains("{move || n.clone()}"));
+    assert!(out.contains("{{ let n = n.clone(); move || n.clone() }}"));
 }
 
 #[test]
@@ -1136,33 +1215,43 @@ func App() {
 }
 
 #[test]
-fn programmatic_navigation_via_eager_signal_call_is_the_real_pattern() {
+fn programmatic_navigation_via_eager_hold_is_the_real_pattern() {
     // Leptos's context-dependent hooks (use_navigate among them) must run
     // while the component's own reactive owner is active -- true during
     // synchronous component setup, not by the time a later event fires.
-    // Kittine has no plain (non-signal) local binding yet, so
-    // `<{navigate}> >> use_navigate()` reuses signal declaration to force
-    // the eager call at the right time; reading it back via `<{navigate}>`
-    // (-> `navigate.get()`) and calling the result
-    // (`Expr::CallResult`) is what example-app's User.kitty actually uses,
-    // verified against a real running dev server with Playwright (a click
-    // that changed the URL with no console panic).
+    // `hold navigate >> use_navigate()` forces the eager call at the right
+    // time; calling `navigate(..)` later (a bare call to a hold-bound
+    // name) from *two* separate buttons is what example-app's User.kitty
+    // actually uses (a real page needs to navigate to more than one
+    // place), verified against a real running dev server with Playwright
+    // (a click that changed the URL with no console panic) and against a
+    // real `cargo check` (each closure must pre-clone `navigate`
+    // independently, or the second one fails to compile -- see
+    // `word_prop_used_in_two_places_does_not_conflict_over_moving` for the
+    // same class of bug found and fixed elsewhere).
     let out = compile(
         r#"
 func App() {
-    <{navigate}> >> use_navigate()
+    hold navigate >> use_navigate()
     return (
-        <button onClick={<{navigate}>('/home', NavigateOptions::default())}>
-            "Go"
-        </button>
+        <div>
+            <button onClick={navigate('/home', NavigateOptions::default())}>
+                "Home"
+            </button>
+            <button onClick={navigate('/about', NavigateOptions::default())}>
+                "About"
+            </button>
+        </div>
     )
 }
 "#,
     );
-    assert!(out.contains("let (navigate, set_navigate) = signal(use_navigate());"));
-    assert!(out.contains(
-        r#"on:click=move |_| navigate.get()("/home", NavigateOptions::default())"#
-    ));
+    assert!(out.contains("let navigate = use_navigate();"));
+    assert_eq!(
+        out.matches("{ let navigate = navigate.clone(); move |_| navigate.clone()(")
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -1373,8 +1462,9 @@ purr passthrough(<<Num[]>> scores) <<Num[]>> {
     assert!(out.contains("pub fn NavList(items: Vec<String>) -> impl IntoView"));
     assert!(out.contains("pub fn passthrough(scores: Vec<f64>) -> Vec<f64>"));
     // `Vec` isn't `Copy`, so reads of an array-typed prop clone it, same
-    // as a `Word` prop.
-    assert!(out.contains("{move || items.clone()}"));
+    // as a `Word` prop -- pre-cloned before the closure too, same as any
+    // other non-`Copy` tracked name (see `wrap_reactive_closure`).
+    assert!(out.contains("{{ let items = items.clone(); move || items.clone() }}"));
 }
 
 #[test]
@@ -1416,7 +1506,7 @@ func List() {
 }
 "#,
     );
-    assert!(out.contains("{move || n.clone()}"));
+    assert!(out.contains("{{ let n = n.clone(); move || n.clone() }}"));
 }
 
 #[test]

@@ -11,7 +11,7 @@ pub fn Nav(active: String) -> impl IntoView {
     view! {
         <nav>
             "Section: "
-            {move || active.clone()}
+            {{ let active = active.clone(); move || active.clone() }}
         </nav>
     }
 }
