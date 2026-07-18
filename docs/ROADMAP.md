@@ -55,6 +55,11 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
 - **Tooling**: `kittine-compiler` CLI (build), a Vite plugin driving the
   full compiler → cargo → wasm-bindgen pipeline, a VS Code extension
   (TextMate grammar only — no language server), Vercel deployment config.
+  `kittine-compiler build` only rewrites a `.rs` file when its generated
+  content actually changed, so unrelated dependencies keep their mtime
+  and downstream `cargo`/`wasm-bindgen`/Vite freshness checks correctly
+  skip redoing work — verified with a real `npm run build` (~31s → ~5s
+  for a no-op rebuild of `example-app`).
 
 **Can it build a full website yet? Getting close, for the right kind of
 site.** A real multi-page app — composed components, typed props, list
@@ -125,17 +130,14 @@ website (in Kittine) need next":
    `Word` — only a `Word` signal/prop does (`someFunc(name)`). Needs real
    type information about the callee to fix safely; see
    [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
-3. **Incremental/cached builds for the import graph.** `kittine-compiler
-   build` currently recompiles every reachable `.kitty` file on every
-   invocation — correct, but wasteful once a real site has many files.
-4. **`key` control for view-position `spin`.** Always keys by
+3. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
-5. **Dynamic-segment routes and programmatic navigation, demonstrated.**
+4. **Dynamic-segment routes and programmatic navigation, demonstrated.**
    `ParamSegment`/`use_navigate` already work (they're just more
    `leptos_router` items in scope), but nothing in `example-app` or the
    docs shows them yet — worth a real example once a page needs one.
-6. **Re-exports.** `private` controls whether an item is importable at
+5. **Re-exports.** `private` controls whether an item is importable at
    all, but there's no way to import something into a file and then
    re-expose it under that file's own name for a third file to import.
 
@@ -149,7 +151,9 @@ conditions) — landed 2026-07-18. ~~Array-typed props/returns~~
 visibility control~~ (`private func`/`purr`, enforced by Rust's own
 privacy rules) — landed 2026-07-18. ~~Logical `&&`/`||`~~ (combine
 comparisons into one condition, usable generally not just in
-conditions) — landed 2026-07-18.
+conditions) — landed 2026-07-18. ~~Incremental/cached builds for the
+import graph~~ (`.rs` files are only rewritten when their content
+actually changed) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 
