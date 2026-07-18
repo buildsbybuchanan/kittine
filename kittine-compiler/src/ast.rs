@@ -90,6 +90,13 @@ pub enum Stmt {
         list: Expr,
         body: Vec<Stmt>,
     },
+    /// `hold name >> expr` — a plain (non-reactive) local binding, unlike
+    /// `<{name}> >> value`'s signal. Lowers to a bare `let name = expr;`,
+    /// evaluated once, at that point. For forcing a Leptos hook
+    /// (`use_navigate()`, ...) to run eagerly at component setup instead of
+    /// lazily inside an event handler — see `docs/LANGUAGE.md` §
+    /// Programmatic navigation.
+    Hold { name: String, value: Expr },
 }
 
 /// An expression in Kittine source.

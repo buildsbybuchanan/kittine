@@ -316,11 +316,22 @@ impl Parser {
             TokenKind::KeywordCraft => self.parse_craft_stmt(),
             TokenKind::KeywordIf => self.parse_if_stmt(),
             TokenKind::KeywordSpin => self.parse_spin_stmt(),
+            TokenKind::KeywordHold => self.parse_hold_stmt(),
             _ => {
                 let expr = self.parse_expr()?;
                 Ok(Stmt::Expr(expr))
             }
         }
+    }
+
+    /// Parses `hold name >> expr` — a plain (non-reactive) local binding.
+    /// See `ast::Stmt::Hold`.
+    fn parse_hold_stmt(&mut self) -> PResult<Stmt> {
+        self.expect(TokenKind::KeywordHold)?;
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::OpAssign)?;
+        let value = self.parse_expr()?;
+        Ok(Stmt::Hold { name, value })
     }
 
     /// Parses `spin<{item}> in list }{ stmt* }{`. The `}{` fence is not a

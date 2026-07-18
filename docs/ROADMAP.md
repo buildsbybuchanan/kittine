@@ -20,7 +20,8 @@ Verified by `cargo test` (`kittine-compiler/src/tests.rs`) and by actually
 compiling `example-app` against real Leptos 0.7 — not aspirational.
 
 - **Core language**: components (`func`), plain functions (`purr`),
-  reactive state (`<{name}> >> value`), `if>`/`orif>`/`else>` control flow,
+  reactive state (`<{name}> >> value`), a plain non-reactive local
+  binding (`hold name >> expr`), `if>`/`orif>`/`else>` control flow,
   `spin` loops (both imperative-statement and reactive-list-in-view forms),
   function calls, arithmetic/string-concat expressions, comparisons
   (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
@@ -67,7 +68,12 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   actual `leptos` crate, not just asserted against generated-string
   snapshots. Routing was additionally driven end-to-end with Playwright
   against a real running dev server (navigation, the 404 fallback, and
-  continued reactivity all actually observed, not just compiled).
+  continued reactivity all actually observed, not just compiled). A
+  non-`Copy` value (a `Word`/array prop, a `spin` loop variable, or a
+  `hold`-bound local) read from more than one reactive closure in the same
+  component now correctly compiles too — a real move-conflict bug found
+  by actually compiling that exact pattern, not assumed away by the
+  earlier "always `.clone()`" fix.
 - **Tooling**: `kittine-compiler` CLI (build), a Vite plugin driving the
   full compiler → cargo → wasm-bindgen pipeline, a VS Code extension
   (TextMate grammar only — no language server), Vercel deployment config.
@@ -96,7 +102,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (72+ tests, every feature round-tripped against actual
+tested compiler (75+ tests, every feature round-tripped against actual
 Leptos, routing (including dynamic segments) driven end-to-end in a real
 browser) with a language core solid enough for a genuine multi-page
 client-side app. That's real progress, not the same thing as
@@ -168,16 +174,15 @@ website (in Kittine) need next":
      Staying CSR-only is the honest current state; revisit this with a
      scoped design pass, not a quick increment, when it's actually time
      to build the public site.
-2. **Plain (non-reactive) local-variable binding.** `<{name}> >> value`
-   only ever declares a *signal* — discovered while actually finishing
-   the programmatic-navigation demo (see Done below): calling
-   `use_navigate()` correctly (once, eagerly, at component setup) and
-   keeping its result around for a later event handler needs exactly
-   this, and Kittine has no such construct — a signal is being reused as
-   a workaround, which is a semantically wrong fit for something that
-   never actually changes. A real `let`-style binding would express this
-   directly; see
+2. **Mutating a `Word` signal directly to a brand-new literal may not
+   compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
+   first/declaring occurrence) can render a bare `&str` assigned into an
+   owned `String` — concatenation (`<{label}> >> 'x' + <{label}>`) is
+   unaffected, since `format!(..)` always produces an owned `String`
+   regardless of its inputs. Same class of fix as the same-file/cross-file
+   `Word`-parameter string-literal work already done; see
    [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
+
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
 param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
@@ -206,13 +211,19 @@ expressions~~ (`Type::method()`, `Type::CONST`, multi-segment paths) and
 ~~programmatic navigation, demonstrated~~ (`use_navigate()` fully works
 now — verified against a real running dev server with Playwright, which
 also caught a real runtime-only gotcha: the hook must be called eagerly,
-not from inside the event handler, or it panics; `example-app`'s
-`User.kitty` demonstrates the correct pattern) — landed 2026-07-18.
+not from inside the event handler, or it panics) — landed 2026-07-18.
 ~~Re-exports~~ (`export import { Name } from './file.kitty'` lowers to
 `pub use`, letting a third file import through an intermediate one;
 verified with a real three-file chain against actual Leptos and wired
 into `example-app` as a `components.kitty` barrel file) — landed
-2026-07-18.
+2026-07-18. ~~Plain (non-reactive) local-variable binding~~ (`hold name
+>> expr` lowers to a bare `let`; replaces the signal-based workaround
+programmatic navigation had used, wired into `example-app`'s
+`User.kitty`) — landed 2026-07-18. ~~Move-conflict fix for a non-`Copy`
+value read from more than one reactive closure~~ (a real bug found by
+actually compiling that exact pattern against Leptos, not assumed —
+every non-`Copy` scope-tracked read now pre-clones into its own local
+before its closure) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 

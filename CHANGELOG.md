@@ -32,6 +32,19 @@ grouped by date until the first tagged release.
 
 ### Added
 
+- **`hold name >> expr`**: a plain, non-reactive local binding — unlike
+  `<{name}> >> value`, never declares a signal. Lowers to a bare `let
+  name = expr;`, evaluated once. Exists specifically for calling a
+  Leptos hook that depends on reactive context (`use_navigate()`, ...)
+  eagerly at component setup instead of lazily inside an event handler
+  (see the move-conflict fix below and `docs/LANGUAGE.md` §
+  Programmatic navigation for why that timing matters). Reading a
+  `hold`-bound name — bare, calling it, via a method call, or via
+  calling the result of an expression — gets the same `.clone()`
+  treatment a `Word`/array prop already had. Verified against real
+  Leptos 0.7, then wired into `example-app`'s `User.kitty`, replacing
+  the signal-based workaround the first version of programmatic
+  navigation had used.
 - **Re-exports**: `export import { Name } from './file.kitty'` re-exposes
   an imported name under the importing file's own name — a third file
   can then `import { Name }` from *this* file without reaching all the
@@ -223,6 +236,24 @@ grouped by date until the first tagged release.
 
 ### Fixed
 
+- **A non-`Copy` value (a `Word`/array prop, a view-position `spin`'s loop
+  variable, or a `hold`-bound local) read from more than one reactive
+  closure within the same component now compiles.** A `move` closure
+  captures every variable it uses *by value* — including ones only ever
+  read via `.clone()` inside the closure body — so two sibling closures
+  both reading the same original value (`<h1>{ active }</h1><p>{ active
+  }</p>`, or two buttons both calling a `hold`-bound `navigate`) used to
+  fight over moving it, and the second one failed with `E0382: use of
+  moved value`. Found by actually compiling that exact pattern against
+  real Leptos, not assumed — the existing "always `.clone()` inside the
+  closure" fix only ever handled a single closure being called more than
+  once *reactively*, not two separate closures both referencing the same
+  source variable. Fixed by pre-cloning every non-`Copy` tracked name a
+  closure references into its own local **before** the closure itself
+  (`{ let active = active.clone(); move || active.clone() }`) — rustc's
+  own E0382 diagnostic suggests exactly this shape. Applies everywhere a
+  reactive closure is generated: JSX child interpolations, event
+  handlers, and other JSX attribute expressions.
 - `example-app/Cargo.toml`'s `[profile.release]` now sets `lto = true`,
   `codegen-units = 1`, `strip = true`, and `panic = "abort"` alongside the
   existing `opt-level = "s"`, cutting the shipped `.wasm` from ~227 KB to

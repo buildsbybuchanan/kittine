@@ -45,6 +45,7 @@ pub enum TokenKind {
     KeywordImport, // import { A, B } from '...'
     KeywordFrom,
     KeywordExport, // export import { A } from '...' -- re-export
+    KeywordHold,   // hold name >> expr -- plain (non-reactive) local binding
 
     // Literals / identifiers
     Ident(String),
@@ -98,6 +99,7 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordImport => write!(f, "import"),
             TokenKind::KeywordFrom => write!(f, "from"),
             TokenKind::KeywordExport => write!(f, "export"),
+            TokenKind::KeywordHold => write!(f, "hold"),
             TokenKind::Ident(s) => write!(f, "{s}"),
             TokenKind::Number(n) => write!(f, "{n}"),
             TokenKind::Str(s) => write!(f, "\"{s}\""),
@@ -399,6 +401,7 @@ impl Lexer {
                     "import" => TokenKind::KeywordImport,
                     "from" => TokenKind::KeywordFrom,
                     "export" => TokenKind::KeywordExport,
+                    "hold" => TokenKind::KeywordHold,
                     "if" if self.peek() == Some('>') => {
                         self.advance();
                         TokenKind::KeywordIf

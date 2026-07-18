@@ -70,7 +70,7 @@ pub fn Home() -> impl IntoView {
             <ul>
                 <For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>
                     <li>
-                        {move || n.clone()}
+                        {{ let n = n.clone(); move || n.clone() }}
                     </li>
                 </For>
             </ul>

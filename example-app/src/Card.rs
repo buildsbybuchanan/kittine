@@ -11,7 +11,7 @@ pub fn Card(title: String, children: Children) -> impl IntoView {
     view! {
         <div class="card">
             <h3>
-                {move || title.clone()}
+                {{ let title = title.clone(); move || title.clone() }}
             </h3>
             {children()}
         </div>

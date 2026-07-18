@@ -22,8 +22,9 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
   - [Children](#children)
 - [Routing](#routing)
   - [Dynamic route segments](#dynamic-route-segments)
-  - [Programmatic navigation — a real, current gap](#programmatic-navigation--a-real-current-gap)
+  - [Programmatic navigation](#programmatic-navigation)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
+  - [Plain local bindings (`hold`)](#plain-local-bindings-hold)
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
 - [Arrays (`[ ]`)](#arrays)
@@ -86,7 +87,22 @@ exception is the special `children` parameter — see
 Reading a `Word` prop or any array-typed prop clones it (`items.clone()`)
 rather than moving it, since a prop may be read from more than one
 reactive closure inside the component body — neither `String` nor `Vec<T>`
-is `Copy` the way `Num`/`Flag` are.
+is `Copy` the way `Num`/`Flag` are. If the *same* prop is read from more
+than one place, each reactive closure additionally pre-clones it into its
+own local **before** the closure itself — a `move` closure captures every
+variable it uses *by value*, so two sibling closures both reading the
+same original prop (`<h1>{ active }</h1><p>{ active }</p>`, say) would
+otherwise fight over moving it, and the second one would fail to compile
+(`E0382: use of moved value`) — found by actually compiling exactly that
+pattern against real Leptos, not assumed:
+
+```rust
+{ let active = active.clone(); move || active.clone() }
+```
+
+This applies to every non-`Copy` scope-tracked read — a prop, a
+view-position `spin`'s loop variable, and a [`hold`-bound
+local](#plain-local-bindings-hold) — not just props.
 
 ## Functions (`purr`)
 
@@ -366,7 +382,7 @@ one specific shape and renders it bare instead:
 pub fn Card(title: String, children: Children) -> impl IntoView {
     view! {
         <div class="card">
-            <h3>{move || title.clone()}</h3>
+            <h3>{{ let title = title.clone(); move || title.clone() }}</h3>
             {children()}
         </div>
     }
@@ -505,10 +521,10 @@ not just that the page loaded) in `example-app`'s `User.kitty`:
 
 ```kitty
 func User() {
-    <{navigate}> >> use_navigate()
+    hold navigate >> use_navigate()
 
     return (
-        <button onClick={<{navigate}>('/', NavigateOptions::default())}>
+        <button onClick={navigate('/', NavigateOptions::default())}>
             "Go home"
         </button>
     )
@@ -529,20 +545,15 @@ the DOM. This was only caught by checking the actual browser console for
 a panic after clicking — the page still "looked" fine (no crash overlay,
 no URL change either, easy to miss) until the console was checked.
 
-Kittine has no plain (non-reactive) local-variable binding yet — only
-`<{name}> >> value` for signals — so `<{navigate}> >> use_navigate()`
-reuses the signal mechanism to force the eager call at the right time:
-`use_navigate()` runs once, during component setup, and its result
-(a `Clone` closure) is stored in the signal. Reading it back via
-`<{navigate}>` renders as `navigate.get()`, so `<{navigate}>('/', ..)`
-(calling the result of an expression) becomes `navigate.get()("/", ..)`
-— correct, since the hook was already captured at the right time and the
-signal is just carrying that value across to the click handler. This
-isn't reactive state in any meaningful sense (the "signal" never
-changes), just the closest existing Kittine construct that happens to
-force the right evaluation timing; a real non-reactive `let`-style
-binding (see [ROADMAP.md](ROADMAP.md#next-up)) would express this more
-directly once it exists.
+[`hold navigate >> use_navigate()`](#plain-local-bindings-hold) forces
+the eager call at the right time: `use_navigate()` runs once, during
+component setup, and `navigate` refers to whatever it returned from then
+on. Calling `navigate('/', ..)` later — a bare call to a `hold`-bound
+name — works from as many event handlers as needed; each one
+independently pre-clones `navigate` before its own closure (see
+[Method calls](#method-calls) and [Compilation
+model](#compilation-model) for why that pre-clone matters whenever the
+same non-`Copy` value is read from more than one closure).
 
 Any bare expression works as a JSX event-handler value, not just a
 `<{name}> >> value` mutation — `onClick={expr}` renders as `move |_|
@@ -626,6 +637,39 @@ in the function pins it down first — and it fails to compile the moment
 that value is later passed somewhere that concretely requires `f64` (a
 `purr` call, for instance). Spelling it `0f64` up front avoids the
 ambiguity entirely.
+
+### Plain local bindings (`hold`)
+
+```kitty
+hold navigate >> use_navigate()
+```
+
+`hold name >> expr` is a **plain, non-reactive** local binding — unlike
+`<{name}> >> value`, it never declares a signal. `expr` is evaluated
+exactly once, at that point in the component, and `name` refers to
+whatever it returned from then on. There's no mutation form (unlike
+`<{ }>`'s reuse for both declare and mutate) — writing `hold name >>` a
+second time is just an ordinary Rust `let` shadowing the first.
+
+This exists specifically for calling a Leptos hook that depends on
+reactive context (`use_navigate()`, `use_context()`, ...) — see
+[Programmatic navigation](#programmatic-navigation) for why calling one
+*lazily*, inside an event handler, panics at runtime, and why `hold`
+forcing an eager call at component setup is the fix. Reading a
+`hold`-bound name — bare (`navigate`), calling it (`navigate(args)`), or
+via [method calls](#method-calls)/[calling the result of an
+expression](#calling-the-result-of-an-expression) — always renders with
+the same `.clone()` treatment a `Word`/array prop gets, since a held
+value might not be `Copy` (a closure, for instance) and may need to be
+read from more than one reactive closure.
+
+#### Compilation
+
+`hold name >> expr` becomes a bare `let name = expr;`:
+
+```rust
+let navigate = use_navigate();
+```
 
 ## Strings
 
@@ -823,7 +867,7 @@ diffs by key) whenever the underlying signal changes:
 ```rust
 <For each=move || items.get() key=|item| format!("{item}") let:item>
     <li>
-        {move || item.clone()}
+        {{ let item = item.clone(); move || item.clone() }}
     </li>
 </For>
 ```
@@ -843,7 +887,7 @@ spin<{item}> in items key(item.to_uppercase()) }{
 ```rust
 <For each=move || items.get() key=|item| item.clone().to_uppercase() let:item>
     <li>
-        {move || item.clone()}
+        {{ let item = item.clone(); move || item.clone() }}
     </li>
 </For>
 ```
@@ -859,7 +903,12 @@ element type — a `{move || ..}` reactive closure needs to be callable more
 than once (Leptos re-runs it), which means it can't *move* a non-`Copy`
 `item` (a `Word`) out of itself; only `FnOnce` closures can do that. Cloning
 a `Copy` type like `Num` costs nothing extra, so there's no reason to only
-clone conditionally. A `spin` body inside a view can contain more than one child element/text node, just
+clone conditionally. Each interpolation also pre-clones `item` into its
+own local *before* the closure — needed the moment `item` appears in more
+than one place inside the same iteration's body, so sibling closures don't
+fight over moving the same original (see [Props](#props) for the same
+pre-clone behavior spelled out in full) — harmless overhead when there's
+only one use. A `spin` body inside a view can contain more than one child element/text node, just
 like any other JSX position.
 
 ## Expressions and operators
@@ -1131,20 +1180,8 @@ These are intentional scope boundaries of the current prototype, not bugs:
 - **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
   works via `leptos_router`'s own components composed as-is — real, but
   client-side-rendered only (no SSR/SSG integration yet). Reading a
-  dynamic segment (`use_params_map().get().get("id")`) is real and
-  verified end-to-end (see [Dynamic route
-  segments](#dynamic-route-segments)); [programmatic
-  navigation](#programmatic-navigation) works too, but needs a specific,
-  non-obvious pattern (see the next item).
-- **No plain (non-reactive) local-variable binding.** `<{name}> >> value`
-  only ever declares a *signal* — there's no way to bind a name to a
-  plain value or closure that isn't meant to be reactive state.
-  [Programmatic navigation](#programmatic-navigation) needs exactly
-  this (calling `use_navigate()` once, eagerly, and keeping the result
-  around for an event handler to call later), and works around the gap
-  by storing the result in a signal anyway — it's the closest existing
-  construct, not a semantically correct fit. A real `let`-style binding
-  would express this directly.
+  dynamic segment (`use_params_map().get().get("id")`) and [programmatic
+  navigation](#programmatic-navigation) both work, verified end-to-end.
 - **A Leptos hook (`use_navigate`, `use_context`, and others) called
   *inside* a lazily-evaluated position — a JSX event handler, for
   instance — resolves its context wrong, silently at compile time and
@@ -1155,11 +1192,12 @@ These are intentional scope boundaries of the current prototype, not bugs:
   *when the closure body executes* — correct during a component's
   synchronous setup, not by the time a click fires later from the
   browser's event loop, even though the element is still physically
-  inside `<Router>` in the DOM. Call context-dependent hooks eagerly (see
-  the previous item's signal workaround), not from inside an event
-  handler. This is a real Leptos behavior, not Kittine-specific, but
-  Kittine's codegen doesn't (yet) distinguish "eager" from "lazy"
-  expression positions to warn about it.
+  inside `<Router>` in the DOM. Call context-dependent hooks eagerly, with
+  [`hold`](#plain-local-bindings-hold), not from inside an event handler
+  — see [Programmatic navigation](#programmatic-navigation). This is a
+  real Leptos behavior, not Kittine-specific, but Kittine's codegen
+  doesn't (yet) distinguish "eager" from "lazy" expression positions to
+  warn about it.
 - **Whole-graph `purr` signature lookup (see [Calling
   functions](#calling-functions)) is a flat, unnamespaced map by bare
   name.** Two different files defining a `purr` with the same name is
@@ -1169,11 +1207,6 @@ These are intentional scope boundaries of the current prototype, not bugs:
   own `use` resolution is what actually binds a call site to a specific
   function either way; this map only ever informs a codegen *hint*, never
   which function actually gets called.
-- **No re-exports.** `private` (see [Visibility](#visibility)) controls
-  whether an item can be imported *at all*, but there's no way for a file
-  to import something and then re-expose it under its own name for a
-  third file to import — every import has to go straight to the file that
-  actually defines the item.
 - **Mutating a `Word` signal directly to a brand-new literal may not
   compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
   first/declaring occurrence) can render a bare `&str` assigned into an
