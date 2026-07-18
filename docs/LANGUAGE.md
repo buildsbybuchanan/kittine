@@ -17,6 +17,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Modules and imports](#modules-and-imports)
 - [Component composition](#component-composition)
   - [Children](#children)
+- [Routing](#routing)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
@@ -252,6 +253,109 @@ Composition with nested content needs no codegen changes at all beyond
 what [component composition](#component-composition) already does — the
 `view!` macro wires nested JSX into the `children` prop automatically, the
 same way it would for hand-written Leptos.
+
+## Routing
+
+Kittine has **no routing syntax of its own** — and doesn't need one.
+[`leptos_router`](https://docs.rs/leptos_router) is in scope in every
+generated file, and its components (`Router`, `Routes`, `Route`, `A`, ...)
+are just ordinary components: PascalCase tags, composed exactly like any
+`func`-defined component. A route's path segment
+(`StaticSegment`/`ParamSegment`/`WildcardSegment`/`OptionalParamSegment`)
+is a plain function call, which Kittine already supports. This is
+deliberate: Kittine adds a language on top of Rust/Leptos, not a
+parallel ecosystem underneath it — routing, like most of what a real
+website needs, should come from the framework it already compiles to.
+
+```kitty
+import { Home } from './Home.kitty'
+import { About } from './About.kitty'
+import { NotFound } from './NotFound.kitty'
+
+func App() {
+    return (
+        <Router>
+            <nav>
+                <A href='/'>"Home"</A>
+                <A href='/about'>"About"</A>
+            </nav>
+            <main>
+                <Routes fallback={NotFound}>
+                    <Route path={StaticSegment('')} view={Home}/>
+                    <Route path={StaticSegment('about')} view={About}/>
+                </Routes>
+            </main>
+        </Router>
+    )
+}
+```
+
+A few things worth calling out about this example, since none of them are
+Kittine-specific behavior — they're just how Leptos's `view!` macro already
+treats these components:
+
+- `view={Home}` and `fallback={NotFound}` are **bare component
+  references**, not calls (`Home`, not `Home()`) — write them with braces
+  since [JSX attribute values](#component-composition) need either a
+  string literal or a `{ expr }`, never a bare unbraced identifier.
+  `Home` isn't a signal or a prop, so it renders as a plain identifier,
+  exactly the zero-argument view-returning function `Route`'s `view` prop
+  and `Routes`'s `fallback` prop expect.
+- `path={StaticSegment('')}` is an ordinary [function call](#calling-functions)
+  — `StaticSegment` is a plain tuple constructor from `leptos_router`, not
+  a macro. (`leptos_router`'s own docs often show `path!("...")`, a macro
+  form Kittine doesn't support — use `StaticSegment("...")` /
+  `ParamSegment("id")` instead, which are equivalent and already work.)
+- `<A href='/about'>"About"</A>` renders a real `<a>` element that
+  intercepts the click for client-side navigation — no full page reload.
+
+### Compilation
+
+Nothing routing-specific happens in codegen — the example above lowers via
+the same rules as any other composition:
+
+```rust
+use leptos::prelude::*;
+use leptos_router::components::*;
+use leptos_router::*;
+// .. + one `mod`/`use` pair per import
+
+#[component]
+pub fn App() -> impl IntoView {
+    view! {
+        <Router>
+            <nav>
+                <A href="/".to_string()>"Home"</A>
+                <A href="/about".to_string()>"About"</A>
+            </nav>
+            <main>
+                <Routes fallback=NotFound>
+                    <Route path=StaticSegment("") view=Home/>
+                    <Route path=StaticSegment("about") view=About/>
+                </Routes>
+            </main>
+        </Router>
+    }
+}
+```
+
+`use leptos_router::components::*;` and `use leptos_router::*;` are emitted
+in **every** generated file (see [Compilation model](#compilation-model))
+— routing works the moment you reach for it, without a separate opt-in
+step, at the cost of an `unused_imports` allowance for files that don't.
+
+### What Kittine doesn't add on top
+
+Everything `leptos_router` itself supports is available exactly as-is:
+nested routes (`<ParentRoute>` + `<Outlet/>`), dynamic segments
+(`ParamSegment("id")`, read with `leptos_router::hooks::use_params_map`),
+wildcard/catch-all segments, and programmatic navigation
+(`leptos_router::hooks::use_navigate`) — Kittine hasn't built dedicated
+syntax for any of these yet, but nothing stops you from calling them the
+same way `StaticSegment` is called above; they're just Rust items already
+in scope. Server-side rendering / static generation (Leptos supports both)
+is a separate, bigger piece of work — see
+[ROADMAP.md](ROADMAP.md#next-up).
 
 ## Variables and state
 
@@ -650,15 +754,19 @@ Every generated Rust file starts with:
 
 ```rust
 // Generated by kittine-compiler. Do not edit by hand.
-#![allow(unused_braces, unused_variables, dead_code)]
+#![allow(unused_braces, unused_variables, dead_code, unused_imports)]
 
 use leptos::prelude::*;
+use leptos_router::components::*;
+use leptos_router::*;
 ```
 
 followed by one `mod` + `use` pair per `import`, and then one item per
 `func`/`purr` in the source file, in source order: a `func` becomes
 `#[component] pub fn Name(..) -> impl IntoView { ... }`; a `purr` becomes a
-plain `pub fn name(..) -> ReturnType { ... }`.
+plain `pub fn name(..) -> ReturnType { ... }`. The `leptos_router` imports
+are unconditional (see [Routing](#routing)) — `unused_imports` is
+allowed at the crate level so files that don't route stay warning-free.
 
 ## Known limitations
 
@@ -667,6 +775,12 @@ These are intentional scope boundaries of the current prototype, not bugs:
 - **No prop type inference.** Every prop and `purr` return type needs an
   explicit `<<Num>>`/`<<Word>>`/`<<Flag>>` tag — there's no way to omit it
   and have the compiler figure it out.
+- **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
+  works via `leptos_router`'s own components composed as-is — real, but
+  client-side-rendered only (no SSR/SSG integration yet), and reading a
+  dynamic segment (`use_params_map`) or navigating programmatically
+  (`use_navigate`) means calling `leptos_router::hooks::*` directly rather
+  than through anything Kittine-specific.
 - **`import` only brings in items, not re-exports.** There's no `export`
   concept — every `func`/`purr` in a file is implicitly `pub` and
   importable; you can't restrict what a file exposes.

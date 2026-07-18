@@ -6,12 +6,16 @@ use leptos_router::components::*;
 use leptos_router::*;
 
 #[component]
-pub fn Nav(active: String) -> impl IntoView {
+pub fn NotFound() -> impl IntoView {
     view! {
-        <nav>
-            "Section: "
-            {move || active.clone()}
-        </nav>
+        <div>
+            <h1>
+                "404"
+            </h1>
+            <p>
+                "That page doesn't exist."
+            </p>
+        </div>
     }
 }
 

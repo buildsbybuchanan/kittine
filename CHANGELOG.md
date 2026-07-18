@@ -59,6 +59,16 @@ grouped by date until the first tagged release.
   { children() } .. }`, called with `<Card><p>"x"</p></Card>`. No
   `children=` attribute needed at the call site; Leptos's `view!` macro
   wires nested JSX into the `children` prop automatically.
+- **Routing**, with no dedicated Kittine syntax: `leptos_router` is now in
+  scope in every generated file, and `Router`/`Routes`/`Route`/`A` are
+  just ordinary components composed the existing way — `<Route
+  path={StaticSegment('about')} view={About}/>` needed zero new language
+  features, since `StaticSegment(..)` is a plain function call and
+  `view={About}` is a bare component reference. `example-app` now has
+  real `Home`/`About`/`NotFound` pages behind client-side routing,
+  verified end-to-end with Playwright against the running dev server
+  (navigation, the 404 fallback, and continued reactivity all checked, not
+  just a successful compile).
 
 ### Fixed
 
