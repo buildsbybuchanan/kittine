@@ -23,6 +23,10 @@ pub fn isAdult(age: f64) -> bool {
     age >= 18f64
 }
 
+pub fn isWorkingAge(age: f64) -> bool {
+    (age >= 18f64) && (age <= 65f64)
+}
+
 #[component]
 pub fn Home() -> impl IntoView {
     let (count, set_count) = signal(0f64);
@@ -44,7 +48,13 @@ pub fn Home() -> impl IntoView {
     } else {
         leptos::logging::log!("teen");
     }
+    if (age.get() >= 18f64) && (ready.get() == true) {
+        leptos::logging::log!("ready adult");
+    } else if (age.get() < 13f64) || (age.get() >= 65f64) {
+        leptos::logging::log!("discount age");
+    }
     leptos::logging::log!("{}", isAdult(age.get()));
+    leptos::logging::log!("{}", isWorkingAge(age.get()));
     for n in (vec![1, 2, 3]).into_iter() {
         leptos::logging::log!("{}", n);
     }

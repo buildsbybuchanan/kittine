@@ -80,6 +80,14 @@ grouped by date until the first tagged release.
   `func NavList(<<Word[]>> items) { .. }` lowers to `items: Vec<String>`,
   a `purr` can return an array type the same way. Array type tags also
   check literal elements against the declared element type at parse time.
+- **Logical `&&` / `||`**: combine two or more comparisons into one
+  condition — `age >= 18 && status >> 'active'`, `age < 13 || age >= 65`.
+  `&&` binds tighter than `||` (`a || b && c` reads as `a || (b && c)`).
+  Works in `if>`/`orif>` conditions (each side still anchored on a
+  `<{name}>` read, same as a single comparison today) and, with no such
+  restriction, anywhere a general expression is valid (`purr` returns,
+  `craft<...>` arguments, JSX `{ expr }`). Both lower to Rust's own
+  `&&`/`||`, short-circuiting exactly as they do in Rust.
 - **`private func`/`purr`**: opts a top-level item out of being importable
   (every `func`/`purr` is importable by default). Lowers to a plain
   (non-`pub`) Rust item — `import`ing a `private` one from another file is

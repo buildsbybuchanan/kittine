@@ -93,6 +93,8 @@ func Counter() {
 - `if>` / `orif>` / `else>` are indentation-delimited (no braces), with
   `>>`/`<`/`<=`/`>`/`>=`/`!=` as comparisons — usable in conditions and
   generally anywhere an expression is (a `purr` return, `craft<...>`).
+  `&&`/`||` combine two or more comparisons into one condition (`<{age}>
+  >= 18 && <{status}> >> 'active'`), `&&` binding tighter than `||`.
 - `spin<{item}> in list }{ .. }{` loops over an array, its body fenced by
   `}{` — a closing brace immediately followed by an opening one. As a
   statement it's a plain imperative loop; inside `return ( ... )` it

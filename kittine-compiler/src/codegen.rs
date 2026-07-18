@@ -588,6 +588,8 @@ fn op_str(op: BinOp) -> &'static str {
         BinOp::Le => "<=",
         BinOp::Ge => ">=",
         BinOp::Ne => "!=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
     }
 }
 

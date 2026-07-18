@@ -375,9 +375,43 @@ impl Parser {
         // Wrap a `>` comparison in parens (`craft<(age > 18)>`) to use one —
         // parens are self-delimiting via `)`, so there's no ambiguity once
         // the comparison is inside them.
-        let value = self.parse_equality_no_trailing_gt()?;
+        let value = self.parse_or_no_trailing_gt()?;
         self.expect(TokenKind::Gt)?;
         Ok(Stmt::Craft { value })
+    }
+
+    /// Like [`Parser::parse_or`], but built on
+    /// [`Parser::parse_equality_no_trailing_gt`] instead of
+    /// [`Parser::parse_equality`] — for `craft<expr>`'s argument, where a
+    /// bare trailing `>` is ambiguous with craft's own closing bracket.
+    /// `&&`/`||` never touch a bare `>`, so combining restricted atoms this
+    /// way introduces no new ambiguity.
+    fn parse_or_no_trailing_gt(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_and_no_trailing_gt()?;
+        while matches!(self.peek().kind, TokenKind::PipePipe) {
+            self.advance();
+            let right = self.parse_and_no_trailing_gt()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::Or,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_and_no_trailing_gt(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_equality_no_trailing_gt()?;
+        while matches!(self.peek().kind, TokenKind::AmpAmp) {
+            self.advance();
+            let right = self.parse_equality_no_trailing_gt()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::And,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
     }
 
     /// Parses `if> cond <block> (orif> cond <block>)* (else> <block>)?`
@@ -416,11 +450,43 @@ impl Parser {
         })
     }
 
-    /// A condition always starts with `<{name}>`. `<{name}> >> expr` is
-    /// interpreted as an equality test rather than an assignment; any other
-    /// comparison operator (`<`, `<=`, `>`, `>=`, `!=`) following the bare
-    /// `<{name}>` read works the same way, via [`Parser::parse_comparison_tail`].
+    /// A condition is one or more `<{name}> cmp value` atoms combined with
+    /// `&&` / `||` (`&&` binds tighter, same as most languages — `a && b ||
+    /// c` reads as `(a && b) || c`). Each atom always starts with
+    /// `<{name}>`; `<{name}> >> expr` is interpreted as an equality test
+    /// rather than an assignment, and any other comparison operator (`<`,
+    /// `<=`, `>`, `>=`, `!=`) following the bare `<{name}>` read works the
+    /// same way, via [`Parser::parse_comparison_tail`].
     fn parse_condition(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_condition_and()?;
+        while matches!(self.peek().kind, TokenKind::PipePipe) {
+            self.advance();
+            let right = self.parse_condition_and()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::Or,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_condition_and(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_condition_atom()?;
+        while matches!(self.peek().kind, TokenKind::AmpAmp) {
+            self.advance();
+            let right = self.parse_condition_atom()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::And,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
+    }
+
+    /// A single `<{name}> cmp_op value` condition atom.
+    fn parse_condition_atom(&mut self) -> PResult<Expr> {
         match self.parse_var_bracket_expr()? {
             Expr::InlineAssign { name, value } => Ok(Expr::Binary {
                 left: Box::new(Expr::VarRead(name)),
@@ -451,11 +517,39 @@ impl Parser {
 
     // ---- expressions --------------------------------------------------------
     //
-    // Precedence, low to high: comparison (`>>` `<` `<=` `>` `>=` `!=`)
-    // < `+ -` < `* /` < unary < primary.
+    // Precedence, low to high: `||` < `&&` < comparison (`>>` `<` `<=` `>`
+    // `>=` `!=`) < `+ -` < `* /` < unary < primary.
 
     fn parse_expr(&mut self) -> PResult<Expr> {
-        self.parse_equality()
+        self.parse_or()
+    }
+
+    fn parse_or(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_and()?;
+        while matches!(self.peek().kind, TokenKind::PipePipe) {
+            self.advance();
+            let right = self.parse_and()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::Or,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_and(&mut self) -> PResult<Expr> {
+        let mut left = self.parse_equality()?;
+        while matches!(self.peek().kind, TokenKind::AmpAmp) {
+            self.advance();
+            let right = self.parse_equality()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::And,
+                right: Box::new(right),
+            };
+        }
+        Ok(left)
     }
 
     fn parse_equality(&mut self) -> PResult<Expr> {

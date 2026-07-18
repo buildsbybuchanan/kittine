@@ -32,6 +32,10 @@ pub enum TokenKind {
     GtEq,  // >=
     BangEq, // !=
 
+    // Logical operators (combine comparisons in a condition or expression)
+    AmpAmp,   // &&
+    PipePipe, // ||
+
     // Keywords
     KeywordFunc,
     KeywordReturn,
@@ -82,6 +86,8 @@ impl fmt::Display for TokenKind {
             TokenKind::LtEq => write!(f, "<="),
             TokenKind::GtEq => write!(f, ">="),
             TokenKind::BangEq => write!(f, "!="),
+            TokenKind::AmpAmp => write!(f, "&&"),
+            TokenKind::PipePipe => write!(f, "||"),
             TokenKind::KeywordFunc => write!(f, "func"),
             TokenKind::KeywordReturn => write!(f, "return"),
             TokenKind::KeywordSpin => write!(f, "spin"),
@@ -332,6 +338,26 @@ impl Lexer {
                 self.advance();
                 tokens.push(Token {
                     kind: TokenKind::BangEq,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with("&&") {
+                self.advance();
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::AmpAmp,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with("||") {
+                self.advance();
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::PipePipe,
                     line,
                     col,
                 });

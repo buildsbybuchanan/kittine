@@ -176,8 +176,16 @@
     "operators": {
       "patterns": [
         {
+          "name": "keyword.operator.logical.kitty",
+          "match": "&&|\\|\\|"
+        },
+        {
           "name": "keyword.operator.assignment.kitty",
           "match": ">>"
+        },
+        {
+          "name": "keyword.operator.comparison.kitty",
+          "match": "<=|>=|!="
         },
         {
           "name": "keyword.operator.arithmetic.kitty",

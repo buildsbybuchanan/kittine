@@ -658,14 +658,16 @@ like any other JSX position.
 
 Precedence, lowest to highest:
 
-1. Comparison — `>>` (equality), `<`, `<=`, `>`, `>=`, `!=`. Valid as the
+1. `||` (logical or — left-associative)
+2. `&&` (logical and — left-associative, binds tighter than `||`)
+3. Comparison — `>>` (equality), `<`, `<=`, `>`, `>=`, `!=`. Valid as the
    top-level operator of a `<{name}> >> value` assignment/mutation, inside
    an `if>`/`orif>` condition, and generally anywhere an expression is
    valid (a `purr` return, a `craft<...>` argument, a JSX `{ expr }`).
-2. `+` `-` (addition, subtraction — left-associative)
-3. `*` `/` (multiplication, division — left-associative)
-4. unary `-` (negation)
-5. primary: numbers, strings, booleans, arrays, calls, type tags,
+4. `+` `-` (addition, subtraction — left-associative)
+5. `*` `/` (multiplication, division — left-associative)
+6. unary `-` (negation)
+7. primary: numbers, strings, booleans, arrays, calls, type tags,
    identifiers, `<{name}>` reads, parenthesized expressions
 
 ```kitty
@@ -685,6 +687,35 @@ All five comparisons (`<`, `<=`, `>`, `>=`, `!=`) lower to Rust's own
 operators of the same name, plus `>>` for `==`; they work between any two
 comparable values (numbers, and — via Rust's lexicographic `Ord` for
 `String` — words too).
+
+### Logical `&&` / `||`
+
+Combine two or more comparisons into one condition — `&&` binds tighter
+than `||`, so `a || b && c` reads as `a || (b && c)`, same as most
+languages:
+
+```kitty
+purr isWorkingAge(<<Num>> age) <<Flag>> {
+    return (age >= 18 && age <= 65)
+}
+
+if><{age}> >= 18 && <{status}> >> 'active'
+    craft<'eligible'>
+orif><{age}> < 13 || <{age}> >= 65
+    craft<'discount age'>
+```
+
+Each `if>`/`orif>` condition atom (the part on either side of `&&`/`||`)
+still needs to start with a `<{name}>` read, same as a single-comparison
+condition today — `<{age}> >= 18 && <{status}> >> 'active'` works,
+but combining a condition with a bare function call (`isAdult(age) &&
+..`) doesn't parse as a condition atom. Outside of `if>`/`orif>`
+conditions — a `purr` return, a `craft<...>` argument, a JSX `{ expr }` —
+`&&`/`||` work between any two expressions with no such restriction, since
+that grammar doesn't require a leading `<{name}>` at all.
+
+Both lower to Rust's own `&&`/`||`, short-circuiting exactly as they do in
+Rust.
 
 > **Watch out:** a bare `>` (greater-than) at the top level of
 > `craft<expr>` is ambiguous with `craft<...>`'s own closing `>` — wrap it
@@ -802,13 +833,22 @@ craft_stmt   := "craft<" craft_expr ">"
 if_stmt      := "if>" condition INDENT_BLOCK
                 ("orif>" condition INDENT_BLOCK)*
                 ("else>" INDENT_BLOCK)?
-condition    := "<{" IDENT "}>" cmp_op expr
+condition    := cond_or
+cond_or      := cond_and ("||" cond_and)*
+cond_and     := cond_atom ("&&" cond_atom)*
+cond_atom    := "<{" IDENT "}>" cmp_op expr
 cmp_op       := ">>" | "<" | "<=" | ">" | ">=" | "!="
 spin_stmt    := "spin" "<{" IDENT "}>" "in" expr "}{" stmt* "}{"
 expr_stmt    := expr
 
-expr         := additive (cmp_op additive)?
-craft_expr   := additive ((">>" | "<" | "<=" | ">=" | "!=") additive)?  // no bare ">"; see Expressions and operators
+expr         := logic_or
+logic_or     := logic_and ("||" logic_and)*
+logic_and    := equality ("&&" equality)*
+equality     := additive (cmp_op additive)?
+craft_expr   := craft_or
+craft_or     := craft_and ("||" craft_and)*
+craft_and    := craft_equality ("&&" craft_equality)*
+craft_equality := additive ((">>" | "<" | "<=" | ">=" | "!=") additive)?  // no bare ">"; see Expressions and operators
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
 unary        := "-" unary | primary
@@ -900,7 +940,9 @@ These are intentional scope boundaries of the current prototype, not bugs:
   than from top-level `craft<...>` statements.
 - **Numbers are always `f64`.** There is no integer/float distinction in
   the type system, matching JavaScript-style numeric semantics.
-- **No logical `&&`/`||`.** Each comparison operator (`>>`, `<`, `<=`, `>`,
-  `>=`, `!=`) works on its own; there's no way to combine two comparisons
-  into one condition yet (`if>` age `>=` 18 and status `>>` 'active'
-  needs two separate `if>`s today, not one).
+- **An `if>`/`orif>` condition atom combined with `&&`/`||` still needs to
+  start with `<{name}>`.** `<{age}> >= 18 && <{status}> >> 'active'` works;
+  combining with a bare function call or computed expression as one side
+  of the `&&`/`||` (`isAdult(age) && ..`) doesn't parse as a condition —
+  only the general expression grammar (`purr` returns, `craft<...>`, JSX
+  `{ expr }`) allows arbitrary expressions on either side of `&&`/`||`.
