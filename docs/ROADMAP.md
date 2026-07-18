@@ -29,7 +29,8 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   logical `&&`/`||` combining comparisons into one condition, method
   calls (`receiver.method(arg, ..)`, chains work), calling the result of
   an expression (`callee(arg, ..)` where `callee` isn't a bare name),
-  tuple literals (`(expr, expr, ..)`).
+  tuple literals (`(expr, expr, ..)`), path-qualified expressions
+  (`Type::method()`, `Type::CONST`, multi-segment paths).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
   `private func`/`purr` opts an item out of being importable, enforced by
@@ -53,9 +54,12 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   ParamSegment('id'))`) plus a method-call chain
   (`use_params_map().get().get('id')`) to read the value back — verified
   in `example-app`'s real `/user/:id` page with Playwright against a
-  running dev server. Programmatic navigation (`use_navigate()`) is a
-  known, documented gap (needs a path-qualified expression Kittine
-  doesn't have yet). CSR-only — no SSR/SSG integration yet.
+  running dev server. Programmatic navigation (`use_navigate()`) also
+  works, via [path-qualified expressions](LANGUAGE.md#path-qualified-expressions)
+  (`NavigateOptions::default()`) and calling the hook eagerly (see
+  [LANGUAGE.md § Programmatic navigation](LANGUAGE.md#programmatic-navigation)
+  for the non-obvious but necessary pattern). CSR-only — no SSR/SSG
+  integration yet.
 - **Codegen targets real Leptos 0.7 CSR** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -90,7 +94,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (65+ tests, every feature round-tripped against actual
+tested compiler (69+ tests, every feature round-tripped against actual
 Leptos, routing (including dynamic segments) driven end-to-end in a real
 browser) with a language core solid enough for a genuine multi-page
 client-side app. That's real progress, not the same thing as
@@ -162,13 +166,16 @@ website (in Kittine) need next":
      Staying CSR-only is the honest current state; revisit this with a
      scoped design pass, not a quick increment, when it's actually time
      to build the public site.
-2. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
-   Discovered while wiring up the dynamic-route demo (see Done below):
-   Kittine's grammar has no `::`, which blocks constructing
-   `NavigateOptions::default()` — the one piece standing between
-   `use_navigate()` and a real programmatic-navigation demo. Everything
-   else needed to call it (calling the result of an expression,
-   `use_navigate()('/home')`) already works.
+2. **Plain (non-reactive) local-variable binding.** `<{name}> >> value`
+   only ever declares a *signal* — discovered while actually finishing
+   the programmatic-navigation demo (see Done below): calling
+   `use_navigate()` correctly (once, eagerly, at component setup) and
+   keeping its result around for a later event handler needs exactly
+   this, and Kittine has no such construct — a signal is being reused as
+   a workaround, which is a semantically wrong fit for something that
+   never actually changes. A real `let`-style binding would express this
+   directly; see
+   [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations).
 3. **Re-exports.** `private` controls whether an item is importable at
    all, but there's no way to import something into a file and then
    re-expose it under that file's own name for a third file to import.
@@ -189,16 +196,20 @@ actually changed) — landed 2026-07-18. ~~Same-file string-literal ->
 `Word` `purr` parameter~~ (the compiler now knows a same-file callee's
 signature) — landed 2026-07-18. ~~Dynamic-segment routes, demonstrated~~
 (method calls, a tuple path, and `leptos_router::hooks` in scope,
-verified end-to-end with Playwright; programmatic navigation stayed open
-as item 2 above, once `NavigateOptions::default()` turned out to need
-path-qualified expressions) — landed 2026-07-18. ~~Cross-file
+verified end-to-end with Playwright) — landed 2026-07-18. ~~Cross-file
 string-literal -> `Word` `purr` parameter~~ (`kittine-compiler build`
 now collects every reachable file's `purr` signatures before generating
 any single file's code, so an imported callee gets the same coercion a
 same-file one already had) — landed 2026-07-18. ~~`key` control for
 view-position `spin`~~ (an optional `key(expr)` clause overrides the
 default `format!("{item}")` key; verified against real Leptos and wired
-into `example-app`'s `NavList.kitty`) — landed 2026-07-18.
+into `example-app`'s `NavList.kitty`) — landed 2026-07-18. ~~Path-qualified
+expressions~~ (`Type::method()`, `Type::CONST`, multi-segment paths) and
+~~programmatic navigation, demonstrated~~ (`use_navigate()` fully works
+now — verified against a real running dev server with Playwright, which
+also caught a real runtime-only gotcha: the hook must be called eagerly,
+not from inside the event handler, or it panics; `example-app`'s
+`User.kitty` demonstrates the correct pattern) — landed 2026-07-18.
 
 ## Full vision (phased, honest)
 

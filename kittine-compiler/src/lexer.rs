@@ -60,6 +60,7 @@ pub enum TokenKind {
     RBracket, // ]
     Comma,
     Dot,
+    ColonColon, // :: (path-qualified expressions: Type::method(), Type::CONST)
     Eq, // = (JSX attribute assignment)
     Plus,
     Minus,
@@ -108,6 +109,7 @@ impl fmt::Display for TokenKind {
             TokenKind::RBracket => write!(f, "]"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Dot => write!(f, "."),
+            TokenKind::ColonColon => write!(f, "::"),
             TokenKind::Eq => write!(f, "="),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),
@@ -338,6 +340,16 @@ impl Lexer {
                 self.advance();
                 tokens.push(Token {
                     kind: TokenKind::BangEq,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with("::") {
+                self.advance();
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::ColonColon,
                     line,
                     col,
                 });

@@ -998,6 +998,84 @@ func App() {
 }
 
 #[test]
+fn path_qualified_expression_renders_verbatim() {
+    let out = compile(
+        r#"
+func App() {
+    craft<Default::default()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("Default::default()"));
+}
+
+#[test]
+fn path_qualified_expression_supports_more_than_two_segments() {
+    let out = compile(
+        r#"
+func App() {
+    craft<std::cmp::max(1, 2)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("std::cmp::max(1, 2)"));
+}
+
+#[test]
+fn programmatic_navigation_call_shape_renders_correctly() {
+    // This exact shape now renders correctly -- the piece that was a
+    // documented gap (NavigateOptions needs a path-qualified `::default()`
+    // call to construct) is fixed. It's NOT, on its own, how a real
+    // onClick handler should call use_navigate() though: calling it lazily
+    // inside the handler compiles fine but panics at runtime ("cannot call
+    // use_navigate outside a <Router>") -- see
+    // `programmatic_navigation_via_eager_signal_call_is_the_real_pattern`
+    // for the pattern that's actually correct, discovered by testing this
+    // one against a real running dev server, not just checking it compiled.
+    let out = compile(
+        r#"
+func App() {
+    craft<use_navigate()('/home', NavigateOptions::default())>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"use_navigate()("/home", NavigateOptions::default())"#));
+}
+
+#[test]
+fn programmatic_navigation_via_eager_signal_call_is_the_real_pattern() {
+    // Leptos's context-dependent hooks (use_navigate among them) must run
+    // while the component's own reactive owner is active -- true during
+    // synchronous component setup, not by the time a later event fires.
+    // Kittine has no plain (non-signal) local binding yet, so
+    // `<{navigate}> >> use_navigate()` reuses signal declaration to force
+    // the eager call at the right time; reading it back via `<{navigate}>`
+    // (-> `navigate.get()`) and calling the result
+    // (`Expr::CallResult`) is what example-app's User.kitty actually uses,
+    // verified against a real running dev server with Playwright (a click
+    // that changed the URL with no console panic).
+    let out = compile(
+        r#"
+func App() {
+    <{navigate}> >> use_navigate()
+    return (
+        <button onClick={<{navigate}>('/home', NavigateOptions::default())}>
+            "Go"
+        </button>
+    )
+}
+"#,
+    );
+    assert!(out.contains("let (navigate, set_navigate) = signal(use_navigate());"));
+    assert!(out.contains(
+        r#"on:click=move |_| navigate.get()("/home", NavigateOptions::default())"#
+    ));
+}
+
+#[test]
 fn generated_file_brings_leptos_router_hooks_into_scope() {
     // `leptos_router::hooks` (use_params_map, use_navigate, ..) isn't
     // re-exported at the crate root the way `components`/`matching` are,

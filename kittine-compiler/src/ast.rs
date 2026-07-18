@@ -149,6 +149,13 @@ pub enum Expr {
     /// ParamSegment('id'))`). A single parenthesized expression with no
     /// comma is just grouping, not a 1-tuple — see `parser::parse_primary`.
     Tuple(Vec<Expr>),
+    /// `Segment::Segment(::Segment)*` — a path-qualified expression, e.g.
+    /// `NavigateOptions::default` or `std::cmp::max`. Renders as-is
+    /// (`segments.join("::")`); combines with the existing postfix chain
+    /// (`Expr::CallResult`, `Expr::MethodCall`) to express
+    /// `Type::method(args)` and `Type::CONST` without any dedicated call
+    /// syntax of its own.
+    Path(Vec<String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

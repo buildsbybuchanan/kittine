@@ -726,7 +726,14 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 self.advance();
-                if matches!(self.peek().kind, TokenKind::LParen) {
+                if matches!(self.peek().kind, TokenKind::ColonColon) {
+                    let mut segments = vec![name];
+                    while matches!(self.peek().kind, TokenKind::ColonColon) {
+                        self.advance();
+                        segments.push(self.expect_ident()?);
+                    }
+                    Ok(Expr::Path(segments))
+                } else if matches!(self.peek().kind, TokenKind::LParen) {
                     self.parse_call(name)
                 } else {
                     Ok(Expr::Ident(name))
@@ -1021,7 +1028,7 @@ fn array_elements_match(array_ty: &str, items: &[Expr]) -> bool {
             ("Num", Expr::Number(_))
                 | ("Word", Expr::Str(_))
                 | ("Flag", Expr::Bool(_))
-                | (_, Expr::Ident(_) | Expr::VarRead(_) | Expr::Call { .. } | Expr::MethodCall { .. } | Expr::CallResult { .. } | Expr::Tuple(_) | Expr::Binary { .. } | Expr::InlineAssign { .. } | Expr::Typed { .. })
+                | (_, Expr::Ident(_) | Expr::VarRead(_) | Expr::Call { .. } | Expr::MethodCall { .. } | Expr::CallResult { .. } | Expr::Tuple(_) | Expr::Path(_) | Expr::Binary { .. } | Expr::InlineAssign { .. } | Expr::Typed { .. })
         )
     })
 }
