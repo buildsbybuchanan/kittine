@@ -1,0 +1,306 @@
+name: Kittine Discord Notifications
+
+run-name: Kittine notification · ${{ github.event_name }}
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - closed
+
+  workflow_dispatch:
+    inputs:
+      message:
+        description: Optional Discord test message
+        required: false
+        default: Manual Kittine notification test
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kittine-discord-${{ github.event_name }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    name: Notify Discord
+    if: github.repository == 'siv-the-programmer/kittine'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Build notification
+        id: notification
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+          MANUAL_MESSAGE: ${{ inputs.message }}
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import json
+          import os
+          import uuid
+
+          with open(os.environ["GITHUB_EVENT_PATH"], "r", encoding="utf-8") as handle:
+              event = json.load(handle)
+
+          event_name = os.environ["EVENT_NAME"]
+          repository = os.environ["REPOSITORY"]
+          actor = os.environ["ACTOR"]
+          server_url = os.environ["SERVER_URL"]
+          run_id = os.environ["RUN_ID"]
+          run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
+          repo_url = f"{server_url}/{repository}"
+
+          title = "Kittine repository update"
+          description = "A repository event occurred."
+          color = 3447003
+          event_label = event_name
+          branch = "main"
+          source_branch = ""
+          commit = ""
+          primary_url = run_url
+          status = ""
+
+          if event_name == "push":
+              branch = event.get("ref", "refs/heads/main").split("/")[-1]
+              sha = event.get("after") or os.environ.get("GITHUB_SHA", "")
+              commit = sha[:7]
+              message = ((event.get("head_commit") or {}).get("message") or "").strip()
+              actor = ((event.get("sender") or {}).get("login") or actor)
+
+              title = "Kittine code pushed"
+              description = f"{actor} pushed {commit} to {branch}."
+              if message:
+                  description += f"\n\n{message}"
+
+              primary_url = (
+                  (event.get("head_commit") or {}).get("url")
+                  or event.get("compare")
+                  or run_url
+              )
+              event_label = "Push"
+              status = "Pushed"
+
+          elif event_name == "pull_request":
+              action = event.get("action", "updated")
+              pull_request = event.get("pull_request") or {}
+              number = event.get("number") or pull_request.get("number") or ""
+              pr_title = pull_request.get("title") or "Untitled pull request"
+              merged = bool(pull_request.get("merged"))
+              branch = ((pull_request.get("base") or {}).get("ref") or "main")
+              source_branch = ((pull_request.get("head") or {}).get("ref") or "")
+              commit = (((pull_request.get("head") or {}).get("sha")) or "")[:7]
+              actor = (((event.get("sender") or {}).get("login")) or actor)
+              primary_url = pull_request.get("html_url") or run_url
+              event_label = "Pull request"
+
+              if action == "closed" and merged:
+                  title = "Kittine pull request merged"
+                  status = "Merged"
+                  color = 3066993
+              elif action == "closed":
+                  title = "Kittine pull request closed"
+                  status = "Closed"
+                  color = 15158332
+              elif action == "opened":
+                  title = "Kittine pull request opened"
+                  status = "Opened"
+                  color = 10181046
+              elif action == "ready_for_review":
+                  title = "Kittine pull request ready for review"
+                  status = "Ready for review"
+                  color = 10181046
+              else:
+                  title = "Kittine pull request updated"
+                  status = action.replace("_", " ").title()
+                  color = 10181046
+
+              route = f"{source_branch} -> {branch}" if source_branch else branch
+              description = f"#{number} — {pr_title}\n\n{route}"
+
+          elif event_name == "workflow_dispatch":
+              message = (os.environ.get("MANUAL_MESSAGE") or "").strip()
+              title = "Kittine manual notification test"
+              description = message or "Manual Kittine notification test"
+              event_label = "Manual test"
+              status = "Test"
+              color = 15844367
+
+          outputs = {
+              "title": title,
+              "description": description,
+              "color": str(color),
+              "event_label": event_label,
+              "branch": branch,
+              "source_branch": source_branch,
+              "commit": commit,
+              "actor": actor,
+              "status": status,
+              "primary_url": primary_url,
+              "run_url": run_url,
+              "repo_url": repo_url,
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              for key, value in outputs.items():
+                  value = "" if value is None else str(value)
+                  if "\n" in value:
+                      marker = f"KITTINE_{key.upper()}_{uuid.uuid4().hex}"
+                      output.write(f"{key}<<{marker}\n{value}\n{marker}\n")
+                  else:
+                      output.write(f"{key}={value}\n")
+          PY
+
+      - name: Validate Discord webhook secret
+        shell: bash
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
+            echo "::error::Repository secret DISCORD_WEBHOOK_URL is not configured."
+            exit 1
+          fi
+
+          case "$DISCORD_WEBHOOK_URL" in
+            https://discord.com/api/webhooks/*|https://discordapp.com/api/webhooks/*)
+              ;;
+            *)
+              echo "::error::DISCORD_WEBHOOK_URL is not a valid Discord webhook URL."
+              exit 1
+              ;;
+          esac
+
+      - name: Send Discord notification
+        shell: bash
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TITLE: ${{ steps.notification.outputs.title }}
+          DESCRIPTION: ${{ steps.notification.outputs.description }}
+          COLOR: ${{ steps.notification.outputs.color }}
+          EVENT_LABEL: ${{ steps.notification.outputs.event_label }}
+          BRANCH: ${{ steps.notification.outputs.branch }}
+          SOURCE_BRANCH: ${{ steps.notification.outputs.source_branch }}
+          COMMIT: ${{ steps.notification.outputs.commit }}
+          ACTOR: ${{ steps.notification.outputs.actor }}
+          STATUS: ${{ steps.notification.outputs.status }}
+          PRIMARY_URL: ${{ steps.notification.outputs.primary_url }}
+          RUN_URL: ${{ steps.notification.outputs.run_url }}
+          REPO_URL: ${{ steps.notification.outputs.repo_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          PAYLOAD="$(
+            jq -n \
+              --arg username "Kittine" \
+              --arg title "$TITLE" \
+              --arg description "$DESCRIPTION" \
+              --arg event_label "$EVENT_LABEL" \
+              --arg branch "$BRANCH" \
+              --arg source_branch "$SOURCE_BRANCH" \
+              --arg commit "$COMMIT" \
+              --arg actor "$ACTOR" \
+              --arg status "$STATUS" \
+              --arg repository "$REPOSITORY" \
+              --arg primary_url "$PRIMARY_URL" \
+              --arg run_url "$RUN_URL" \
+              --arg repo_url "$REPO_URL" \
+              --argjson color "$COLOR" \
+              '
+              def field($name; $value; $inline):
+                if ($value | length) > 0
+                then {name: $name, value: $value, inline: $inline}
+                else empty
+                end;
+
+              {
+                username: $username,
+                allowed_mentions: {parse: []},
+                embeds: [
+                  {
+                    title: $title,
+                    description: $description,
+                    url: $primary_url,
+                    color: $color,
+                    fields: [
+                      field("Event"; $event_label; true),
+                      field("Status"; $status; true),
+                      field("Branch"; $branch; true),
+                      field("Source branch"; $source_branch; true),
+                      field("Actor"; $actor; true),
+                      field("Commit"; $commit; true),
+                      field("Repository"; $repository; false)
+                    ],
+                    footer: {
+                      text: "siv-the-programmer/kittine · main"
+                    },
+                    timestamp: (now | todateiso8601)
+                  }
+                ],
+                components: [
+                  {
+                    type: 1,
+                    components: [
+                      {
+                        type: 2,
+                        style: 5,
+                        label: "View event",
+                        url: $primary_url
+                      },
+                      {
+                        type: 2,
+                        style: 5,
+                        label: "View workflow",
+                        url: $run_url
+                      },
+                      {
+                        type: 2,
+                        style: 5,
+                        label: "View repository",
+                        url: $repo_url
+                      }
+                    ]
+                  }
+                ]
+              }
+              '
+          )"
+
+          HTTP_CODE="$(
+            curl \
+              --silent \
+              --show-error \
+              --output /tmp/discord-response.txt \
+              --write-out "%{http_code}" \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --data "$PAYLOAD" \
+              "$DISCORD_WEBHOOK_URL"
+          )"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Discord returned HTTP $HTTP_CODE."
+            cat /tmp/discord-response.txt
+            exit 1
+          fi
+
+          echo "Discord notification sent."
