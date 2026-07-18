@@ -10,6 +10,9 @@
   `.kitty` syntax highlighting extension, including how to share it.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the compiler, Vite plugin,
   example app, and VS Code extension fit together.
+- **[SSR.md](SSR.md)** — server-side rendering via `cargo-leptos` + Axum
+  (a separate toolchain from Vite), for when a public/SEO-sensitive site
+  needs real first paint instead of `example-app`'s CSR default.
 - **[ROADMAP.md](ROADMAP.md)** — what works today, what's next, and the
   full long-term vision. Update this whenever you find a gap.
 

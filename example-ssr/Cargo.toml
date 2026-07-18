@@ -1,0 +1,40 @@
+[package]
+name = "example-ssr"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+leptos = { version = "0.7" }
+leptos_router = { version = "0.7" }
+leptos_meta = { version = "0.7" }
+leptos_axum = { version = "0.7", optional = true }
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+wasm-bindgen = "=0.2.126"
+console_error_panic_hook = "0.1"
+
+[features]
+hydrate = ["leptos/hydrate"]
+ssr = [
+    "dep:axum",
+    "dep:tokio",
+    "dep:leptos_axum",
+    "leptos/ssr",
+    "leptos_router/ssr",
+    "leptos_meta/ssr",
+]
+
+[package.metadata.leptos]
+output-name = "example-ssr"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+site-addr = "127.0.0.1:3000"
+reload-port = 3001
+browserquery = "defaults"
+bin-features = ["ssr"]
+bin-default-features = false
+lib-features = ["hydrate"]
+lib-default-features = false

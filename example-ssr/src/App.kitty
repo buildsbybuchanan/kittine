@@ -1,0 +1,19 @@
+import { Home } from './Home.kitty'
+import { About } from './About.kitty'
+
+func App() {
+    return (
+        <Router>
+            <nav>
+                <A href='/'>"Home"</A>
+                <A href='/about'>"About"</A>
+            </nav>
+            <main>
+                <Routes fallback={About}>
+                    <Route path={StaticSegment('')} view={Home}/>
+                    <Route path={StaticSegment('about')} view={About}/>
+                </Routes>
+            </main>
+        </Router>
+    )
+}

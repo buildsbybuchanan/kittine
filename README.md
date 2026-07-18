@@ -20,25 +20,36 @@ portfolio.
 📖 **[Full documentation](docs/)** — [language reference](docs/LANGUAGE.md) ·
 [getting started](docs/GETTING_STARTED.md) · [CLI reference](docs/CLI.md) ·
 [VS Code extension](docs/VSCODE_EXTENSION.md) ·
-[architecture](docs/ARCHITECTURE.md) · [roadmap](docs/ROADMAP.md)
+[architecture](docs/ARCHITECTURE.md) · [SSR](docs/SSR.md) ·
+[roadmap](docs/ROADMAP.md)
 
-This repository is a monorepo with four parts:
+This repository is a monorepo with five parts:
 
 - **`kittine-compiler/`** — a Rust CLI that lexes, parses, and lowers
-  `.kitty` source into a Leptos 0.7 `.rs` file.
+  `.kitty` source into a Leptos 0.7 `.rs` file. Identical output whether
+  the result ends up client-side rendered or server-rendered — see
+  `example-app` vs. `example-ssr` below.
 - **`vite-plugin-kittine/`** — a Vite plugin that runs `kittine-compiler` on
   `.kitty` files, builds the host Rust crate to `wasm32-unknown-unknown`,
   post-processes it with `wasm-bindgen`, and serves the result to the
   browser.
-- **`example-app/`** — a real multi-page Leptos CSR app: `App.kitty` wraps
-  `Home`/`About`/`User`/`NotFound` pages in a `leptos_router` `<Router>`,
-  with client-side `<A>` navigation, a dynamic `/user/:id` route, and a
-  404 fallback. `Home.kitty` demonstrates a signal-backed counter, an
-  `if>`/`orif>`/`else>` block (including `&&`/`||`-combined conditions), a
-  `spin` loop (both imperative and list-rendering forms), `purr`
-  functions, and composed `Nav`/`Card`/`NavList` components; `User.kitty`
-  reads its dynamic segment via a method-call chain on
-  `use_params_map()` — all wired up through the Vite plugin.
+- **`example-app/`** — a real multi-page Leptos **client-side rendered**
+  (CSR) app: `App.kitty` wraps `Home`/`About`/`User`/`NotFound` pages in a
+  `leptos_router` `<Router>`, with client-side `<A>` navigation, a dynamic
+  `/user/:id` route, and a 404 fallback. `Home.kitty` demonstrates a
+  signal-backed counter, an `if>`/`orif>`/`else>` block (including
+  `&&`/`||`-combined conditions), a `spin` loop (both imperative and
+  list-rendering forms), `purr` functions, and composed
+  `Nav`/`Card`/`NavList` components; `User.kitty` reads its dynamic segment
+  via a method-call chain on `use_params_map()` — all wired up through the
+  Vite plugin.
+- **`example-ssr/`** — the same idea, **server-side rendered** via
+  `cargo-leptos` + Axum instead of Vite: real HTML content in the first
+  response (verified with `curl`, no JavaScript needed), hydrated
+  client-side for interactivity. `kittine-compiler` needs zero changes for
+  this — see [docs/SSR.md](docs/SSR.md) for the toolchain, the two real
+  gotchas found while wiring it up, and when to reach for this over
+  `example-app`.
 - **`vscode-kittine/`** — a VS Code extension providing syntax highlighting
   and a file icon for `.kitty` files. See
   [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) to install it.

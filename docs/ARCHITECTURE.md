@@ -1,7 +1,11 @@
 # Kittine Architecture
 
-Kittine is four independent pieces that compose through plain files and a
-subprocess boundary — there's no shared in-memory state between them.
+Kittine is several independent pieces that compose through plain files and
+a subprocess boundary — there's no shared in-memory state between them.
+The diagram and most of this document describe `example-app`'s pipeline
+(client-side rendering via Vite); `example-ssr` swaps everything below
+`kittine-compiler` for a different toolchain — see [`example-ssr/` — the
+server-rendered alternative](#example-ssr--the-server-rendered-alternative).
 
 ```
  App.kitty
@@ -101,6 +105,19 @@ output directory automatically). `App` wraps `Home`/`About`/`NotFound`
 pages in `leptos_router`'s `<Router>` — see
 [LANGUAGE.md § Routing](LANGUAGE.md#routing) for why that needed no
 compiler changes beyond bringing `leptos_router` into scope.
+
+## `example-ssr/` — the server-rendered alternative
+
+Same `kittine-compiler` output, different downstream toolchain: `cargo-leptos`
+(a native build with the `ssr` feature, producing an Axum server binary)
+runs *alongside* the same `wasm32`/`hydrate`-feature client build
+`example-app` also produces, instead of Vite orchestrating a single CSR
+build. `kittine-compiler` itself is identical either way — it has no
+concept of CSR vs. SSR at all, since that distinction lives entirely in
+which Cargo features the *downstream* crate enables on `leptos`, not in
+anything Kittine's codegen emits. See [SSR.md](SSR.md) for the full setup,
+the two real gotchas found while wiring it up, and why this genuinely
+needs a different toolchain rather than a `vite-plugin-kittine` flag.
 
 ## `vscode-kittine/` — editor support
 

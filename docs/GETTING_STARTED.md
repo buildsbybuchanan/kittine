@@ -125,6 +125,16 @@ since the build always runs in release mode for `vite build`.
 `dist/`, and `pkg/` from the upload for platforms or workflows that don't
 already respect `.gitignore`.
 
+## Need server-side rendering instead?
+
+Everything above sets up `example-app`'s **client-side rendered** (CSR)
+path — great for apps/internal tools, but the page is blank until the WASM
+bundle loads, which isn't ideal for a public site that cares about SEO or
+first paint. `example-ssr/` is a real, working alternative using
+`cargo-leptos` + Axum instead of Vite — `kittine-compiler` needs zero
+changes either way. See [SSR.md](SSR.md) for the full setup, including a
+Windows-specific `cargo-leptos` install gotcha.
+
 ## Troubleshooting
 
 - **`error: linker 'link.exe' not found`** — the MSVC Build Tools aren't
