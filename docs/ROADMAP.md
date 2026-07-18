@@ -172,8 +172,8 @@ website (in Kittine) need next":
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
 4. **Path-qualified expressions (`Type::method()`, `Type::CONST`).**
-   Discovered while wiring up the dynamic-route demo below: Kittine's
-   grammar has no `::`, which blocks constructing
+   Discovered while wiring up the dynamic-route demo (see Done below):
+   Kittine's grammar has no `::`, which blocks constructing
    `NavigateOptions::default()` — the one piece standing between
    `use_navigate()` and a real programmatic-navigation demo. Everything
    else needed to call it (calling the result of an expression,

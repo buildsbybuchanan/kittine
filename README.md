@@ -31,12 +31,14 @@ This repository is a monorepo with four parts:
   post-processes it with `wasm-bindgen`, and serves the result to the
   browser.
 - **`example-app/`** — a real multi-page Leptos CSR app: `App.kitty` wraps
-  `Home`/`About`/`NotFound` pages in a `leptos_router` `<Router>`, with
-  client-side `<A>` navigation and a 404 fallback. `Home.kitty`
-  demonstrates a signal-backed counter, an `if>`/`orif>`/`else>` block, a
-  `spin` loop (both imperative and list-rendering forms), a `purr`
-  function, and composed `Nav`/`Card` components — all wired up through
-  the Vite plugin.
+  `Home`/`About`/`User`/`NotFound` pages in a `leptos_router` `<Router>`,
+  with client-side `<A>` navigation, a dynamic `/user/:id` route, and a
+  404 fallback. `Home.kitty` demonstrates a signal-backed counter, an
+  `if>`/`orif>`/`else>` block (including `&&`/`||`-combined conditions), a
+  `spin` loop (both imperative and list-rendering forms), `purr`
+  functions, and composed `Nav`/`Card`/`NavList` components; `User.kitty`
+  reads its dynamic segment via a method-call chain on
+  `use_params_map()` — all wired up through the Vite plugin.
 - **`vscode-kittine/`** — a VS Code extension providing syntax highlighting
   and a file icon for `.kitty` files. See
   [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md) to install it.
@@ -116,7 +118,16 @@ func Counter() {
 - **Routing has no Kittine-specific syntax** — `leptos_router` is in scope
   everywhere, and `<Router>`/`<Routes>`/`<Route>`/`<A>` compose exactly
   like any other component: `<Route path={StaticSegment('about')}
-  view={About}/>`. See [Routing](docs/LANGUAGE.md#routing).
+  view={About}/>`. A dynamic segment combines a [tuple](docs/LANGUAGE.md#tuples)
+  and a [method-call chain](docs/LANGUAGE.md#method-calls):
+  `<Route path={(StaticSegment('user'), ParamSegment('id'))} view={User}/>`,
+  read back via `use_params_map().get().get('id')`. See
+  [Routing](docs/LANGUAGE.md#routing).
+- `receiver.method(arg, ..)` calls a method on any expression's result
+  (chains work); `(a, b)` is a tuple literal — both exist mainly for
+  interop with real Rust/Leptos APIs. See [Method
+  calls](docs/LANGUAGE.md#method-calls) and
+  [Tuples](docs/LANGUAGE.md#tuples).
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
 
