@@ -21,6 +21,8 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Component composition](#component-composition)
   - [Children](#children)
 - [Routing](#routing)
+  - [Dynamic route segments](#dynamic-route-segments)
+  - [Programmatic navigation — a real, current gap](#programmatic-navigation--a-real-current-gap)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
@@ -405,6 +407,7 @@ the same rules as any other composition:
 use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::*;
+use leptos_router::hooks::*;
 // .. + one `mod`/`use` pair per import
 
 #[component]
@@ -426,10 +429,10 @@ pub fn App() -> impl IntoView {
 }
 ```
 
-`use leptos_router::components::*;` and `use leptos_router::*;` are emitted
-in **every** generated file (see [Compilation model](#compilation-model))
-— routing works the moment you reach for it, without a separate opt-in
-step, at the cost of an `unused_imports` allowance for files that don't.
+All three `leptos_router` `use` lines are emitted in **every** generated
+file (see [Compilation model](#compilation-model)) — routing works the
+moment you reach for it, without a separate opt-in step, at the cost of
+an `unused_imports` allowance for files that don't.
 
 ### Dynamic route segments
 
