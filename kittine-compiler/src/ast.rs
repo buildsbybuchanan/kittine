@@ -181,13 +181,16 @@ pub enum JsxNode {
     VarInterp(String),
     /// `{ expr }` interpolated directly into JSX children.
     ExprInterp(Expr),
-    /// `spin<{item}> in list }{ jsx_node* }{` inside a view — renders
-    /// `body` once per element of `list`, binding each element to `item`.
-    /// Lowers to a Leptos `<For>`, unlike the statement-position `Stmt::Spin`
-    /// (which lowers to a plain imperative `for` loop).
+    /// `spin<{item}> in list (key(expr))? }{ jsx_node* }{` inside a view —
+    /// renders `body` once per element of `list`, binding each element to
+    /// `item`. Lowers to a Leptos `<For>`, unlike the statement-position
+    /// `Stmt::Spin` (which lowers to a plain imperative `for` loop). `key`
+    /// is optional; `item` is in scope while evaluating it, same as in
+    /// `body`. Defaults to keying by `format!("{item}")` when omitted.
     Spin {
         item: String,
         list: Expr,
+        key: Option<Expr>,
         body: Vec<JsxNode>,
     },
 }

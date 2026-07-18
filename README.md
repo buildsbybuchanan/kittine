@@ -100,7 +100,8 @@ func Counter() {
 - `spin<{item}> in list }{ .. }{` loops over an array, its body fenced by
   `}{` — a closing brace immediately followed by an opening one. As a
   statement it's a plain imperative loop; inside `return ( ... )` it
-  renders one element per item via a reactive Leptos `<For>`.
+  renders one element per item via a reactive Leptos `<For>`, keyed by
+  `format!("{item}")` by default or by an optional `key(expr)` clause.
 - `func Name(<<Type>> prop) { .. }` takes typed props; `<Name prop='x' />`
   composes it into another view (a capitalized JSX tag is a component
   reference, lowercase is a plain HTML element).

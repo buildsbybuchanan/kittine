@@ -129,6 +129,18 @@ grouped by date until the first tagged release.
   have yet — discovered while actually trying to wire up a working
   example, not assumed; see
   [LANGUAGE.md § Known limitations](docs/LANGUAGE.md#known-limitations).
+- **`key(expr)` control for view-position `spin`**: an optional clause
+  right before the `}{` fence overrides the default
+  `key=|item| format!("{item}")` Leptos `<For>` key — `spin<{item}> in
+  items key(item.to_uppercase()) }{ .. }{` lowers to `key=|item|
+  item.clone().to_uppercase()`. `item` is in scope while evaluating the
+  key expression, same as in the body (and gets the same `.clone()`
+  treatment — Leptos's `<For>` key closure receives `&T`, and `.clone()`
+  on a `&T` still yields an owned `T`). `key` isn't a reserved word — only
+  recognized contextually in this one position, the same way `in` already
+  is — so it stays available as an ordinary identifier everywhere else.
+  Verified against real Leptos 0.7 and wired into `example-app`'s
+  `NavList.kitty`.
 - **A string literal passed to a `<<Word>>`-typed `purr` parameter now
   renders as an owned `String`, whether the callee is same-file or
   reached through the whole `import` graph.** `greet('World')`, where

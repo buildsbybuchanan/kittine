@@ -737,9 +737,31 @@ diffs by key) whenever the underlying signal changes:
 </For>
 ```
 
-The key is always `format!("{item}")` — every array element type
+The key defaults to `format!("{item}")` — every array element type
 (`Num`/`Word`/`Flag`) implements `Display`, so this works uniformly without
-needing a separate "what's the identity of this item" concept.
+needing a separate "what's the identity of this item" concept. An
+optional `key(expr)` clause right before the `}{` fence overrides it —
+`item` is in scope while evaluating `expr`, same as in the body:
+
+```kitty
+spin<{item}> in items key(item.to_uppercase()) }{
+    <li>{ item }</li>
+}{
+```
+
+```rust
+<For each=move || items.get() key=|item| item.clone().to_uppercase() let:item>
+    <li>
+        {move || item.clone()}
+    </li>
+</For>
+```
+
+`key` isn't a reserved word — it's recognized contextually only in this
+one position (immediately after `list`, before `}{`), the same way `in`
+is recognized right after `<{item}>`. It stays available as an ordinary
+identifier everywhere else — `<{key}> >> 5` declares an ordinary signal
+named `key`, unaffected.
 
 `item` is always read as `item.clone()` inside the body, regardless of its
 element type — a `{move || ..}` reactive closure needs to be callable more
@@ -960,7 +982,7 @@ tuple        := "(" expr "," expr ("," expr)* ","? ")"  // a lone "(" expr ")" i
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
               | jsx_spin
-jsx_spin     := "spin" "<{" IDENT "}>" "in" expr "}{" jsx_node* "}{"
+jsx_spin     := "spin" "<{" IDENT "}>" "in" expr ("key" "(" expr ")")? "}{" jsx_node* "}{"
 jsx_element  := "<" IDENT jsx_attr* ("/>" | ">" jsx_node* "</" IDENT ">")
 jsx_attr     := IDENT "=" (STRING | "{" expr "}")
 
@@ -1049,10 +1071,6 @@ These are intentional scope boundaries of the current prototype, not bugs:
   owned `String` — concatenation (`<{label}> >> 'x' + <{label}>`) is
   unaffected, since `format!(..)` always produces an owned `String`
   regardless of its inputs.
-- **A view-position `spin` has no `key` control.** List rendering
-  (`spin` inside `return ( ... )`) always keys by `format!("{item}")` —
-  there's no way to key by something else (an id field, an index) yet,
-  which matters once array elements stop being bare scalars.
 - **`craft<...>` inside `if>`/`orif>`/`else>`/(statement-position) `spin` runs once,
   at component setup,
   not inside a reactive `Effect`.** The generated `if x.get() == "..." { }`
