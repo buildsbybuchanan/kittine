@@ -80,6 +80,11 @@ grouped by date until the first tagged release.
   `func NavList(<<Word[]>> items) { .. }` lowers to `items: Vec<String>`,
   a `purr` can return an array type the same way. Array type tags also
   check literal elements against the declared element type at parse time.
+- **`private func`/`purr`**: opts a top-level item out of being importable
+  (every `func`/`purr` is importable by default). Lowers to a plain
+  (non-`pub`) Rust item — `import`ing a `private` one from another file is
+  then a Rust compile error (`E0603`) on its own; Kittine doesn't
+  re-implement that check itself.
 
 ### Fixed
 

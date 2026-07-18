@@ -15,7 +15,7 @@ use __kittine_mod_card::{Card};
 mod __kittine_mod_navlist;
 use __kittine_mod_navlist::{NavList};
 
-pub fn doubled(n: f64) -> f64 {
+fn doubled(n: f64) -> f64 {
     n * 2f64
 }
 

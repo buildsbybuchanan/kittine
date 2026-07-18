@@ -188,11 +188,20 @@ fn gen_imports(imports: &[Import]) -> String {
 
 // ---- top-level items ---------------------------------------------------------
 
+/// `pub ` unless the item was declared `private` — see
+/// `ast::Component::is_private`. A `private` item becomes a plain
+/// (non-`pub`) Rust item, so `import`ing it from another file is a Rust
+/// compile error (E0603) on its own; Kittine doesn't re-check this itself.
+fn visibility(is_private: bool) -> &'static str {
+    if is_private { "" } else { "pub " }
+}
+
 fn gen_component(component: &Component) -> String {
     let mut out = String::new();
     out.push_str("#[component]\n");
     out.push_str(&format!(
-        "pub fn {}({}) -> impl IntoView {{\n",
+        "{}fn {}({}) -> impl IntoView {{\n",
+        visibility(component.is_private),
         component.name,
         param_list_rust(&component.params)
     ));
@@ -218,7 +227,8 @@ fn gen_component(component: &Component) -> String {
 fn gen_function(function: &Function) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "pub fn {}({}) -> {} {{\n",
+        "{}fn {}({}) -> {} {{\n",
+        visibility(function.is_private),
         function.name,
         param_list_rust(&function.params),
         rust_type(&function.return_type)

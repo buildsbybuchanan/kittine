@@ -108,7 +108,9 @@ func Counter() {
   `name(arg)` anywhere an expression is valid.
 - `import { Name } from './file.kitty'` brings another file's
   components/functions into scope; `kittine-compiler` resolves and
-  compiles the whole import graph recursively.
+  compiles the whole import graph recursively. `private func`/`purr`
+  opts out of being importable at all — enforced by Rust's own privacy
+  rules (E0603), not by Kittine re-checking it.
 - **Routing has no Kittine-specific syntax** — `leptos_router` is in scope
   everywhere, and `<Router>`/`<Routes>`/`<Route>`/`<A>` compose exactly
   like any other component: `<Route path={StaticSegment('about')}
