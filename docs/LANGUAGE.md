@@ -465,25 +465,85 @@ every generated file's fixed preamble (see [Compilation
 model](#compilation-model)) — the same "already in scope, zero opt-in
 step" treatment as everything else routing-related.
 
-### Programmatic navigation — a real, current gap
+### Programmatic navigation
 
 `leptos_router::hooks::use_navigate()` returns a closure you call with
-`(&str, NavigateOptions)`. The path half is easy (`use_navigate()('/',
-..)` — calling the result of an expression, not a named function — parses
-fine as ordinary Kittine syntax), but `NavigateOptions` has no `Default`
-value expressible in Kittine: there's no `Type::method()` /
-`Path::CONST`-style path-qualified expression, so `NavigateOptions::default()`
-or `Default::default()` can't be written. This was discovered by actually
-trying to wire up a working example, not assumed — see [Known
-limitations](#known-limitations). A `<A>` link (client-side, no full
-reload) covers most real navigation needs in the meantime; reach for
-`use_navigate()` only once path-qualified calls exist.
+`(&str, NavigateOptions)` — verified end-to-end (real compile, real dev
+server, real click-through, checking browser console output for a panic,
+not just that the page loaded) in `example-app`'s `User.kitty`:
+
+```kitty
+func User() {
+    <{navigate}> >> use_navigate()
+
+    return (
+        <button onClick={<{navigate}>('/', NavigateOptions::default())}>
+            "Go home"
+        </button>
+    )
+}
+```
+
+**`use_navigate()` must be called eagerly, at component setup — not
+lazily inside the event handler.** The first version of this example
+called it directly in `onClick={use_navigate()('/', ..)}`, which compiled
+fine but **panicked at runtime**: `You cannot call use_navigate outside a
+<Router>`. Leptos's context-dependent hooks (`use_navigate`,
+`use_context`, and others) resolve their context from the *reactive
+owner active at the moment the hook function runs* — during a
+component's synchronous setup, that's correctly the `<Router>`'s; by the
+time a click fires later from the browser's event loop, it isn't
+anymore, even though the button is still physically inside `<Router>` in
+the DOM. This was only caught by checking the actual browser console for
+a panic after clicking — the page still "looked" fine (no crash overlay,
+no URL change either, easy to miss) until the console was checked.
+
+Kittine has no plain (non-reactive) local-variable binding yet — only
+`<{name}> >> value` for signals — so `<{navigate}> >> use_navigate()`
+reuses the signal mechanism to force the eager call at the right time:
+`use_navigate()` runs once, during component setup, and its result
+(a `Clone` closure) is stored in the signal. Reading it back via
+`<{navigate}>` renders as `navigate.get()`, so `<{navigate}>('/', ..)`
+(calling the result of an expression) becomes `navigate.get()("/", ..)`
+— correct, since the hook was already captured at the right time and the
+signal is just carrying that value across to the click handler. This
+isn't reactive state in any meaningful sense (the "signal" never
+changes), just the closest existing Kittine construct that happens to
+force the right evaluation timing; a real non-reactive `let`-style
+binding (see [ROADMAP.md](ROADMAP.md#next-up)) would express this more
+directly once it exists.
+
+Any bare expression works as a JSX event-handler value, not just a
+`<{name}> >> value` mutation — `onClick={expr}` renders as `move |_|
+expr`.
 
 Everything else `leptos_router` supports — nested routes (`<ParentRoute>`
 + `<Outlet/>`), wildcard/catch-all segments — is available the same
 zero-new-syntax way. Server-side rendering / static generation (Leptos
 supports both) is a separate, bigger piece of work — see
 [ROADMAP.md](ROADMAP.md#next-up).
+
+## Path-qualified expressions
+
+```kitty
+NavigateOptions::default()
+std::cmp::max(1, 2)
+```
+
+`Segment::Segment(::Segment)*` — for a real Rust associated function,
+static method, or constant Kittine has no dedicated syntax for
+(`Type::method()`, `Type::CONST`, a multi-segment path like
+`std::cmp::max`). Combines with the existing [method-call chain](#method-calls)
+and [calling the result of an expression](#calling-the-result-of-an-expression)
+machinery for free — a path is just another expression, so
+`NavigateOptions::default()` is a path (`NavigateOptions::default`)
+immediately called with no arguments, the same shape `use_navigate()`
+already parses as for a bare name.
+
+Kittine tracks no meaning for any segment — it renders the path verbatim
+(`segments.join("::")`) and lets Rust's own name resolution and type
+checker validate it, same trust model as an unknown function call or a
+method call.
 
 ## Variables and state
 
@@ -1042,15 +1102,33 @@ These are intentional scope boundaries of the current prototype, not bugs:
   client-side-rendered only (no SSR/SSG integration yet). Reading a
   dynamic segment (`use_params_map().get().get("id")`) is real and
   verified end-to-end (see [Dynamic route
-  segments](#dynamic-route-segments)); programmatic navigation
-  (`use_navigate()`) is not yet, for a specific reason — see the next
-  item.
-- **No path-qualified expressions (`Type::method()`, `Type::CONST`).**
-  Kittine's grammar has no `::`. This blocks `NavigateOptions::default()`
-  (or `Default::default()`), so `use_navigate()`'s second argument can't
-  be constructed — see [Programmatic navigation](#programmatic-navigation--a-real-current-gap).
-  Discovered while actually trying to wire up a working example, not
-  assumed up front.
+  segments](#dynamic-route-segments)); [programmatic
+  navigation](#programmatic-navigation) works too, but needs a specific,
+  non-obvious pattern (see the next item).
+- **No plain (non-reactive) local-variable binding.** `<{name}> >> value`
+  only ever declares a *signal* — there's no way to bind a name to a
+  plain value or closure that isn't meant to be reactive state.
+  [Programmatic navigation](#programmatic-navigation) needs exactly
+  this (calling `use_navigate()` once, eagerly, and keeping the result
+  around for an event handler to call later), and works around the gap
+  by storing the result in a signal anyway — it's the closest existing
+  construct, not a semantically correct fit. A real `let`-style binding
+  would express this directly.
+- **A Leptos hook (`use_navigate`, `use_context`, and others) called
+  *inside* a lazily-evaluated position — a JSX event handler, for
+  instance — resolves its context wrong, silently at compile time and
+  loudly at runtime.** `onClick={use_navigate()('/', ..)}` compiles fine
+  but panics the moment it's clicked
+  (`You cannot call use_navigate outside a <Router>`), because the
+  hook's context lookup runs against whatever reactive owner is active
+  *when the closure body executes* — correct during a component's
+  synchronous setup, not by the time a click fires later from the
+  browser's event loop, even though the element is still physically
+  inside `<Router>` in the DOM. Call context-dependent hooks eagerly (see
+  the previous item's signal workaround), not from inside an event
+  handler. This is a real Leptos behavior, not Kittine-specific, but
+  Kittine's codegen doesn't (yet) distinguish "eager" from "lazy"
+  expression positions to warn about it.
 - **Whole-graph `purr` signature lookup (see [Calling
   functions](#calling-functions)) is a flat, unnamespaced map by bare
   name.** Two different files defining a `purr` with the same name is

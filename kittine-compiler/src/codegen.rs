@@ -451,6 +451,7 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
             render_call_result(callee, args, &|e| substitute_self(e, name, scope))
         }
         Expr::Tuple(items) => render_tuple(items, &|e| substitute_self(e, name, scope)),
+        Expr::Path(segments) => render_path(segments),
     }
 }
 
@@ -529,6 +530,11 @@ fn render_call_result(callee: &Expr, args: &[Expr], render: &dyn Fn(&Expr) -> St
 fn render_tuple(items: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
     let rendered: Vec<String> = items.iter().map(|e| render(e)).collect();
     format!("({})", rendered.join(", "))
+}
+
+/// Renders `Segment::Segment(::Segment)*` — see `ast::Expr::Path`.
+fn render_path(segments: &[String]) -> String {
+    segments.join("::")
 }
 
 /// Renders `[a, b, c]` as `vec![a, b, c]`.
@@ -669,6 +675,7 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
             render_call_result(callee, args, &|e| expr_to_rust(e, scope))
         }
         Expr::Tuple(items) => render_tuple(items, &|e| expr_to_rust(e, scope)),
+        Expr::Path(segments) => render_path(segments),
     }
 }
 

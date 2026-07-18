@@ -125,10 +125,13 @@ func Counter() {
   read back via `use_params_map().get().get('id')`. See
   [Routing](docs/LANGUAGE.md#routing).
 - `receiver.method(arg, ..)` calls a method on any expression's result
-  (chains work); `(a, b)` is a tuple literal — both exist mainly for
-  interop with real Rust/Leptos APIs. See [Method
-  calls](docs/LANGUAGE.md#method-calls) and
-  [Tuples](docs/LANGUAGE.md#tuples).
+  (chains work); `(a, b)` is a tuple literal; `Type::method()` /
+  `Type::CONST` is a path-qualified expression — all three exist mainly
+  for interop with real Rust/Leptos APIs (this is what makes programmatic
+  navigation via `use_navigate()` fully expressible). See [Method
+  calls](docs/LANGUAGE.md#method-calls),
+  [Tuples](docs/LANGUAGE.md#tuples), and [Path-qualified
+  expressions](docs/LANGUAGE.md#path-qualified-expressions).
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
 

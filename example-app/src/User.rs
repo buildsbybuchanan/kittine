@@ -8,6 +8,7 @@ use leptos_router::hooks::*;
 
 #[component]
 pub fn User() -> impl IntoView {
+    let (navigate, set_navigate) = signal(use_navigate());
     view! {
         <div>
             <h1>
@@ -20,6 +21,9 @@ pub fn User() -> impl IntoView {
                 "User id: "
                 {move || use_params_map().get().get("id").unwrap_or_default()}
             </p>
+            <button on:click=move |_| navigate.get()("/", NavigateOptions::default())>
+                "Go home (programmatic navigation)"
+            </button>
         </div>
     }
 }

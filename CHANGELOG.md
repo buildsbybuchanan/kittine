@@ -32,6 +32,29 @@ grouped by date until the first tagged release.
 
 ### Added
 
+- **Path-qualified expressions**: `Type::method()`, `Type::CONST`, and
+  multi-segment paths like `std::cmp::max(1, 2)` — renders verbatim
+  (`segments.join("::")`) and combines with the existing method-call
+  chain / calling-the-result-of-an-expression machinery for free.
+  Completes the programmatic-navigation demo `use_navigate()` needed:
+  `NavigateOptions::default()` was the one piece blocking it. Verified
+  against real Leptos 0.7, then wired into `example-app`'s `User.kitty`
+  — and confirmed to actually work with Playwright against a real
+  running dev server (a click that changed the URL, not just a
+  successful compile).
+  - **Real gotcha found along the way, not assumed**: calling
+    `use_navigate()` *lazily*, inside the `onClick` handler itself,
+    compiles fine but panics at runtime (`You cannot call use_navigate
+    outside a <Router>`) — Leptos's context-dependent hooks resolve
+    their context against whichever reactive owner is active when the
+    hook function actually runs, which is correct during a component's
+    synchronous setup but not by the time a click fires later from the
+    browser's event loop. `example-app`'s `User.kitty` calls
+    `use_navigate()` eagerly instead, via `<{navigate}> >>
+    use_navigate()` (repurposing signal declaration to force the right
+    timing, since Kittine has no plain non-reactive local binding yet —
+    see [ROADMAP.md § Next up](docs/ROADMAP.md#next-up)), and reads it
+    back with `<{navigate}>('/', NavigateOptions::default())`.
 - **Boolean literals**: `yes>` / `no>`, lowering to Rust's `true` / `false`.
 - **Array literals**: `[expr, expr, ..]`, lowering to `vec![..]`.
   `craft<[..]>` formats arrays with `{:?}` instead of `{}`.
