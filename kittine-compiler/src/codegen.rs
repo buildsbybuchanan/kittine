@@ -46,6 +46,9 @@ const INDENT: &str = "    ";
 struct Scope {
     declared: HashSet<String>,
     params: HashMap<String, String>,
+    /// Names bound by an enclosing view-position `spin` (`JsxNode::Spin`).
+    /// Reads of these are always `.clone()`d — see `render_var_read`.
+    spin_items: HashSet<String>,
 }
 
 impl Scope {
@@ -56,6 +59,19 @@ impl Scope {
                 .iter()
                 .map(|p| (p.name.clone(), p.ty.clone()))
                 .collect(),
+            spin_items: HashSet::new(),
+        }
+    }
+
+    /// A copy of this scope with `item` additionally marked as a
+    /// spin-bound loop variable, for rendering a `JsxNode::Spin`'s body.
+    fn with_spin_item(&self, item: &str) -> Self {
+        let mut spin_items = self.spin_items.clone();
+        spin_items.insert(item.to_string());
+        Scope {
+            declared: self.declared.clone(),
+            params: self.params.clone(),
+            spin_items,
         }
     }
 }
@@ -102,8 +118,18 @@ fn rust_type(ty: &str) -> &'static str {
         "Word" => "String",
         "Flag" => "bool",
         "Children" => "Children",
+        "Num[]" => "Vec<f64>",
+        "Word[]" => "Vec<String>",
+        "Flag[]" => "Vec<bool>",
         _ => "f64",
     }
+}
+
+/// `true` for a parameter type that isn't `Copy` in the generated Rust —
+/// reading it needs `.clone()` at use sites (see [`render_var_read`]),
+/// since a prop may be read from more than one reactive closure.
+fn is_non_copy_param_type(ty: &str) -> bool {
+    matches!(ty, "Word" | "Num[]" | "Word[]" | "Flag[]")
 }
 
 fn param_list_rust(params: &[Param]) -> String {
@@ -312,19 +338,35 @@ fn is_same_var(expr: &Expr, name: &str) -> bool {
     matches!(expr, Expr::Ident(n) | Expr::VarRead(n) if n == name)
 }
 
-/// Renders a signal's initial value passed to `signal(..)`. A bare whole
-/// number is forced to an explicit `f64` here for the same reason as
-/// [`render_arith_operand`]: `signal(0)` leaves `0` as an unconstrained
-/// generic-inference literal, which is free to resolve to some type other
-/// than `f64` if nothing *else* in the same function pins it down first —
-/// and it silently breaks the moment that signal's value is later passed
-/// into an `f64`-typed context (a `purr` call, a nested closure boundary
-/// `view!` introduces per interpolation) that isn't processed early enough
-/// to influence the inference. Explicit beats implicit here.
+/// Renders a signal's initial value passed to `signal(..)`. Two forms of
+/// the same underlying issue get forced to an unambiguous, owned form
+/// here:
+///
+/// - A bare whole number becomes an explicit `f64` (see
+///   [`render_arith_operand`]): `signal(0)` leaves `0` as an unconstrained
+///   generic-inference literal, free to resolve to some type other than
+///   `f64` if nothing *else* in the same function pins it down first.
+/// - A string literal becomes an owned `String` via `.to_string()`:
+///   `signal("Admin")` alone would make the signal's element type
+///   `&'static str`, not `String` — fine until that signal's value is
+///   later required to be an owned `String` (passed as a `Word`-typed
+///   prop to another component), where it silently fails to compile.
+///
+/// Both failure modes are the same shape: a literal's type is left to
+/// whatever the *first* thing that happens to constrain it decides, which
+/// isn't necessarily what a *later*, separately-compiled-looking use
+/// requires. Explicit beats implicit here. Recurses into array elements
+/// too, so `[1, 2]` / `['a', 'b']` get the same treatment as a bare
+/// literal would.
 fn render_signal_init(value: &Expr, scope: &Scope) -> String {
     match value {
         Expr::Number(n) => fmt_num_unambiguous(*n),
-        Expr::Typed { ty, value: inner } if ty == "Num" => render_signal_init(inner, scope),
+        Expr::Str(s) => format!("\"{}\".to_string()", escape_str(s)),
+        Expr::Array(items) => {
+            let rendered: Vec<String> = items.iter().map(|e| render_signal_init(e, scope)).collect();
+            format!("vec![{}]", rendered.join(", "))
+        }
+        Expr::Typed { value: inner, .. } => render_signal_init(inner, scope),
         other => expr_to_rust(other, scope),
     }
 }
@@ -442,13 +484,24 @@ fn mutation_expr(name: &str, value: &Expr, scope: &Scope) -> String {
 // ---- expressions -----------------------------------------------------------
 
 /// Reads a name that isn't a signal mutation target: a declared signal
-/// becomes `name.get()`; a `Word`-typed parameter is cloned (parameters
-/// aren't `Copy` the way `Num`/`Flag` are, and Leptos view closures may
-/// capture the same prop more than once); anything else is read bare.
+/// becomes `name.get()`. A non-`Copy`-typed parameter (`Word`, or any
+/// array type) is cloned, since Leptos view closures may capture the same
+/// prop more than once; a view-position `spin`'s loop variable is
+/// *always* cloned, regardless of its element type — a `{move || item}`
+/// reactive closure needs to be callable more than once (`Fn`, not just
+/// `FnOnce`), which requires not moving a non-`Copy` `item` out of it, and
+/// `.clone()`ing a `Copy` type (e.g. `Num`) costs nothing extra, so there's
+/// no reason to special-case per element type here. Anything else
+/// (`Num`/`Flag` params, plain locals) is read bare.
 fn render_var_read(name: &str, scope: &Scope) -> String {
     if scope.declared.contains(name) {
         format!("{name}.get()")
-    } else if scope.params.get(name).map(String::as_str) == Some("Word") {
+    } else if scope.spin_items.contains(name)
+        || scope
+            .params
+            .get(name)
+            .is_some_and(|ty| is_non_copy_param_type(ty))
+    {
         format!("{name}.clone()")
     } else {
         name.to_string()
@@ -459,6 +512,19 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
     match expr {
         Expr::Ident(name) | Expr::VarRead(name) => render_var_read(name, scope),
         Expr::Number(n) => fmt_num(*n),
+        // Deliberately a bare `&str` here, NOT owned via `.to_string()`:
+        // unlike a signal initializer (see `render_signal_init`), a
+        // string literal in general expression position (a function-call
+        // argument, a `craft<...>` argument) might need to be `&str`
+        // (`leptos_router::StaticSegment` requires `T: AsPath`, which
+        // `String` does not implement — only `&str` does) or an owned
+        // `String` (a `purr` parameter typed `Word`), depending entirely
+        // on the callee — information Kittine doesn't have. Forcing one
+        // choice broke the other case when tried; see `docs/LANGUAGE.md`
+        // § Known limitations — passing a string *literal* directly to a
+        // `Word`-typed `purr` parameter doesn't work yet, only passing a
+        // `Word` signal/prop does (those already resolve to owned
+        // `String` via `render_signal_init`/prop cloning).
         Expr::Str(s) => format!("\"{}\"", escape_str(s)),
         Expr::Binary { left, op, right } => {
             render_binary(left, *op, right, &|e| expr_to_rust(e, scope))
@@ -615,8 +681,12 @@ fn jsx_to_rust(node: &JsxNode, scope: &Scope, indent: usize) -> String {
                     "<For each=move || {list_code} key=|{item}| format!(\"{{{item}}}\") let:{item}>"
                 ),
             );
+            // `item` needs to render as `item.clone()` inside the body's
+            // reactive closures (see `render_var_read`), so recurse with a
+            // scope that knows about it.
+            let body_scope = scope.with_spin_item(item);
             for child in body {
-                out.push_str(&jsx_to_rust(child, scope, indent + 1));
+                out.push_str(&jsx_to_rust(child, &body_scope, indent + 1));
             }
             push_line(&mut out, indent, "</For>");
         }

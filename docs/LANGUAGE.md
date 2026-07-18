@@ -65,7 +65,8 @@ a prop is a plain value, not reactive state — there's no setter, and
 reading it is just the bare name (`active`, not `<{active}>`).
 
 Every prop must carry an explicit [type tag](#type-tags): `<<Num>>`,
-`<<Word>>`, or `<<Flag>>`. There is no prop-type inference. The one
+`<<Word>>`, `<<Flag>>`, or an array of one of those (`<<Num[]>>`,
+`<<Word[]>>`, `<<Flag[]>>`). There is no prop-type inference. The one
 exception is the special `children` parameter — see
 [Children](#children) — which takes no type tag at all.
 
@@ -75,11 +76,12 @@ exception is the special `children` parameter — see
 |---|---|
 | `func Nav(<<Word>> active) { .. }` | `pub fn Nav(active: String) -> impl IntoView { .. }` |
 | `func Card(<<Num>> price, <<Flag>> onSale) { .. }` | `pub fn Card(price: f64, onSale: bool) -> impl IntoView { .. }` |
+| `func NavList(<<Word[]>> items) { .. }` | `pub fn NavList(items: Vec<String>) -> impl IntoView { .. }` |
 
-Reading a `Word` (`String`) prop clones it (`active.clone()`) rather than
-moving it, since a prop may be read from more than one reactive closure
-inside the component body — `Num`/`Flag` props are `Copy` and don't need
-this.
+Reading a `Word` prop or any array-typed prop clones it (`items.clone()`)
+rather than moving it, since a prop may be read from more than one
+reactive closure inside the component body — neither `String` nor `Vec<T>`
+is `Copy` the way `Num`/`Flag` are.
 
 ## Functions (`purr`)
 
@@ -459,21 +461,29 @@ arrays with Rust's `{:?}` (`Debug`) formatter instead of `{}`.
 ```
 
 `<<Type>> value` is an explicit type tag — the idiomatic Kittine way to
-annotate a value's type. There are three type names:
+annotate a value's type. There are three scalar type names, plus an array
+form for each:
 
 | Tag | Matches |
 |---|---|
 | `<<Num>>` | number literals |
 | `<<Word>>` | string literals |
 | `<<Flag>>` | boolean literals |
+| `<<Num[]>>` / `<<Word[]>>` / `<<Flag[]>>` | array literals of the matching element type |
+
+```kitty
+<{scores}> >> <<Num[]>> [10, 20, 30]
+```
 
 When the tagged value is a literal, the compiler checks it against the tag
-at compile time and rejects a mismatch (`<<Num>> 'oops'` is a parse error).
-When the tagged value is a variable read or a computed expression (its
-static type isn't known at parse time), the annotation is trusted rather
-than checked. Either way, the tag itself is erased during code generation —
-Rust's own type inference already gives the underlying value the right
-type, so `<<Num>> 0` and a bare `0` generate identical Rust.
+at compile time and rejects a mismatch (`<<Num>> 'oops'` is a parse error;
+for an array tag, every literal *element* is checked too — `<<Num[]>>
+['a', 'b']` is also a parse error). When the tagged value is a variable
+read or a computed expression (its static type isn't known at parse time),
+the annotation is trusted rather than checked. Either way, the tag itself
+is erased during code generation — Rust's own type inference already
+gives the underlying value the right type, so `<<Num>> 0` and a bare `0`
+generate identical Rust.
 
 Type tags are optional on a value (`<{count}> >> 0` and `<{count}> >>
 <<Num>> 0` compile identically) — they exist for readability and for
@@ -596,15 +606,21 @@ diffs by key) whenever the underlying signal changes:
 ```rust
 <For each=move || items.get() key=|item| format!("{item}") let:item>
     <li>
-        {move || item}
+        {move || item.clone()}
     </li>
 </For>
 ```
 
 The key is always `format!("{item}")` — every array element type
 (`Num`/`Word`/`Flag`) implements `Display`, so this works uniformly without
-needing a separate "what's the identity of this item" concept. A `spin`
-body inside a view can contain more than one child element/text node, just
+needing a separate "what's the identity of this item" concept.
+
+`item` is always read as `item.clone()` inside the body, regardless of its
+element type — a `{move || ..}` reactive closure needs to be callable more
+than once (Leptos re-runs it), which means it can't *move* a non-`Copy`
+`item` (a `Word`) out of itself; only `FnOnce` closures can do that. Cloning
+a `Copy` type like `Num` costs nothing extra, so there's no reason to only
+clone conditionally. A `spin` body inside a view can contain more than one child element/text node, just
 like any other JSX position.
 
 ## Expressions and operators
@@ -746,7 +762,7 @@ function     := "purr" IDENT param_list type_tag_name
                 "{" stmt* return_stmt? "}"
 param_list   := "(" (param ("," param)*)? ")"
 param        := type_tag_name IDENT | "children"
-type_tag_name:= "<<" ("Num" | "Word" | "Flag") ">>"
+type_tag_name:= "<<" ("Num" | "Word" | "Flag") ("[" "]")? ">>"
 return_stmt  := "return" "(" jsx_node | expr ")"
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
@@ -819,9 +835,21 @@ These are intentional scope boundaries of the current prototype, not bugs:
 - **`import` only brings in items, not re-exports.** There's no `export`
   concept — every `func`/`purr` in a file is implicitly `pub` and
   importable; you can't restrict what a file exposes.
-- **No array element/return types.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
-  scalars; there's no tag (yet) for "an array of `Num`", so array-typed
-  props or `purr` returns aren't expressible.
+- **A string *literal* can't be passed directly to a `Word`-typed `purr`
+  parameter or array element position that specifically needs an owned
+  `String`.** Passing a `Word` *signal* or prop works fine (both already
+  resolve to owned `String`) — it's specifically a bare literal argument,
+  like `someFunc('text')`, that's affected, because Kittine can't tell
+  whether the callee wants `&str` or `String` without real type
+  information, and guessing wrong broke a real feature
+  (`leptos_router::StaticSegment` requires `&str`, not `String`) when
+  tried. Route through a signal/prop instead for now.
+- **Mutating a `Word` signal directly to a brand-new literal may not
+  compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
+  first/declaring occurrence) can render a bare `&str` assigned into an
+  owned `String` — concatenation (`<{label}> >> 'x' + <{label}>`) is
+  unaffected, since `format!(..)` always produces an owned `String`
+  regardless of its inputs.
 - **A view-position `spin` has no `key` control.** List rendering
   (`spin` inside `return ( ... )`) always keys by `format!("{item}")` —
   there's no way to key by something else (an id field, an index) yet,
