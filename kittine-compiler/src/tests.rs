@@ -453,6 +453,63 @@ func App() {
 }
 
 #[test]
+fn string_literal_argument_to_same_file_word_param_is_owned() {
+    // A same-file `purr`'s signature is known at codegen time, so a bare
+    // string literal passed where the parameter is `<<Word>>` gets
+    // `.to_string()` — it would otherwise render as `&str`, which doesn't
+    // type-check against a `Word` parameter's `String`.
+    let out = compile(
+        r#"
+purr shout(<<Word>> word) <<Word>> {
+    return (word)
+}
+
+func App() {
+    craft<shout('hello')>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"shout("hello".to_string())"#));
+}
+
+#[test]
+fn string_literal_argument_to_same_file_num_param_is_unaffected() {
+    // Regression check: the `Word`-specific coercion must not affect a
+    // string literal passed to a non-`Word` parameter position.
+    let out = compile(
+        r#"
+purr describe(<<Num>> n, <<Word>> label) <<Word>> {
+    return (label)
+}
+
+func App() {
+    craft<describe(1, 'first')>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"describe(1f64, "first".to_string())"#));
+}
+
+#[test]
+fn string_literal_argument_to_unknown_function_is_unaffected() {
+    // A call to a function whose signature isn't known at codegen time
+    // (e.g. one brought in via `import`, or a typo) renders the argument
+    // bare, same as before this fix — no known signature means no basis
+    // for the coercion.
+    let out = compile(
+        r#"
+func App() {
+    craft<someImportedFunc('hello')>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"someImportedFunc("hello")"#));
+}
+
+#[test]
 fn cli_build_resolves_imports_recursively() {
     let dir = std::env::temp_dir().join(format!(
         "kittine-import-test-{}-{}",

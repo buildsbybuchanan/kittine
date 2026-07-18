@@ -139,6 +139,18 @@ rendered exactly as it would be anywhere else (a signal read becomes
 | `double(21)` | `double(21f64)` |
 | `double(<{count}>)` | `double(count.get())` |
 
+Calling a `purr` defined in the *same file* also gets one more piece of
+real type checking: a bare string-literal argument at a `<<Word>>`
+parameter position renders as an owned `String`, not a borrowed `&str`,
+because the compiler already knows that parameter's declared type:
+
+| Kittine | Generated Rust |
+|---|---|
+| `greet('World')` (where `greet(<<Word>> name)`) | `greet("World".to_string())` |
+
+This only applies to same-file calls — see [Known
+limitations](#known-limitations) for the cross-file gap.
+
 ## Modules and imports
 
 ```kitty
@@ -919,15 +931,18 @@ These are intentional scope boundaries of the current prototype, not bugs:
   to import something and then re-expose it under its own name for a
   third file to import — every import has to go straight to the file that
   actually defines the item.
-- **A string *literal* can't be passed directly to a `Word`-typed `purr`
-  parameter or array element position that specifically needs an owned
-  `String`.** Passing a `Word` *signal* or prop works fine (both already
-  resolve to owned `String`) — it's specifically a bare literal argument,
-  like `someFunc('text')`, that's affected, because Kittine can't tell
-  whether the callee wants `&str` or `String` without real type
-  information, and guessing wrong broke a real feature
-  (`leptos_router::StaticSegment` requires `&str`, not `String`) when
-  tried. Route through a signal/prop instead for now.
+- **A string *literal* passed directly to a `Word`-typed `purr` parameter
+  only gets the right `String`/`&str` treatment when the callee is defined
+  in the *same file*.** `someFunc('text')` works when `someFunc` is a
+  `purr` in the same `.kitty` file with a `<<Word>>` parameter at that
+  position — the compiler knows its signature and renders the literal as
+  `"text".to_string()`. A call through an `import`, or to a function
+  Kittine has no signature for at all, still renders the literal bare
+  (`"text"`), same as before — cross-file calls have no real type
+  information to check against yet, and guessing wrong once already broke
+  a real feature (`leptos_router::StaticSegment` requires `&str`, not
+  `String`). Route through a `Word` signal/prop instead for a cross-file
+  callee (both already resolve to owned `String`).
 - **Mutating a `Word` signal directly to a brand-new literal may not
   compile.** `<{label}> >> 'reset'` as a *mutation* (not the signal's
   first/declaring occurrence) can render a bare `&str` assigned into an
