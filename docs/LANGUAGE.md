@@ -409,8 +409,40 @@ for item in (vec![1, 2, 3]).into_iter() {
 }
 ```
 
-See [Known limitations](#known-limitations) for what `spin` does not (yet)
-do — namely, render its items into the view.
+### Rendering a list in a view
+
+`spin` can also appear *inside* `return ( ... )` — as a child of an
+element, or as the whole view — to render one element per item, instead of
+just running logic:
+
+```kitty
+return (
+    <ul>
+        spin<{item}> in <{items}> }{
+            <li>{ item }</li>
+        }{
+    </ul>
+)
+```
+
+This is a different lowering from the statement form above: instead of an
+imperative `for` loop, it becomes a reactive Leptos
+[`<For>`](https://leptos.dev), so the list re-renders (efficiently — Leptos
+diffs by key) whenever the underlying signal changes:
+
+```rust
+<For each=move || items.get() key=|item| format!("{item}") let:item>
+    <li>
+        {move || item}
+    </li>
+</For>
+```
+
+The key is always `format!("{item}")` — every array element type
+(`Num`/`Word`/`Flag`) implements `Display`, so this works uniformly without
+needing a separate "what's the identity of this item" concept. A `spin`
+body inside a view can contain more than one child element/text node, just
+like any other JSX position.
 
 ## Expressions and operators
 
@@ -544,6 +576,8 @@ type_tag     := type_tag_name unary
 call         := IDENT "(" (expr ("," expr)*)? ")"
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
+              | jsx_spin
+jsx_spin     := "spin" "<{" IDENT "}>" "in" expr "}{" jsx_node* "}{"
 jsx_element  := "<" IDENT jsx_attr* ("/>" | ">" jsx_node* "</" IDENT ">")
 jsx_attr     := IDENT "=" (STRING | "{" expr "}")
 
@@ -584,12 +618,12 @@ These are intentional scope boundaries of the current prototype, not bugs:
 - **No array element/return types.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
   scalars; there's no tag (yet) for "an array of `Num`", so array-typed
   props or `purr` returns aren't expressible.
-- **`spin` loops are imperative, not reactive view rendering.** `spin`
-  lowers to a plain Rust `for` loop, which is useful for logic (`craft<...>`,
-  computing values) that runs once at component setup. There is no
-  list-rendering (`<For>`) support yet — a `spin` loop cannot appear inside
-  `return ( ... )` to render one element per item.
-- **`craft<...>` inside `if>`/`orif>`/`else>`/`spin` runs once, at component setup,
+- **A view-position `spin` has no `key` control.** List rendering
+  (`spin` inside `return ( ... )`) always keys by `format!("{item}")` —
+  there's no way to key by something else (an id field, an index) yet,
+  which matters once array elements stop being bare scalars.
+- **`craft<...>` inside `if>`/`orif>`/`else>`/(statement-position) `spin` runs once,
+  at component setup,
   not inside a reactive `Effect`.** The generated `if x.get() == "..." { }`
   is a plain (non-reactive) Rust `if`, evaluated once when the component
   function runs. Leptos may print a dev-mode warning about reading a signal

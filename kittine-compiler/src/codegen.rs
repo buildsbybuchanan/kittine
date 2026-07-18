@@ -576,6 +576,20 @@ fn jsx_to_rust(node: &JsxNode, scope: &Scope, indent: usize) -> String {
                 &format!("{{move || {}}}", expr_to_rust(expr, scope)),
             );
         }
+        JsxNode::Spin { item, list, body } => {
+            let list_code = expr_to_rust(list, scope);
+            push_line(
+                &mut out,
+                indent,
+                &format!(
+                    "<For each=move || {list_code} key=|{item}| format!(\"{{{item}}}\") let:{item}>"
+                ),
+            );
+            for child in body {
+                out.push_str(&jsx_to_rust(child, scope, indent + 1));
+            }
+            push_line(&mut out, indent, "</For>");
+        }
         JsxNode::Element {
             tag,
             attrs,

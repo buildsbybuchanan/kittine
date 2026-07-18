@@ -623,8 +623,46 @@ impl Parser {
                 self.expect(TokenKind::RBrace)?;
                 Ok(JsxNode::ExprInterp(expr))
             }
+            TokenKind::KeywordSpin => self.parse_jsx_spin(),
             other => Err(self.err(format!("unexpected token '{other}' in JSX"))),
         }
+    }
+
+    /// Parses `spin<{item}> in list }{ jsx_node* }{` in JSX position — the
+    /// view-rendering counterpart of [`Parser::parse_spin_stmt`], which
+    /// only handles `spin` as an imperative statement.
+    fn parse_jsx_spin(&mut self) -> PResult<JsxNode> {
+        self.expect(TokenKind::KeywordSpin)?;
+        self.expect(TokenKind::LeftVarBracket)?;
+        let item = self.expect_ident()?;
+        self.expect(TokenKind::RBrace)?;
+        self.expect(TokenKind::Gt)?;
+
+        let in_word = self.expect_ident()?;
+        if in_word != "in" {
+            return Err(self.err(format!(
+                "expected 'in' after 'spin<{{{item}}}>', found '{in_word}'"
+            )));
+        }
+
+        let list = self.parse_expr()?;
+        self.expect_fence()?;
+
+        let mut body = Vec::new();
+        loop {
+            if matches!(self.peek().kind, TokenKind::Eof) {
+                return Err(self.err("unexpected end of file inside 'spin' view loop"));
+            }
+            if matches!(self.peek().kind, TokenKind::RBrace)
+                && matches!(self.peek_next(), TokenKind::LBrace)
+            {
+                self.expect_fence()?;
+                break;
+            }
+            body.push(self.parse_jsx_node()?);
+        }
+
+        Ok(JsxNode::Spin { item, list, body })
     }
 
     fn parse_jsx_element(&mut self) -> PResult<JsxNode> {

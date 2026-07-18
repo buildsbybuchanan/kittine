@@ -86,7 +86,9 @@ func Counter() {
 - `if>` / `orif>` / `else>` are indentation-delimited (no braces), and use
   `>>` as an equality test.
 - `spin<{item}> in list }{ .. }{` loops over an array, its body fenced by
-  `}{` — a closing brace immediately followed by an opening one.
+  `}{` — a closing brace immediately followed by an opening one. As a
+  statement it's a plain imperative loop; inside `return ( ... )` it
+  renders one element per item via a reactive Leptos `<For>`.
 - `func Name(<<Type>> prop) { .. }` takes typed props; `<Name prop='x' />`
   composes it into another view (a capitalized JSX tag is a component
   reference, lowercase is a plain HTML element).
