@@ -44,6 +44,14 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   full compiler → cargo → wasm-bindgen pipeline, a VS Code extension
   (TextMate grammar only — no language server), Vercel deployment config.
 
+**Can it build a full website yet? No.** Everything above adds up to a
+solid *single-page app* — one component mounted to one root, with state,
+composition, lists, and shared logic. A website needs multiple navigable
+pages and (usually) fast/SEO-able first paint, and neither exists yet:
+there is no routing at all, and rendering is CSR-only (blank page until
+the WASM bundle loads and mounts — nothing for a crawler to see without
+executing JS). See the top of [Next up](#next-up).
+
 See [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations) for
 the precise, current boundary of what's supported — that section is the
 authoritative day-to-day list; this file is about direction, not spec.
@@ -53,19 +61,30 @@ authoritative day-to-day list; this file is about direction, not spec.
 Roughly in priority order, driven by "what does writing the actual Kittine
 website (in Kittine) need next":
 
-1. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
+1. **Routing / multi-page navigation.** Not started at all — there is no
+   way to define more than one page or navigate between URLs. This is the
+   single biggest blocker to calling anything built in Kittine "a website"
+   rather than "a single-page app." Leptos has a router
+   (`leptos_router`); Kittine needs syntax + codegen to expose it (route
+   definitions, links, at minimum).
+2. **SSR/SSG.** Currently CSR-only. A marketing/business site cares about
+   first paint and SEO; Leptos already supports both server rendering and
+   static generation, Kittine just doesn't expose either yet.
+3. **Array-typed props/returns.** `<<Num>>`/`<<Word>>`/`<<Flag>>` cover
    scalars; there's no tag for "a list of `Num`" yet, so a `purr` can't
-   return one and a component can't take one as a prop.
-2. **`export` / visibility control.** Every top-level `func`/`purr` is
+   return one and a component can't take one as a prop — this blocks
+   anything data-driven (nav menus, card grids) that isn't a hardcoded
+   literal.
+4. **`export` / visibility control.** Every top-level `func`/`purr` is
    implicitly importable by any file today; there's no way to keep
    something file-private.
-3. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
+5. **Basic comparison operators.** `>>` is equality-only; no `<`, `>`,
    `<=`, `>=`, `!=`. Needed for anything beyond exact-match conditionals
    (pagination, validation ranges, sort order).
-4. **Incremental/cached builds for the import graph.** `kittine-compiler
+6. **Incremental/cached builds for the import graph.** `kittine-compiler
    build` currently recompiles every reachable `.kitty` file on every
    invocation — correct, but wasteful once a real site has many files.
-5. **`key` control for view-position `spin`.** Always keys by
+7. **`key` control for view-position `spin`.** Always keys by
    `format!("{item}")` today; no way to key by something else (an id
    field, an index) once array elements stop being bare scalars.
 
@@ -131,8 +150,9 @@ stable v1.0 grammar freeze.
 
 The plan (per explicit instruction) is to build **buildsbybuchanan-style
 kittine.dev in Kittine itself**, once — and only once — enough of [Next
-up](#next-up) lands to make that practical: multi-page composition (needs
-imports ✅ done, props ✅ done, list rendering ✅ done, component
-children ✅ done — array-typed props are still open and would matter for
-a real site's structured nav/card data). Do not start building the site
-itself until told to — this roadmap is preparation, not a green light.
+up](#next-up) lands to make that practical. Composing a *single* page
+is ready (imports ✅, props ✅, list rendering ✅, component children ✅).
+A real multi-page site additionally needs routing ❌ (not started — see
+[Next up](#next-up) #1) and ideally SSR/SSG ❌ for first paint and SEO, plus
+array-typed props for structured nav/card data. Do not start building the
+site itself until told to — this roadmap is preparation, not a green light.
