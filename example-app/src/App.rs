@@ -6,6 +6,9 @@ use leptos::prelude::*;
 #[path = "./Nav.rs"]
 mod __kittine_mod_nav;
 use __kittine_mod_nav::{Nav};
+#[path = "./Card.rs"]
+mod __kittine_mod_card;
+use __kittine_mod_card::{Card};
 
 pub fn doubled(n: f64) -> f64 {
     n * 2f64
@@ -43,6 +46,11 @@ pub fn App() -> impl IntoView {
                     </li>
                 </For>
             </ul>
+            <Card title="About".to_string()>
+                <p>
+                    "This card's children came from the composing view."
+                </p>
+            </Card>
         </div>
     }
 }

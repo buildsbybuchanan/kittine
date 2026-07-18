@@ -16,6 +16,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Calling functions](#calling-functions)
 - [Modules and imports](#modules-and-imports)
 - [Component composition](#component-composition)
+  - [Children](#children)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
@@ -63,7 +64,9 @@ a prop is a plain value, not reactive state — there's no setter, and
 reading it is just the bare name (`active`, not `<{active}>`).
 
 Every prop must carry an explicit [type tag](#type-tags): `<<Num>>`,
-`<<Word>>`, or `<<Flag>>`. There is no prop-type inference.
+`<<Word>>`, or `<<Flag>>`. There is no prop-type inference. The one
+exception is the special `children` parameter — see
+[Children](#children) — which takes no type tag at all.
 
 ### Compilation
 
@@ -193,6 +196,62 @@ attribute needs for reactivity:
 |---|---|
 | `<Nav active='home' />` | `<Nav active="home".to_string()/>` |
 | `<div title={label} />` | `<div title=move \|\| label.get()/>` |
+
+### Children
+
+```kitty
+func Card(<<Word>> title, children) {
+    return (
+        <div class='card'>
+            <h3>{ title }</h3>
+            { children() }
+        </div>
+    )
+}
+
+func Page() {
+    return (
+        <Card title='About'>
+            <p>"Nested JSX content, passed through from the caller."</p>
+        </Card>
+    )
+}
+```
+
+A parameter named exactly `children` — written with **no** type tag, unlike
+every other prop — declares that a component accepts nested JSX content
+from wherever it's composed. Call it with `children()` (an ordinary
+[function call](#calling-functions)) inside the view to render whatever the
+caller nested between the opening and closing tag. There is nothing to
+write at the call site beyond nesting content normally
+(`<Card ..>...</Card>`) — no `children={...}` attribute needed.
+
+`children()` renders once (it isn't reactive) — write `{ children() }`, not
+wrapped in anything, exactly as shown above.
+
+#### Compilation
+
+`children` becomes a `Children` parameter (from `leptos::prelude::*`,
+already in scope); `{ children() }` becomes a bare `{children()}` — every
+*other* `{ expr }` interpolation gets wrapped in a `move || ..` reactive
+closure, but `Children` is call-once (`FnOnce`), so Kittine recognizes this
+one specific shape and renders it bare instead:
+
+```rust
+pub fn Card(title: String, children: Children) -> impl IntoView {
+    view! {
+        <div class="card">
+            <h3>{move || title.clone()}</h3>
+            {children()}
+        </div>
+    }
+}
+```
+
+Composition with nested content needs no codegen changes at all beyond
+what [component composition](#component-composition) already does — the
+`view!` macro wires nested JSX into the `children` prop automatically, the
+same way it would for hand-written Leptos.
 
 ## Variables and state
 
@@ -549,7 +608,7 @@ component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
 function     := "purr" IDENT param_list type_tag_name
                 "{" stmt* return_stmt? "}"
 param_list   := "(" (param ("," param)*)? ")"
-param        := type_tag_name IDENT
+param        := type_tag_name IDENT | "children"
 type_tag_name:= "<<" ("Num" | "Word" | "Flag") ">>"
 return_stmt  := "return" "(" jsx_node | expr ")"
 
@@ -608,10 +667,6 @@ These are intentional scope boundaries of the current prototype, not bugs:
 - **No prop type inference.** Every prop and `purr` return type needs an
   explicit `<<Num>>`/`<<Word>>`/`<<Flag>>` tag — there's no way to omit it
   and have the compiler figure it out.
-- **No children for composed components.** `<Nav>...</Nav>` parses fine,
-  but nothing wires JSX children through to a Kittine-defined component's
-  props (there's no `children`-prop concept yet) — compose with
-  attributes only (`<Nav active='home' />`), or self-close.
 - **`import` only brings in items, not re-exports.** There's no `export`
   concept — every `func`/`purr` in a file is implicitly `pub` and
   importable; you can't restrict what a file exposes.

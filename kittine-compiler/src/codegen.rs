@@ -92,6 +92,7 @@ fn rust_type(ty: &str) -> &'static str {
         "Num" => "f64",
         "Word" => "String",
         "Flag" => "bool",
+        "Children" => "Children",
         _ => "f64",
     }
 }
@@ -523,6 +524,13 @@ fn is_component_tag(tag: &str) -> bool {
     tag.chars().next().is_some_and(|c| c.is_ascii_uppercase())
 }
 
+/// `true` for exactly `{ children() }` — a call to the special
+/// zero-argument `children` parameter, which needs bare (non-reactive)
+/// rendering. See the `JsxNode::ExprInterp` arm of `jsx_to_rust`.
+fn is_children_call(expr: &Expr) -> bool {
+    matches!(expr, Expr::Call { name, args } if name == "children" && args.is_empty())
+}
+
 fn jsx_attr_leptos_name(name: &str) -> (String, bool) {
     let bytes = name.as_bytes();
     if name.len() > 2 && &name[0..2] == "on" && bytes[2].is_ascii_uppercase() {
@@ -568,6 +576,14 @@ fn jsx_to_rust(node: &JsxNode, scope: &Scope, indent: usize) -> String {
                 indent,
                 &format!("{{move || {}}}", render_var_read(name, scope)),
             );
+        }
+        JsxNode::ExprInterp(expr) if is_children_call(expr) => {
+            // `Children` is `FnOnce() -> Fragment` — call it bare, exactly
+            // once, matching Leptos's own idiom. Wrapping it in `move || ..`
+            // like a normal reactive interpolation would either move it out
+            // from under a closure Leptos might invoke more than once, or
+            // just be pointless indirection for content that doesn't change.
+            push_line(&mut out, indent, &format!("{{{}}}", expr_to_rust(expr, scope)));
         }
         JsxNode::ExprInterp(expr) => {
             push_line(

@@ -92,6 +92,9 @@ func Counter() {
 - `func Name(<<Type>> prop) { .. }` takes typed props; `<Name prop='x' />`
   composes it into another view (a capitalized JSX tag is a component
   reference, lowercase is a plain HTML element).
+- `func Card(children) { .. { children() } .. }` — an untyped `children`
+  param accepts nested JSX from wherever the component is composed:
+  `<Card><p>"nested"</p></Card>`, no extra syntax needed at the call site.
 - `purr name(<<Type>> param) <<Type>> { .. return (expr) }` is a plain
   function — computes and returns a value, renders no view — called like
   `name(arg)` anywhere an expression is valid.

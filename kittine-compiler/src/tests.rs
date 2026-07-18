@@ -588,3 +588,49 @@ func List() {
     assert!(out.contains(r#""Item: ""#));
     assert!(out.contains("{move || n}"));
 }
+
+#[test]
+fn component_with_children_param() {
+    let out = compile(
+        r#"
+func Card(<<Word>> title, children) {
+    return (
+        <div>
+            <h2>{ title }</h2>
+            { children() }
+        </div>
+    )
+}
+"#,
+    );
+    assert!(out.contains("pub fn Card(title: String, children: Children) -> impl IntoView"));
+    // children() is called bare, not wrapped in `move || ..` like a normal
+    // reactive interpolation.
+    assert!(out.contains("{children()}"));
+    assert!(!out.contains("{move || children()}"));
+}
+
+#[test]
+fn composing_with_children_passes_nested_jsx_through() {
+    let out = compile(
+        r#"
+func Card(children) {
+    return ( <div>{ children() }</div> )
+}
+
+func Page() {
+    return (
+        <Card>
+            <p>"hello"</p>
+        </Card>
+    )
+}
+"#,
+    );
+    // Leptos's view! macro wires nested JSX content into the `children`
+    // prop automatically — Kittine doesn't need to emit an explicit
+    // `children=` attribute, just pass the content through as-is.
+    assert!(out.contains("<Card>"));
+    assert!(out.contains(r#""hello""#));
+    assert!(out.contains("</Card>"));
+}

@@ -53,6 +53,12 @@ grouped by date until the first tagged release.
   instead of a plain imperative `for` loop. The key is always
   `format!("{item}")`, which works uniformly across `Num`/`Word`/`Flag`
   since all three implement `Display`.
+- **Component children**: an untyped `children` parameter (the one
+  exception to every prop needing a type tag) lets a component render
+  whatever JSX content it's composed with — `func Card(children) { ..
+  { children() } .. }`, called with `<Card><p>"x"</p></Card>`. No
+  `children=` attribute needed at the call site; Leptos's `view!` macro
+  wires nested JSX into the `children` prop automatically.
 
 ### Fixed
 
