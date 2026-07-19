@@ -10,6 +10,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 
 ## Table of contents
 
+- [Brevity by design](#brevity-by-design)
 - [Components](#components)
 - [Props](#props)
 - [Functions (`purr`)](#functions-purr)
@@ -38,6 +39,46 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Full grammar summary](#full-grammar-summary)
 - [Compilation model](#compilation-model)
 - [Known limitations](#known-limitations)
+
+## Brevity by design
+
+Every Kittine construct is a deliberately short, unusual stand-in for the
+Rust it expands into — not shorthand for its own sake, but because the
+generated code carries the ceremony (ownership, signal plumbing, `String`
+vs. `&str`, macro ceremony) that Rust needs and a `.kitty` author shouldn't
+have to type by hand. **A construct that isn't shorter than its Rust output
+doesn't belong in Kittine.** A few side-by-sides, taken straight from this
+repo's own test suite (`kittine-compiler/src/tests.rs`) rather than
+invented for effect:
+
+| Kittine | Generated Rust |
+| --- | --- |
+| `greet('World')` (where `greet(<<Word>> name)`) | `greet("World".to_string())` |
+| `<{count}> >> <<Num>> 0` | `let (count, set_count) = signal(0f64);` |
+| `<{ready}> >> yes>` | `let (ready, set_ready) = signal(true);` |
+| `if><{username}> >> 'Admin'` … `orif>` … `else>` | `if username.get() == "Admin" { .. } else if .. { .. } else { .. }` |
+| `craft<'Welcome Admin'>` | `leptos::logging::log!("Welcome Admin");` |
+| `spin<{n}> in [1, 2, 3] }{ craft<n> }{` | `for n in (vec![1, 2, 3]).into_iter() { leptos::logging::log!("{}", n); }` |
+| `<{age}> >= 18 && <{status}> >> 'active'` | `(age.get() >= 18f64) && (status.get() == "active")` |
+
+Two mechanical rules keep the promise real rather than aspirational:
+
+1. **One token does the work of several Rust ones.** `>>` alone covers
+   signal declare-or-mutate *and* equality comparison — context (is this
+   the first `<{name}> >>` in the component, or inside a condition?)
+   disambiguates, the same way `craft<...>` is always shorter than
+   `leptos::logging::log!(...)` and `yes>`/`no>` are always shorter than
+   `true`/`false`.
+2. **Types and ownership are inferred, not spelled out.** `<<Word>>` is
+   optional on a value and erased entirely from the generated Rust; a
+   `.to_string()`/`.clone()` the borrow checker would otherwise force a
+   human to add by hand (see the `greet` row above) is inserted by
+   `kittine-compiler`, never by the `.kitty` author.
+
+This is a standing constraint on the language, not a one-time pass: a
+future addition to Kittine that produces *more* characters than writing
+the Rust directly has failed its own design goal, however useful it might
+otherwise be.
 
 ## Components
 

@@ -6,7 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
-## [Unreleased] - 2026-07-18
+## [Unreleased] - 2026-07-19
+
+### Documentation
+
+- **"Brevity by design"**: a new section in
+  [docs/LANGUAGE.md](docs/LANGUAGE.md#brevity-by-design), and a matching
+  table in [README.md](README.md#shorter-than-the-rust-it-generates),
+  stating the design constraint explicitly and showing it with real
+  Kittine-vs-generated-Rust side-by-sides pulled from
+  `kittine-compiler/src/tests.rs` (not invented for effect) — signals,
+  booleans, `craft<...>`, `spin` loops, and the `greet('World')` →
+  `greet("World".to_string())` `Word`-parameter coercion. Codifies two
+  mechanical rules (one token doing the work of several Rust ones; types
+  and ownership inferred rather than spelled out) as a standing constraint
+  for any future language addition, not just a one-time pass over the
+  existing syntax. No compiler or grammar changes — existing `.kitty`
+  syntax and generated output are unaffected.
 
 ### Investigated
 
