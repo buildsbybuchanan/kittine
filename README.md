@@ -22,6 +22,7 @@ portfolio.
 [getting started](docs/GETTING_STARTED.md) · [CLI reference](docs/CLI.md) ·
 [VS Code extension](docs/VSCODE_EXTENSION.md) ·
 [architecture](docs/ARCHITECTURE.md) · [SSR](docs/SSR.md) ·
+[deploying fast](docs/DEPLOYMENT.md) ·
 [roadmap](docs/ROADMAP.md)
 
 This repository is a monorepo with five parts:

@@ -186,23 +186,38 @@ vision](#full-vision-phased-honest) are where these get addressed.
 
 ## Next up
 
-- **`kittine-compiler` provisioning for Vercel builds (kittine-ide).**
-  `vite-plugin-kittine` shells out to `kittine-compiler` on every `.kitty`
-  transform, so it must resolve on `PATH` before Vite starts. Locally this
-  is solved with `cargo install --path vendor/kittine/kittine-compiler`
-  (installs to `~/.cargo/bin`, already on `PATH`) — see the
-  `kittine-ide` README for the Windows/git-bash PATH-mangling gotcha this
-  surfaced (`spawnSync kittine-compiler ENOENT`). That fix is
-  machine-local only; `kittine-ide`'s `scripts/vercel-build.sh` (per its
-  `README.md`) still needs to install/build `kittine-compiler` and put it
-  on `PATH` as part of the Vercel build image before this repo's builds
-  will actually succeed there. Not yet done as of 2026-07-19.
-
-Everything else that was previously listed here has landed (see Done
-below). SSR/SSG (previously the one open item, flagged as needing a real
-architecture decision rather than a quick increment) is done too — see
-[SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
+Nothing open right now (see Done below) — add here the moment a real gap
 turns up (per the standing rule at the top of this file).
+
+Done: ~~`kittine-compiler` provisioning for Vercel builds (kittine-ide)~~
+(`kittine-ide/scripts/vercel-build.sh` builds `kittine-compiler` from the
+`vendor/kittine` submodule and puts it on `PATH` before the Vite build
+runs — already done as of this check, this item was just stale) —
+confirmed 2026-07-19. ~~Real build-speed fix for `cargo-leptos`/Vercel
+projects~~ (a `framework: null` Vercel project gets no persistent cache
+for `~/.cargo`/`target/` between deploys — measured, not assumed: a real
+cold `kittine-website` deploy took 6m22s, ~4m45s of it pure dependency
+recompilation, unaffected by `[profile.release]` tuning since the cost is
+in *other* crates. Real fix: build once in GitHub Actions, where
+`actions/cache` genuinely persists across runs, then ship the result to
+Vercel as a prebuilt deployment (`vercel deploy --prebuilt`) so Vercel
+does no compilation at all — see [DEPLOYMENT.md](DEPLOYMENT.md) for the
+full pattern, `kittine-website/.github/workflows/deploy.yml` for the
+working implementation. Also landed: a one-local-command wrapper script
+collapsing the `.kitty`-compile + `cargo-leptos` two-step into one,
+matching the single-command ergonomics `vite-plugin-kittine`'s CSR path
+already had; a compile-speed-favoring `[profile.release]`
+(`opt-level = 1, lto = false`, matching `kittine-ide`'s already-proven
+approach) which surfaced and fixed a real latent bug — a clean release
+build hitting rustc's default query-recursion limit on the site's
+real, deeply-nested view tree, fixed with `#![recursion_limit = "256"]`)
+— landed 2026-07-19. ~~Ecosystem docs (`kittine-ide`) kept in sync~~
+(`vendor/kittine` submodule bumped to latest `main`; `ide-app/Cargo.toml`
+was missing `leptos_meta` as a dependency, same class of gap already
+fixed in `example-app` — added and verified with a real `cargo check` +
+full `npm run build`; `README.md`'s language cheat-sheet
+updated off the retired `<<Type>>` syntax and "no structs/generics"
+claims, both wrong since earlier today) — landed 2026-07-19.
 
 Done: ~~Traits (`claw`), trait implementations (`bare .. for ..`), bounded
 generics~~ (closes Phase 1's "a real type system" gap — see
