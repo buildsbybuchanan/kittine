@@ -186,8 +186,22 @@ vision](#full-vision-phased-honest) are where these get addressed.
 
 ## Next up
 
-Nothing open right now (see Done below) — add here the moment a real gap
-turns up (per the standing rule at the top of this file).
+- **No way to read an `on<Event>` handler's event value.** Discovered
+  building a topic-filter search box for `kittine-website`'s `/docs/language`
+  page: every event handler attribute (`onClick`, `onInput`, ...) lowers to
+  a Leptos `move |_| <mutation>` closure — the event object itself is
+  always discarded (see [LANGUAGE.md § The view
+  syntax](LANGUAGE.md#the-view-syntax)). `onClick={<{name}> >> value}`
+  never needed the event anyway (`value` is a fixed expression), but a
+  text `<input>`'s `onInput` has nothing else to mutate a signal *to* —
+  real free-text search needs `event_target_value(&ev)`, which requires
+  the handler closure to actually bind `ev` instead of `_`. Worked around
+  for now with a reactive `data-filter` attribute + CSS (topic pills, not
+  free text) — the same pattern the code-comparison toggle tabs already
+  use — but that only works when the set of choices is fixed ahead of
+  time, not for arbitrary typed text. A real fix needs a way to name and
+  bind the event argument in an `on<Event>` handler's expression position,
+  then read a string out of it (`event_target_value`-equivalent).
 
 Done: ~~`kittine-compiler` provisioning for Vercel builds (kittine-ide)~~
 (`kittine-ide/scripts/vercel-build.sh` builds `kittine-compiler` from the
