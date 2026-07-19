@@ -151,6 +151,24 @@ func Counter() {
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
 
+## Shorter than the Rust it generates
+
+Kittine's syntax is deliberately compact and unusual — every construct is
+built to be quicker to type and read than the Rust it lowers to, not just
+different from it:
+
+| Kittine | Generated Rust |
+| --- | --- |
+| `greet('World')` (where `greet(<<Word>> name)`) | `greet("World".to_string())` |
+| `<{count}> >> <<Num>> 0` | `let (count, set_count) = signal(0f64);` |
+| `<{ready}> >> yes>` | `let (ready, set_ready) = signal(true);` |
+| `craft<'Welcome Admin'>` | `leptos::logging::log!("Welcome Admin");` |
+| `spin<{n}> in [1, 2, 3] }{ craft<n> }{` | `for n in (vec![1, 2, 3]).into_iter() { leptos::logging::log!("{}", n); }` |
+
+See [docs/LANGUAGE.md § Brevity by design](docs/LANGUAGE.md#brevity-by-design)
+for the two rules that keep this true as the language grows, and more
+side-by-sides.
+
 ## Prerequisites
 
 - Rust (stable) with the `wasm32-unknown-unknown` target:
