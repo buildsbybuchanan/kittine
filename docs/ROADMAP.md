@@ -25,8 +25,9 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `spin` loops (both imperative-statement and reactive-list-in-view forms),
   function calls, arithmetic/string-concat expressions, comparisons
   (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
-  arrays (including array-typed props/returns — `<<Num[]>>`/`<<Word[]>>`/
-  `<<Flag[]>>`), booleans, type tags (`<<Num>>`/`<<Word>>`/`<<Flag>>`),
+  arrays (including array-typed props/returns — `#n[]`/`#w[]`/`#f[]`),
+  booleans, type tags (`#n`/`#w`/`#f`, a two-character sigil form —
+  see [LANGUAGE.md § Type tags](LANGUAGE.md#type-tags)),
   logical `&&`/`||` combining comparisons into one condition, method
   calls (`receiver.method(arg, ..)`, chains work), calling the result of
   an expression (`callee(arg, ..)` where `callee` isn't a bare name),
@@ -169,13 +170,24 @@ architecture decision rather than a quick increment) is done too — see
 [SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
 turns up (per the standing rule at the top of this file).
 
-Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
+Done: ~~Type-tag sigil redesign~~ (`<<Num>>`/`<<Word>>`/`<<Flag>>` and
+their `[]` array forms retired in favor of `#n`/`#w`/`#f`/`#n[]`/`#w[]`/`#f[]`
+— a breaking change, no closing delimiter needed, and shorter than every
+Rust type they stand for: `#n` (2 chars) vs `f64` (3), `#w` (2) vs
+`String` (6), `#f` (2) vs `bool` (4), array forms similarly. Motivated by
+the standing "always shorter than the Rust it generates" design rule —
+see [LANGUAGE.md § Brevity by design](LANGUAGE.md#brevity-by-design) —
+which the old bracket-wrapped form violated for every scalar type. All 76
+compiler tests, every `example-app`/`example-ssr` `.kitty` source file,
+the VS Code grammar, and the docs were updated together; regenerating the
+committed `.rs` output changed zero bytes, confirming the tag is purely
+front-end sugar) — landed 2026-07-19. ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
 param + `children()`) — landed 2026-07-18. ~~Routing~~ (`leptos_router`
 composed with zero new syntax) — landed 2026-07-18. ~~Comparison
 operators~~ (`<`/`<=`/`>`/`>=`/`!=`, usable generally not just in
 conditions) — landed 2026-07-18. ~~Array-typed props/returns~~
-(`<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`) — landed 2026-07-18. ~~`export`/
+(`#n[]`/`#w[]`/`#f[]`) — landed 2026-07-18. ~~`export`/
 visibility control~~ (`private func`/`purr`, enforced by Rust's own
 privacy rules) — landed 2026-07-18. ~~Logical `&&`/`||`~~ (combine
 comparisons into one condition, usable generally not just in

@@ -1,4 +1,4 @@
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return (
         <nav>
             "Section: "

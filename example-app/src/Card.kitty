@@ -1,4 +1,4 @@
-func Card(<<Word>> title, children) {
+func Card(#w title, children) {
     return (
         <div class='card'>
             <h3>{ title }</h3>

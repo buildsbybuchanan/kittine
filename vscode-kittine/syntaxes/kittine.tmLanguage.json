@@ -70,11 +70,11 @@
       "patterns": [
         {
           "name": "meta.type-tag.kitty",
-          "match": "(<<)(Num|Word|Flag)(>>)",
+          "match": "(#)([nwf])(\\[\\])?",
           "captures": {
             "1": { "name": "punctuation.definition.type-tag.begin.kitty" },
             "2": { "name": "storage.type.kitty" },
-            "3": { "name": "punctuation.definition.type-tag.end.kitty" }
+            "3": { "name": "punctuation.definition.array.kitty" }
           }
         }
       ]

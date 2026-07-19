@@ -1,4 +1,4 @@
-func NavList(<<Word[]>> items) {
+func NavList(#w[] items) {
     return (
         <ul>
             spin<{item}> in items key(item.to_uppercase()) }{

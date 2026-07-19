@@ -13,15 +13,15 @@
 //!   conditions becoming `==` comparisons and variable reads becoming
 //!   `.get()` calls.
 //! - `[a, b, c]` becomes `vec![a, b, c]`; `yes>` / `no>` become `true` /
-//!   `false`; a `<<Type>>` tag is erased (it's a compile-time-only check —
+//!   `false`; a `#t` tag is erased (it's a compile-time-only check —
 //!   see `parser::parse_type_tag`), emitting just the inner value.
 //! - `spin<{item}> in list }{ .. }{` becomes a plain `for item in
 //!   (list).into_iter() { .. }`.
-//! - `func Name(<<Type>> prop, ..) { .. }` becomes a Leptos `#[component]`
+//! - `func Name(#t prop, ..) { .. }` becomes a Leptos `#[component]`
 //!   whose props are plain typed Rust function parameters (see
 //!   [`rust_type`]) — not signals, since props don't get their own
 //!   `<{name}>` declaration site.
-//! - `purr name(<<Type>> param, ..) <<ReturnType>> { .. return (expr) }`
+//! - `purr name(#t param, ..) #t { .. return (expr) }`
 //!   becomes a plain `pub fn name(param: Type) -> ReturnType { .. expr }`
 //!   — no view, no `#[component]`.
 //! - `import { A, B } from 'path.kitty'` becomes `#[path = "path.rs"] mod
@@ -535,7 +535,7 @@ fn render_call(name: &str, args: &[Expr], render: &dyn Fn(&Expr) -> String, scop
     format!("{callee}({})", rendered.join(", "))
 }
 
-/// `true` for a string literal, optionally wrapped in a `<<Word>>` type
+/// `true` for a string literal, optionally wrapped in a `#w` type
 /// tag — used by [`render_call`] to decide whether an argument needs
 /// `.to_string()` for a known `Word` parameter.
 fn is_bare_string_literal(expr: &Expr) -> bool {
@@ -589,7 +589,7 @@ fn render_array(items: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
     format!("vec![{}]", rendered.join(", "))
 }
 
-/// `true` if `expr` (after stripping a `<<Type>>` tag) is an array literal —
+/// `true` if `expr` (after stripping a `#t` tag) is an array literal —
 /// used to decide whether `craft<...>` should format with `{:?}` (arrays
 /// have no `Display` impl) instead of `{}`.
 fn is_array_like(expr: &Expr) -> bool {
