@@ -1585,3 +1585,48 @@ purr doubled(#n n) #n {
     assert!(out.contains("pub fn Home()"));
     assert!(out.contains("pub fn doubled(n: f64) -> f64"));
 }
+
+/// `data-*`/`aria-*` attributes are ordinary kebab-case HTML attribute
+/// names, not identifiers — a lone `-` here can only ever be a
+/// continuation of the attribute name (never subtraction), since this is
+/// a dedicated attribute-name parsing position, not an expression.
+/// Found and fixed while building the real Kittine marketing site, which
+/// uses `data-kittine-component` for inspect-mode fingerprinting.
+#[test]
+fn kebab_case_attribute_names_are_supported() {
+    let out = compile(
+        r#"
+func Card() {
+    return (
+        <div data-kittine-component='Card' aria-hidden='true'>
+            <p>"hi"</p>
+        </div>
+    )
+}
+"#,
+    );
+    assert!(out.contains(r#"data-kittine-component="Card""#));
+    assert!(out.contains(r#"aria-hidden="true""#));
+}
+
+/// A reactive HTML attribute (not an event handler, not a component prop)
+/// bound to a plain signal read — the pattern the site's toggle UI (code
+/// comparison / install tabs) uses to switch visible panels via CSS
+/// instead of a conditional-view language feature that doesn't exist yet.
+#[test]
+fn reactive_attribute_bound_to_signal_read() {
+    let out = compile(
+        r#"
+func Toggle() {
+    <{view}> >> 'a'
+
+    return (
+        <div data-active-view={view}>
+            <p>"hi"</p>
+        </div>
+    )
+}
+"#,
+    );
+    assert!(out.contains("data-active-view=move ||"));
+}

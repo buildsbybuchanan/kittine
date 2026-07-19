@@ -5,6 +5,7 @@ use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::*;
 use leptos_router::hooks::*;
+use leptos_meta::*;
 
 pub fn greet(name: String) -> String {
     format!("{}{}", "Hello, ", name.clone())

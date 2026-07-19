@@ -75,6 +75,13 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `example-app`'s Vite-based CSR path
   is unaffected and remains the simpler default for apps that don't need
   SEO/first-paint.
+- **Kebab-case JSX attributes** (`data-*`/`aria-*`) parse correctly —
+  a `-` right after an attribute name is always a name continuation,
+  never subtraction. `leptos_meta` (`<Title>`/`<Meta>`/`<Link>`/
+  `<Stylesheet>`) is now in scope in every generated file alongside
+  `leptos_router`, ready for a page to use once Leptos's own
+  `provide_meta_context()` wiring is documented — no `.kitty` file
+  exercises it yet.
 - **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -170,7 +177,14 @@ architecture decision rather than a quick increment) is done too — see
 [SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
 turns up (per the standing rule at the top of this file).
 
-Done: ~~Type-tag sigil redesign~~ (`<<Num>>`/`<<Word>>`/`<<Flag>>` and
+Done: ~~Kebab-case JSX attributes~~ (`data-*`/`aria-*` parse as a single
+attribute name, not identifier-minus-identifier; found while building the
+real marketing site's `data-kittine-component` inspect-mode fingerprint)
+and ~~`leptos_meta` in scope~~ (unconditional `use leptos_meta::*;` in
+every generated file, `example-app/Cargo.toml` gained the dependency it
+was missing; preparatory — no page uses `<Title>`/`<Meta>` yet, since that
+also needs `provide_meta_context()` wiring this repo hasn't documented) —
+landed 2026-07-19. ~~Type-tag sigil redesign~~ (`<<Num>>`/`<<Word>>`/`<<Flag>>` and
 their `[]` array forms retired in favor of `#n`/`#w`/`#f`/`#n[]`/`#w[]`/`#f[]`
 — a breaking change, no closing delimiter needed, and shorter than every
 Rust type they stand for: `#n` (2 chars) vs `f64` (3), `#w` (2) vs

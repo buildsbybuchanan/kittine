@@ -8,6 +8,25 @@ grouped by date until the first tagged release.
 
 ## [Unreleased] - 2026-07-19
 
+### Added
+
+- **Kebab-case JSX attribute names** (`data-*`, `aria-*`, and any other
+  hyphenated attribute) are now parsed correctly — a `-` immediately
+  after an attribute name is read as a continuation of that name, never
+  as subtraction, since attribute-name position is a dedicated parsing
+  context rather than a general expression. Found while building real
+  `data-kittine-component`-style inspect-mode fingerprinting. Verified
+  with two new compiler tests and a real `cargo check` build.
+- **`leptos_meta` is now in scope in every generated file**, the same
+  unconditional way `leptos_router` already is — `<Title>`, `<Meta>`,
+  `<Link>`, `<Stylesheet>`, etc. are plain Leptos components, composable
+  with zero new Kittine syntax. `example-app/Cargo.toml` gained the
+  `leptos_meta` dependency it was missing (only `example-ssr` had it).
+  Preparatory only: no `.kitty` file in this repo uses a `leptos_meta`
+  component yet, since doing so also needs Leptos's own
+  `provide_meta_context()` called in the app root — not yet a documented
+  Kittine pattern.
+
 ### Changed
 
 - **Breaking: type tags are now two-character sigils — `#n` (Num), `#w`

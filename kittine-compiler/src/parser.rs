@@ -988,6 +988,18 @@ impl Parser {
                 }
                 TokenKind::Ident(attr_name) => {
                     self.advance();
+                    // HTML/ARIA attribute names are routinely kebab-case
+                    // (`data-*`, `aria-*`) — not valid identifiers on their
+                    // own, so a bare `-` here can only be a continuation of
+                    // the attribute name, never subtraction (this is a
+                    // dedicated attribute-name position, not an expression).
+                    let mut attr_name = attr_name;
+                    while matches!(self.peek().kind, TokenKind::Minus) {
+                        self.advance();
+                        let part = self.expect_ident()?;
+                        attr_name.push('-');
+                        attr_name.push_str(&part);
+                    }
                     self.expect(TokenKind::Eq)?;
                     let value = match self.peek().kind.clone() {
                         TokenKind::LBrace => {

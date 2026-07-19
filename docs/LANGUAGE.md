@@ -1118,6 +1118,11 @@ rendered output. The JSX-like tree supports:
 - **Other attributes**: rendered as-is; string literals stay strings,
   `{expr}` attribute values are wrapped in a `move || ...` closure so they
   stay reactive.
+- **Kebab-case attribute names**: `data-*`/`aria-*` (and any other
+  hyphenated HTML/ARIA attribute — `data-kittine-component`,
+  `aria-hidden`, ...) are supported directly; a `-` in this position is
+  always parsed as part of the attribute name, never as subtraction,
+  since attribute-name position isn't an expression context.
 
 ### Compilation
 
@@ -1181,7 +1186,8 @@ jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
               | jsx_spin
 jsx_spin     := "spin" "<{" IDENT "}>" "in" expr ("key" "(" expr ")")? "}{" jsx_node* "}{"
 jsx_element  := "<" IDENT jsx_attr* ("/>" | ">" jsx_node* "</" IDENT ">")
-jsx_attr     := IDENT "=" (STRING | "{" expr "}")
+jsx_attr     := attr_name "=" (STRING | "{" expr "}")
+attr_name    := IDENT ("-" IDENT)*  // data-*/aria-* kebab-case names
 
 STRING       := "'" char* "'" | '"' char* '"'
 BOOL         := "yes>" | "no>"
@@ -1199,14 +1205,22 @@ use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::*;
 use leptos_router::hooks::*;
+use leptos_meta::*;
 ```
 
 followed by one `mod` + `use` pair per `import`, and then one item per
 `func`/`purr` in the source file, in source order: a `func` becomes
 `#[component] pub fn Name(..) -> impl IntoView { ... }`; a `purr` becomes a
-plain `pub fn name(..) -> ReturnType { ... }`. The `leptos_router` imports
-are unconditional (see [Routing](#routing)) — `unused_imports` is
-allowed at the crate level so files that don't route stay warning-free.
+plain `pub fn name(..) -> ReturnType { ... }`. The `leptos_router` and
+`leptos_meta` imports are unconditional (see [Routing](#routing)) —
+`unused_imports` is allowed at the crate level so files that don't route
+or set page metadata stay warning-free. `leptos_meta` brings `<Title>`,
+`<Meta>`, `<Link>`, `<Stylesheet>`, etc. into scope as plain Leptos
+components (composed exactly like `<Router>`/`<Route>`, no dedicated
+Kittine syntax) — wired in, but not yet exercised by a real `.kitty` page
+in this repo; using one requires calling Leptos's own
+`provide_meta_context()` somewhere in the app root first (not yet a
+documented Kittine pattern).
 
 `kittine-compiler build <entry>.kitty` compiles the whole reachable
 `import` graph, not just `<entry>` itself, in two passes: first a

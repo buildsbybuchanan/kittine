@@ -142,7 +142,12 @@ pub fn generate(program: &Program, known_functions: &HashMap<String, Vec<String>
     // scope the same unconditional way so a dynamic route's page can read
     // its segment via `use_params_map().get().get("id")` (see
     // `Expr::MethodCall`) with no new Kittine syntax at all.
-    out.push_str("use leptos_router::hooks::*;\n\n");
+    out.push_str("use leptos_router::hooks::*;\n");
+    // Same reasoning as leptos_router above: `<Title>`, `<Meta>`, `<Link>`,
+    // `<Stylesheet>` etc. are plain Leptos components (see
+    // `is_component_tag`), not Kittine syntax, needed by any page that
+    // wants to set its own per-route `<title>`/meta description for SEO.
+    out.push_str("use leptos_meta::*;\n\n");
     out.push_str(&gen_imports(&program.imports));
     for item in &program.items {
         match item {
