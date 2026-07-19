@@ -60,7 +60,7 @@ nothing in this extension's structure needs to change to support that.
 | `craft<...>` | `keyword.other.craft` |
 | `'...'` and `"..."` | `string.quoted.*` |
 | `yes>` / `no>` | `constant.language.boolean` |
-| `<<Num>>` / `<<Word>>` / `<<Flag>>` (or `[]` for an array of one) | `storage.type.kittine` |
+| `#n` / `#w` / `#f` (or `#n[]`/`#w[]`/`#f[]` for an array of one) | `storage.type.kittine` |
 | `spin` / `in` | `keyword.control.loop` |
 | `[` / `]` | `punctuation.definition.array` |
 | `func`, `purr`, `return` | `storage.type.function` / `keyword.control.flow` |

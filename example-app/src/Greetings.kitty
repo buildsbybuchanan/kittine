@@ -1,3 +1,3 @@
-purr greet(<<Word>> name) <<Word>> {
+purr greet(#w name) #w {
     return ('Hello, ' + name)
 }

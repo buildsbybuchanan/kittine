@@ -19,6 +19,14 @@ pub enum TokenKind {
     KeywordElse,    // else>
     KeywordCraft,   // craft<
 
+    // Type-tag sigils: #n (Num), #w (Word), #f (Flag), each optionally
+    // followed by `[]` for an array of that type. Deliberately shorter than
+    // every Rust type they lower to (f64/String/bool/Vec<..>) and need no
+    // closing delimiter, unlike the retired `<<Type>>` form.
+    TypeNum,  // #n
+    TypeWord, // #w
+    TypeFlag, // #f
+
     // JSX punctuation
     Lt,      // <
     Gt,      // >
@@ -40,7 +48,7 @@ pub enum TokenKind {
     KeywordFunc,
     KeywordReturn,
     KeywordSpin, // spin<{item}> in <list> }{ .. }{
-    KeywordPurr,    // purr name(..) <<Type>> { .. }
+    KeywordPurr,    // purr name(..) #t { .. }
     KeywordPrivate, // private func/purr ..
     KeywordImport, // import { A, B } from '...'
     KeywordFrom,
@@ -82,6 +90,9 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordOrif => write!(f, "orif>"),
             TokenKind::KeywordElse => write!(f, "else>"),
             TokenKind::KeywordCraft => write!(f, "craft<"),
+            TokenKind::TypeNum => write!(f, "#n"),
+            TokenKind::TypeWord => write!(f, "#w"),
+            TokenKind::TypeFlag => write!(f, "#f"),
             TokenKind::Lt => write!(f, "<"),
             TokenKind::Gt => write!(f, ">"),
             TokenKind::SlashGt => write!(f, "/>"),
@@ -377,6 +388,32 @@ impl Lexer {
                     line,
                     col,
                 });
+                continue;
+            }
+
+            // Type-tag sigils: #n / #w / #f. Read directly off the second
+            // character the same way `if>`/`craft<` fuse a keyword with its
+            // trailing punctuation below, rather than lexing `#` and the
+            // letter as two separate tokens.
+            if c == '#' {
+                let kind = match self.peek_at(1) {
+                    Some('n') => TokenKind::TypeNum,
+                    Some('w') => TokenKind::TypeWord,
+                    Some('f') => TokenKind::TypeFlag,
+                    other => {
+                        return Err(LexError {
+                            message: format!(
+                                "unknown type sigil '#{}': expected #n (Num), #w (Word), or #f (Flag)",
+                                other.map(String::from).unwrap_or_default()
+                            ),
+                            line,
+                            col,
+                        });
+                    }
+                };
+                self.advance();
+                self.advance();
+                tokens.push(Token { kind, line, col });
                 continue;
             }
 

@@ -6,7 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
-## [Unreleased] - 2026-07-18
+## [Unreleased] - 2026-07-19
+
+### Changed
+
+- **Breaking: type tags are now two-character sigils — `#n` (Num), `#w`
+  (Word), `#f` (Flag), with `#n[]`/`#w[]`/`#f[]` for an array of one.**
+  Retires the bracket-wrapped `<<Num>>`/`<<Word>>`/`<<Flag>>` /
+  `<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>` form entirely — existing `.kitty`
+  source using the old form must be updated (mechanical: `<<Num>>` → `#n`,
+  `<<Word[]>>` → `#w[]`, etc., no semantic change). Motivated by the
+  [Brevity by design](docs/LANGUAGE.md#brevity-by-design) rule added
+  earlier today, which the old form was actually violating for every
+  scalar type — `<<Word>>` (8 characters) was *longer* than the `String`
+  (6 characters) it lowers to, and `<<Flag>>`/`<<Num>>` were longer than
+  `bool`/`f64` too. The new sigil is shorter than every Rust type it can
+  stand for (`#n` vs `f64`, `#w` vs `String`, `#f` vs `bool`, and the
+  array forms similarly against `Vec<..>`) and needs no closing
+  delimiter, unlike the old form's `>>`.
+  - Lexed as a single fused token straight off the `#` + type-initial
+    character (`lexer::TokenKind::TypeNum`/`TypeWord`/`TypeFlag`), the
+    same way `if>`/`craft<` already fuse a keyword with its trailing
+    punctuation — not two separate `<` tokens needing a matching `>>`
+    like the retired form did. An unrecognized sigil letter (anything
+    other than `n`/`w`/`f`) is now a lex error, not a parse error, since
+    `#` has no other meaning in Kittine.
+  - Purely a front-end syntax change: type tags still erase to nothing in
+    codegen, so every `.kitty` file across `example-app` and `example-ssr`
+    was updated to the new sigils and re-run through `kittine-compiler
+    build` — the regenerated `.rs` output is **byte-for-byte identical**
+    to before, confirming this is sugar, not a behavior change. All 76
+    existing compiler tests updated to the new syntax and passing; the VS
+    Code extension's TextMate grammar and every doc mentioning type tags
+    (`LANGUAGE.md`, `README.md`, `ROADMAP.md`, `VSCODE_EXTENSION.md`,
+    `vscode-kittine/README.md`) updated to match.
+
+### Documentation
+
+- **"Brevity by design"**: a new section in
+  [docs/LANGUAGE.md](docs/LANGUAGE.md#brevity-by-design), and a matching
+  table in [README.md](README.md#shorter-than-the-rust-it-generates),
+  stating the design constraint explicitly and showing it with real
+  Kittine-vs-generated-Rust side-by-sides pulled from
+  `kittine-compiler/src/tests.rs` (not invented for effect) — signals,
+  booleans, `craft<...>`, `spin` loops, and the `greet('World')` →
+  `greet("World".to_string())` `Word`-parameter coercion. Codifies two
+  mechanical rules (one token doing the work of several Rust ones; types
+  and ownership inferred rather than spelled out) as a standing constraint
+  for any future language addition, not just a one-time pass over the
+  existing syntax. No compiler or grammar changes — existing `.kitty`
+  syntax and generated output are unaffected.
 
 ### Investigated
 

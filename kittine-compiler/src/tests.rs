@@ -348,9 +348,9 @@ fn type_tag_erases_to_bare_value() {
     let out = compile(
         r#"
 func App() {
-    <{count}> >> <<Num>> 0
-    <{label}> >> <<Word>> 'hi'
-    <{ready}> >> <<Flag>> yes>
+    <{count}> >> #n 0
+    <{label}> >> #w 'hi'
+    <{ready}> >> #f yes>
     return ( <div></div> )
 }
 "#,
@@ -366,7 +366,7 @@ fn type_tag_accepts_a_dynamic_value() {
         r#"
 func App() {
     <{count}> >> 0
-    <{doubled}> >> <<Num>> count
+    <{doubled}> >> #n count
     return ( <div></div> )
 }
 "#,
@@ -379,7 +379,7 @@ fn mismatched_type_tag_is_a_parse_error() {
     let message = compile_err(
         r#"
 func App() {
-    <{count}> >> <<Num>> 'oops'
+    <{count}> >> #n 'oops'
     return ( <div></div> )
 }
 "#,
@@ -388,16 +388,18 @@ func App() {
 }
 
 #[test]
-fn unknown_type_tag_is_a_parse_error() {
-    let message = compile_err(
-        r#"
+fn unknown_type_tag_is_a_lex_error() {
+    // An invalid sigil letter (anything other than n/w/f) is caught by the
+    // lexer itself, since `#` has no other meaning in Kittine — unlike the
+    // retired `<<Type>>` form, this never reaches the parser.
+    let src = r#"
 func App() {
-    <{count}> >> <<Nope>> 0
+    <{count}> >> #z 0
     return ( <div></div> )
 }
-"#,
-    );
-    assert!(message.contains("unknown type tag"));
+"#;
+    let err = lexer::tokenize(src).expect_err("expected a lex error for an unknown type sigil");
+    assert!(err.message.contains("unknown type sigil"));
 }
 
 #[test]
@@ -420,7 +422,7 @@ func App() {
 fn component_with_typed_prop() {
     let out = compile(
         r#"
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <span>{ active }</span> )
 }
 "#,
@@ -446,7 +448,7 @@ fn word_prop_used_in_two_places_does_not_conflict_over_moving() {
     // below must pre-clone `active` independently.
     let out = compile(
         r#"
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <div><h1>{ active }</h1><p>{ active }</p></div> )
 }
 "#,
@@ -462,7 +464,7 @@ func Nav(<<Word>> active) {
 fn purr_function_with_params_and_return() {
     let out = compile(
         r#"
-purr double(<<Num>> n) <<Num>> {
+purr double(#n n) #n {
     return (n * 2)
 }
 "#,
@@ -482,7 +484,7 @@ purr double(<<Num>> n) <<Num>> {
 fn component_composition_passes_props_as_plain_values() {
     let out = compile(
         r#"
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <span>{ active }</span> )
 }
 
@@ -516,7 +518,7 @@ func App() {
 fn function_call_with_literal_argument_is_unambiguous_f64() {
     let out = compile(
         r#"
-purr double(<<Num>> n) <<Num>> {
+purr double(#n n) #n {
     return (n * 2)
 }
 
@@ -536,7 +538,7 @@ func App() {
 fn function_call_renders_as_rust_call() {
     let out = compile(
         r#"
-purr double(<<Num>> n) <<Num>> {
+purr double(#n n) #n {
     return (n * 2)
 }
 
@@ -552,12 +554,12 @@ func App() {
 #[test]
 fn string_literal_argument_to_same_file_word_param_is_owned() {
     // A same-file `purr`'s signature is known at codegen time, so a bare
-    // string literal passed where the parameter is `<<Word>>` gets
+    // string literal passed where the parameter is `#w` gets
     // `.to_string()` — it would otherwise render as `&str`, which doesn't
     // type-check against a `Word` parameter's `String`.
     let out = compile(
         r#"
-purr shout(<<Word>> word) <<Word>> {
+purr shout(#w word) #w {
     return (word)
 }
 
@@ -576,7 +578,7 @@ fn string_literal_argument_to_same_file_num_param_is_unaffected() {
     // string literal passed to a non-`Word` parameter position.
     let out = compile(
         r#"
-purr describe(<<Num>> n, <<Word>> label) <<Word>> {
+purr describe(#n n, #w label) #w {
     return (label)
 }
 
@@ -622,7 +624,7 @@ fn cli_build_resolves_imports_recursively() {
     std::fs::write(
         dir.join("Nav.kitty"),
         r#"
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <span>{ active }</span> )
 }
 "#,
@@ -673,7 +675,7 @@ fn cross_file_string_literal_argument_to_word_param_is_owned() {
     std::fs::write(
         dir.join("Greeter.kitty"),
         r#"
-purr greet(<<Word>> name) <<Word>> {
+purr greet(#w name) #w {
     return ('Hello, ' + name)
 }
 "#,
@@ -718,7 +720,7 @@ fn re_export_lets_a_third_file_import_through_an_intermediate() {
     std::fs::write(
         dir.join("A.kitty"),
         r#"
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <span>{ active }</span> )
 }
 "#,
@@ -778,7 +780,7 @@ fn unchanged_output_is_not_rewritten() {
     std::fs::write(
         dir.join("Nav.kitty"),
         r#"
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <span>{ active }</span> )
 }
 "#,
@@ -931,7 +933,7 @@ func List() {
 fn spin_in_view_supports_custom_key() {
     let out = compile(
         r#"
-purr indexOf(<<Num>> n) <<Num>> {
+purr indexOf(#n n) #n {
     return (n * 2)
 }
 
@@ -1020,7 +1022,7 @@ func List() {
 fn component_with_children_param() {
     let out = compile(
         r#"
-func Card(<<Word>> title, children) {
+func Card(#w title, children) {
     return (
         <div>
             <h2>{ title }</h2>
@@ -1339,7 +1341,7 @@ func App() {{
 fn comparison_works_in_purr_functions() {
     let out = compile(
         r#"
-purr isAdult(<<Num>> age) <<Flag>> {
+purr isAdult(#n age) #f {
     return (age >= 18)
 }
 "#,
@@ -1426,7 +1428,7 @@ func App() {
 fn logical_operators_work_in_purr_functions() {
     let out = compile(
         r#"
-purr inRange(<<Num>> n) <<Flag>> {
+purr inRange(#n n) #f {
     return (n >= 0 && n <= 100)
 }
 "#,
@@ -1469,11 +1471,11 @@ func App() {
 fn array_typed_prop_and_return() {
     let out = compile(
         r#"
-func NavList(<<Word[]>> items) {
+func NavList(#w[] items) {
     return ( <ul><li>{ items }</li></ul> )
 }
 
-purr passthrough(<<Num[]>> scores) <<Num[]>> {
+purr passthrough(#n[] scores) #n[] {
     return (scores)
 }
 "#,
@@ -1533,7 +1535,7 @@ fn array_type_tag_checks_element_literals() {
     let message = compile_err(
         r#"
 func App() {
-    <{scores}> >> <<Num[]>> ['a', 'b']
+    <{scores}> >> #n[] ['a', 'b']
     return ( <div></div> )
 }
 "#,
@@ -1545,7 +1547,7 @@ func App() {
 fn private_purr_is_not_pub() {
     let out = compile(
         r#"
-private purr helper(<<Num>> n) <<Num>> {
+private purr helper(#n n) #n {
     return (n * 2)
 }
 "#,
@@ -1575,7 +1577,7 @@ func Home() {
     return ( <div></div> )
 }
 
-purr doubled(<<Num>> n) <<Num>> {
+purr doubled(#n n) #n {
     return (n * 2)
 }
 "#,

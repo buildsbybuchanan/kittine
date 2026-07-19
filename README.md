@@ -59,12 +59,12 @@ This repository is a monorepo with five parts:
 ```kitty
 import { Nav } from './Nav.kitty'
 
-purr doubled(<<Num>> n) <<Num>> {
+purr doubled(#n n) #n {
     return (n * 2)
 }
 
 func Counter() {
-    <{count}> >> <<Num>> 0
+    <{count}> >> #n 0
     <{username}> >> 'Admin'
     <{ready}> >> yes>
 
@@ -101,7 +101,7 @@ func Counter() {
   eagerly at component setup, like `use_navigate()`.
 - `'...'` and `"..."` are fully interchangeable string literals.
 - `yes>` / `no>` are boolean literals; `[a, b, c]` is an array literal.
-- `<<Num>>` / `<<Word>>` / `<<Flag>>` (or `<<Num[]>>`/`<<Word[]>>`/`<<Flag[]>>`
+- `#n` / `#w` / `#f` (or `#n[]`/`#w[]`/`#f[]`
   for an array of one) are type tags — optional on a value, mandatory on a
   prop or a `purr` return type — checked against literal values at compile
   time and erased in the generated Rust.
@@ -116,13 +116,13 @@ func Counter() {
   statement it's a plain imperative loop; inside `return ( ... )` it
   renders one element per item via a reactive Leptos `<For>`, keyed by
   `format!("{item}")` by default or by an optional `key(expr)` clause.
-- `func Name(<<Type>> prop) { .. }` takes typed props; `<Name prop='x' />`
+- `func Name(#t prop) { .. }` takes typed props; `<Name prop='x' />`
   composes it into another view (a capitalized JSX tag is a component
   reference, lowercase is a plain HTML element).
 - `func Card(children) { .. { children() } .. }` — an untyped `children`
   param accepts nested JSX from wherever the component is composed:
   `<Card><p>"nested"</p></Card>`, no extra syntax needed at the call site.
-- `purr name(<<Type>> param) <<Type>> { .. return (expr) }` is a plain
+- `purr name(#t param) #t { .. return (expr) }` is a plain
   function — computes and returns a value, renders no view — called like
   `name(arg)` anywhere an expression is valid.
 - `import { Name } from './file.kitty'` brings another file's
@@ -150,6 +150,24 @@ func Counter() {
   expressions](docs/LANGUAGE.md#path-qualified-expressions).
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
+
+## Shorter than the Rust it generates
+
+Kittine's syntax is deliberately compact and unusual — every construct is
+built to be quicker to type and read than the Rust it lowers to, not just
+different from it:
+
+| Kittine | Generated Rust |
+| --- | --- |
+| `greet('World')` (where `greet(#w name)`) | `greet("World".to_string())` |
+| `<{count}> >> #n 0` | `let (count, set_count) = signal(0f64);` |
+| `<{ready}> >> yes>` | `let (ready, set_ready) = signal(true);` |
+| `craft<'Welcome Admin'>` | `leptos::logging::log!("Welcome Admin");` |
+| `spin<{n}> in [1, 2, 3] }{ craft<n> }{` | `for n in (vec![1, 2, 3]).into_iter() { leptos::logging::log!("{}", n); }` |
+
+See [docs/LANGUAGE.md § Brevity by design](docs/LANGUAGE.md#brevity-by-design)
+for the two rules that keep this true as the language grows, and more
+side-by-sides.
 
 ## Prerequisites
 
