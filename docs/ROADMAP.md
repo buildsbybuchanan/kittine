@@ -151,11 +151,23 @@ these get addressed.
 
 ## Next up
 
-No bounded items remain in this list right now — everything that was here
-has landed (see Done below). SSR/SSG (previously the one open item, flagged
-as needing a real architecture decision rather than a quick increment) is
-done too — see [SSR.md](SSR.md) and the Done entry below. Add here the
-moment a real gap turns up (per the standing rule at the top of this file).
+- **`kittine-compiler` provisioning for Vercel builds (kittine-ide).**
+  `vite-plugin-kittine` shells out to `kittine-compiler` on every `.kitty`
+  transform, so it must resolve on `PATH` before Vite starts. Locally this
+  is solved with `cargo install --path vendor/kittine/kittine-compiler`
+  (installs to `~/.cargo/bin`, already on `PATH`) — see the
+  `kittine-ide` README for the Windows/git-bash PATH-mangling gotcha this
+  surfaced (`spawnSync kittine-compiler ENOENT`). That fix is
+  machine-local only; `kittine-ide`'s `scripts/vercel-build.sh` (per its
+  `CLAUDE.md`) still needs to install/build `kittine-compiler` and put it
+  on `PATH` as part of the Vercel build image before this repo's builds
+  will actually succeed there. Not yet done as of 2026-07-19.
+
+Everything else that was previously listed here has landed (see Done
+below). SSR/SSG (previously the one open item, flagged as needing a real
+architecture decision rather than a quick increment) is done too — see
+[SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
+turns up (per the standing rule at the top of this file).
 
 Done: ~~List rendering in views~~ (`spin` in `return ( ... )` → Leptos
 `<For>`) — landed 2026-07-18. ~~Component children~~ (untyped `children`
