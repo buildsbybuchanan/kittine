@@ -30,14 +30,14 @@ parent [`kittine`](..) project.
   | `'...'` / `"..."` | Fully interchangeable single- and double-quoted strings | `string.quoted.single` / `string.quoted.double` |
   | `yes>` / `no>` | Boolean literals | `constant.language.boolean` |
   | `[a, b, c]` | Array literal | `punctuation.definition.array` |
-  | `<<Num>>` / `<<Word>>` / `<<Flag>>` | Optional type tags, checked against literals at compile time | `storage.type.kittine` |
+  | `#n` / `#w` / `#f` | Type-tag sigils (Num/Word/Flag), checked against literals at compile time | `storage.type.kittine` |
   | `spin<{item}> in list }{ .. }{` | Loop over an array, fenced by `}{` | `keyword.control.loop` |
-  | `func Name(<<Type>> prop) { .. }` | Component with typed props | `storage.type.function` |
-  | `purr name(<<Type>> arg) <<Type>> { .. }` | Plain value-returning function | `storage.type.function` |
+  | `func Name(#t prop) { .. }` | Component with typed props | `storage.type.function` |
+  | `purr name(#t arg) #t { .. }` | Plain value-returning function | `storage.type.function` |
   | `import { A, B } from '...'` | Bring components/functions in from another file | `keyword.control.import` |
   | `private func/purr Name(..)` | Not importable elsewhere (Rust-enforced) | `storage.modifier` |
   | `>>` / `<` / `<=` / `>` / `>=` / `!=` | Comparisons, usable generally not just in conditions | `keyword.operator.assignment` / `keyword.operator.comparison` |
-  | `<<Num[]>>` / `<<Word[]>>` / `<<Flag[]>>` | Array-typed prop/return tags | `storage.type.kittine` |
+  | `#n[]` / `#w[]` / `#f[]` | Array-typed prop/return tags | `storage.type.kittine` |
   | `<Router>`/`<Routes>`/`<Route>`/`<A>` | `leptos_router`, composed like any component — no Kittine-specific syntax | `entity.name.tag` |
   | `return ( <jsx> )` | The embedded JSX-like view syntax that closes a component | `entity.name.tag`, `entity.other.attribute-name` |
   | `// comment` | Line comments (no block comment form exists) | `comment.line.double-slash` |

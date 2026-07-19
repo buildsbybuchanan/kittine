@@ -1,24 +1,24 @@
 import { Nav, Card, NavList } from './components.kitty'
 import { greet } from './Greetings.kitty'
 
-private purr doubled(<<Num>> n) <<Num>> {
+private purr doubled(#n n) #n {
     return (n * 2)
 }
 
-purr isAdult(<<Num>> age) <<Flag>> {
+purr isAdult(#n age) #f {
     return (age >= 18)
 }
 
-purr isWorkingAge(<<Num>> age) <<Flag>> {
+purr isWorkingAge(#n age) #f {
     return (age >= 18 && age <= 65)
 }
 
 func Home() {
-    <{count}> >> <<Num>> 0
+    <{count}> >> #n 0
     <{username}> >> 'Admin'
     <{ready}> >> yes>
     <{age}> >> 25
-    <{sections}> >> <<Word[]>> ['Home', 'About', 'Contact']
+    <{sections}> >> #w[] ['Home', 'About', 'Contact']
 
     if><{username}> >> 'Admin'
         craft<'Welcome Admin'>

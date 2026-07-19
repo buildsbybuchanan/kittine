@@ -28,14 +28,14 @@ pub enum Item {
     Function(Function),
 }
 
-/// A typed parameter in a `func`/`purr` signature: `<<Type>> name`.
+/// A typed parameter in a `func`/`purr` signature: `#t name`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub ty: String,
     pub name: String,
 }
 
-/// A single `func Name(<<Type>> prop, ..) { ... }` component definition.
+/// A single `func Name(#t prop, ..) { ... }` component definition.
 /// Params become the component's props; there is no implicit state tied to
 /// them (unlike `<{name}> >> value` signals).
 #[derive(Debug, Clone, PartialEq)]
@@ -50,7 +50,7 @@ pub struct Component {
     pub is_private: bool,
 }
 
-/// A single `purr name(<<Type>> param, ..) <<ReturnType>> { .. return (expr) }`
+/// A single `purr name(#t param, ..) #t { .. return (expr) }`
 /// plain function definition — computes and returns a value, does not
 /// render a view.
 #[derive(Debug, Clone, PartialEq)]
@@ -122,7 +122,7 @@ pub enum Expr {
     Bool(bool),
     /// `[expr, expr, ..]` array literal.
     Array(Vec<Expr>),
-    /// `<<Type>> expr` — an explicit `Num` / `Word` / `Flag` type tag
+    /// `#t expr` — an explicit `Num` / `Word` / `Flag` type tag
     /// wrapping a value. Checked against literal values at parse time;
     /// erased (the inner value is emitted as-is) at codegen time.
     Typed {

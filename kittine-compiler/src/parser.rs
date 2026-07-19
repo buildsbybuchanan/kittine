@@ -165,35 +165,40 @@ impl Parser {
         Ok(Import { names, path, is_export })
     }
 
-    /// Parses a signature-position type tag `<<Type>>` (no value follows —
-    /// used for parameter and return-type annotations, as opposed to
-    /// [`Parser::parse_type_tag`] which wraps a value).
-    /// Parses `<<Type>>` or `<<Type[]>>` (an array of `Type`), returning
-    /// `"Type"` or `"Type[]"` respectively — the `[]` suffix mirrors the
-    /// array-literal syntax (`[expr, ..]`) rather than inventing a new
-    /// bracket convention.
+    /// Parses a signature-position type tag: `#n`/`#w`/`#f`, no value
+    /// follows (used for parameter and return-type annotations, as opposed
+    /// to [`Parser::parse_type_tag`] which wraps a value). Also accepts a
+    /// trailing `[]` for an array of that type (`#w[]`), returning
+    /// `"Word[]"` etc. — the `[]` suffix mirrors the array-literal syntax
+    /// (`[expr, ..]`) rather than inventing a new bracket convention. No
+    /// closing delimiter is needed (unlike the retired `<<Type>>` form) —
+    /// the sigil itself carries the type, so the tag is at most 4
+    /// characters (`#w[]`) even for an array.
     fn parse_signature_type(&mut self) -> PResult<String> {
-        self.expect(TokenKind::Lt)?;
-        self.expect(TokenKind::Lt)?;
-        let mut ty = self.expect_ident()?;
-        if !matches!(ty.as_str(), "Num" | "Word" | "Flag") {
-            return Err(self.err(format!(
-                "unknown type tag '<<{ty}>>': expected one of Num, Word, Flag (optionally followed by [] for an array)"
-            )));
-        }
+        let mut ty = match self.peek().kind {
+            TokenKind::TypeNum => "Num".to_string(),
+            TokenKind::TypeWord => "Word".to_string(),
+            TokenKind::TypeFlag => "Flag".to_string(),
+            _ => {
+                return Err(self.err(format!(
+                    "expected a type tag (#n for Num, #w for Word, or #f for Flag), found '{}'",
+                    self.peek().kind
+                )));
+            }
+        };
+        self.advance();
         if matches!(self.peek().kind, TokenKind::LBracket) {
             self.advance();
             self.expect(TokenKind::RBracket)?;
             ty.push_str("[]");
         }
-        self.expect(TokenKind::OpAssign)?;
         Ok(ty)
     }
 
-    /// Parses a single `<<Type>> name` parameter — or the special
-    /// untyped `children` shorthand, which needs no type tag since it
-    /// isn't one of `Num`/`Word`/`Flag`: it's Leptos's `Children`, bound to
-    /// whatever JSX content a caller nests inside `<ThisComponent>..</ThisComponent>`.
+    /// Parses a single `#t name` parameter — or the special untyped
+    /// `children` shorthand, which needs no type tag since it isn't one of
+    /// `Num`/`Word`/`Flag`: it's Leptos's `Children`, bound to whatever JSX
+    /// content a caller nests inside `<ThisComponent>..</ThisComponent>`.
     fn parse_param(&mut self) -> PResult<Param> {
         if let TokenKind::Ident(name) = self.peek().kind.clone()
             && name == "children"
@@ -209,7 +214,7 @@ impl Parser {
         Ok(Param { ty, name })
     }
 
-    /// Parses `(<<Type>> name, <<Type>> name, ..)`.
+    /// Parses `(#t name, #t name, ..)`.
     fn parse_param_list(&mut self) -> PResult<Vec<Param>> {
         self.expect(TokenKind::LParen)?;
         let mut params = Vec::new();
@@ -224,7 +229,7 @@ impl Parser {
         Ok(params)
     }
 
-    /// Parses `purr name(<<Type>> param, ..) <<ReturnType>> { stmt* return (expr) }`.
+    /// Parses `purr name(#t param, ..) #t { stmt* return (expr) }`.
     fn parse_function(&mut self, is_private: bool) -> PResult<Function> {
         self.expect(TokenKind::KeywordPurr)?;
         let name = self.expect_ident()?;
@@ -783,7 +788,9 @@ impl Parser {
                 }
             }
             TokenKind::LBracket => self.parse_array_literal(),
-            TokenKind::Lt => self.parse_type_tag(),
+            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag => {
+                self.parse_type_tag()
+            }
             other => Err(self.err(format!("unexpected token '{other}' in expression"))),
         }
     }
@@ -819,10 +826,10 @@ impl Parser {
         Ok(Expr::Array(items))
     }
 
-    /// Parses `<<Type>> expr`, the idiomatic Kittine type tag. `<<` and `>>`
-    /// are not fused tokens — they fall out naturally from two `Lt`s and the
-    /// existing `OpAssign` (`>>`) token, disambiguated purely by being read
-    /// from inside an expression instead of a `<{name}>` or JSX position.
+    /// Parses `#t expr`, the idiomatic Kittine type tag (`#n`/`#w`/`#f`,
+    /// optionally `[]`-suffixed) applied to a value. The sigil is a single
+    /// fused token (see `lexer::TokenKind::TypeNum` and friends), so unlike
+    /// the retired `<<Type>>` form there's no closing bracket to look for.
     fn parse_type_tag(&mut self) -> PResult<Expr> {
         let start = self.peek().clone();
         let ty = self.parse_signature_type()?;
@@ -839,8 +846,15 @@ impl Parser {
             _ => true, // a variable read or computed expression — trust the annotation
         };
         if !matches_ty {
+            let sigil = match ty.as_str() {
+                "Num" | "Num[]" => "#n",
+                "Word" | "Word[]" => "#w",
+                _ => "#f",
+            };
             return Err(ParseError {
-                message: format!("type tag '<<{ty}>>' does not match the value that follows"),
+                message: format!(
+                    "type tag '{sigil}' ({ty}) does not match the value that follows"
+                ),
                 line: start.line,
                 col: start.col,
             });

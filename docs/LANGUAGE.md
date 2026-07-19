@@ -29,7 +29,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
 - [Arrays (`[ ]`)](#arrays)
-- [Type tags (`<<Type>>`)](#type-tags)
+- [Type tags (`#n` / `#w` / `#f`)](#type-tags)
 - [Printing (`craft<...>`)](#printing-craft)
 - [Control flow (`if>` / `orif>` / `else>`)](#control-flow)
 - [Loops (`spin` / `}{`)](#loops)
@@ -53,8 +53,8 @@ invented for effect:
 
 | Kittine | Generated Rust |
 | --- | --- |
-| `greet('World')` (where `greet(<<Word>> name)`) | `greet("World".to_string())` |
-| `<{count}> >> <<Num>> 0` | `let (count, set_count) = signal(0f64);` |
+| `greet('World')` (where `greet(#w name)`) | `greet("World".to_string())` |
+| `<{count}> >> #n 0` | `let (count, set_count) = signal(0f64);` |
 | `<{ready}> >> yes>` | `let (ready, set_ready) = signal(true);` |
 | `if><{username}> >> 'Admin'` … `orif>` … `else>` | `if username.get() == "Admin" { .. } else if .. { .. } else { .. }` |
 | `craft<'Welcome Admin'>` | `leptos::logging::log!("Welcome Admin");` |
@@ -69,7 +69,7 @@ Two mechanical rules keep the promise real rather than aspirational:
    disambiguates, the same way `craft<...>` is always shorter than
    `leptos::logging::log!(...)` and `yes>`/`no>` are always shorter than
    `true`/`false`.
-2. **Types and ownership are inferred, not spelled out.** `<<Word>>` is
+2. **Types and ownership are inferred, not spelled out.** `#w` is
    optional on a value and erased entirely from the generated Rust; a
    `.to_string()`/`.clone()` the borrow checker would otherwise force a
    human to add by hand (see the `greet` row above) is inserted by
@@ -90,7 +90,7 @@ func App() {
 }
 ```
 
-`func Name(<<Type>> prop, ..) { ... }` declares a component named `Name`.
+`func Name(#t prop, ..) { ... }` declares a component named `Name`.
 Every component body may contain any number of statements, followed by
 exactly one `return ( ... )` view expression as its last meaningful element.
 
@@ -99,7 +99,7 @@ A component compiles to a Leptos `#[component] pub fn Name(..) -> impl IntoView 
 ## Props
 
 ```kitty
-func Nav(<<Word>> active) {
+func Nav(#w active) {
     return ( <span>{ active }</span> )
 }
 ```
@@ -111,9 +111,9 @@ composition](#component-composition)). Unlike `<{name}> >> value` signals,
 a prop is a plain value, not reactive state — there's no setter, and
 reading it is just the bare name (`active`, not `<{active}>`).
 
-Every prop must carry an explicit [type tag](#type-tags): `<<Num>>`,
-`<<Word>>`, `<<Flag>>`, or an array of one of those (`<<Num[]>>`,
-`<<Word[]>>`, `<<Flag[]>>`). There is no prop-type inference. The one
+Every prop must carry an explicit [type tag](#type-tags): `#n`,
+`#w`, `#f`, or an array of one of those (`#n[]`,
+`#w[]`, `#f[]`). There is no prop-type inference. The one
 exception is the special `children` parameter — see
 [Children](#children) — which takes no type tag at all.
 
@@ -121,9 +121,9 @@ exception is the special `children` parameter — see
 
 | Kittine | Generated Rust |
 |---|---|
-| `func Nav(<<Word>> active) { .. }` | `pub fn Nav(active: String) -> impl IntoView { .. }` |
-| `func Card(<<Num>> price, <<Flag>> onSale) { .. }` | `pub fn Card(price: f64, onSale: bool) -> impl IntoView { .. }` |
-| `func NavList(<<Word[]>> items) { .. }` | `pub fn NavList(items: Vec<String>) -> impl IntoView { .. }` |
+| `func Nav(#w active) { .. }` | `pub fn Nav(active: String) -> impl IntoView { .. }` |
+| `func Card(#n price, #f onSale) { .. }` | `pub fn Card(price: f64, onSale: bool) -> impl IntoView { .. }` |
+| `func NavList(#w[] items) { .. }` | `pub fn NavList(items: Vec<String>) -> impl IntoView { .. }` |
 
 Reading a `Word` prop or any array-typed prop clones it (`items.clone()`)
 rather than moving it, since a prop may be read from more than one
@@ -148,12 +148,12 @@ local](#plain-local-bindings-hold) — not just props.
 ## Functions (`purr`)
 
 ```kitty
-purr double(<<Num>> n) <<Num>> {
+purr double(#n n) #n {
     return (n * 2)
 }
 ```
 
-`purr name(<<Type>> param, ..) <<ReturnType>> { .. return (expr) }` declares
+`purr name(#t param, ..) #t { .. return (expr) }` declares
 a plain function: it computes and returns a value, and does not render a
 view. Unlike a component, its signature also carries an explicit
 **return-type** tag right after the parameter list, before the body's `{`.
@@ -168,7 +168,7 @@ computed values) between components without duplicating it.
 attribute, no `view!`):
 
 ```kitty
-purr double(<<Num>> n) <<Num>> {
+purr double(#n n) #n {
     return (n * 2)
 }
 ```
@@ -202,7 +202,7 @@ rendered exactly as it would be anywhere else (a signal read becomes
 
 Calling a known `purr` — one defined in the same file, *or* reached
 through the whole `import` graph — also gets one more piece of real type
-checking: a bare string-literal argument at a `<<Word>>` parameter
+checking: a bare string-literal argument at a `#w` parameter
 position renders as an owned `String`, not a borrowed `&str`, because
 `kittine-compiler build` collects every reachable file's `purr` signatures
 before generating any single file's code (see [Compilation
@@ -210,7 +210,7 @@ model](#compilation-model)):
 
 | Kittine | Generated Rust |
 |---|---|
-| `greet('World')` (where `greet(<<Word>> name)`) | `greet("World".to_string())` |
+| `greet('World')` (where `greet(#w name)`) | `greet("World".to_string())` |
 
 This works whether `greet` is defined in the same file or brought in via
 `import` — only a call to a function Kittine has *no* signature for at
@@ -290,7 +290,7 @@ imports), writing every `.kitty` file in the import graph to its sibling
 ### Visibility
 
 ```kitty
-private purr internalHelper(<<Num>> n) <<Num>> {
+private purr internalHelper(#n n) #n {
     return (n * 2)
 }
 ```
@@ -382,7 +382,7 @@ attribute needs for reactivity:
 ### Children
 
 ```kitty
-func Card(<<Word>> title, children) {
+func Card(#w title, children) {
     return (
         <div class='card'>
             <h3>{ title }</h3>
@@ -770,40 +770,43 @@ arrays with Rust's `{:?}` (`Debug`) formatter instead of `{}`.
 ## Type tags
 
 ```kitty
-<{count}> >> <<Num>> 0
-<{label}> >> <<Word>> 'hi'
-<{ready}> >> <<Flag>> yes>
+<{count}> >> #n 0
+<{label}> >> #w 'hi'
+<{ready}> >> #f yes>
 ```
 
-`<<Type>> value` is an explicit type tag — the idiomatic Kittine way to
-annotate a value's type. There are three scalar type names, plus an array
-form for each:
+`#t value` is an explicit type tag — the idiomatic Kittine way to annotate
+a value's type. It's a two-character sigil (one for the `#`, one for the
+type's initial) with **no closing delimiter** — shorter than every Rust
+type it can stand for (`f64`, `String`, `bool`), by design (see [Brevity
+by design](#brevity-by-design)). There are three scalar sigils, plus an
+array form for each:
 
 | Tag | Matches |
 |---|---|
-| `<<Num>>` | number literals |
-| `<<Word>>` | string literals |
-| `<<Flag>>` | boolean literals |
-| `<<Num[]>>` / `<<Word[]>>` / `<<Flag[]>>` | array literals of the matching element type |
+| `#n` | number literals |
+| `#w` | string literals |
+| `#f` | boolean literals |
+| `#n[]` / `#w[]` / `#f[]` | array literals of the matching element type |
 
 ```kitty
-<{scores}> >> <<Num[]>> [10, 20, 30]
+<{scores}> >> #n[] [10, 20, 30]
 ```
 
 When the tagged value is a literal, the compiler checks it against the tag
-at compile time and rejects a mismatch (`<<Num>> 'oops'` is a parse error;
-for an array tag, every literal *element* is checked too — `<<Num[]>>
-['a', 'b']` is also a parse error). When the tagged value is a variable
-read or a computed expression (its static type isn't known at parse time),
-the annotation is trusted rather than checked. Either way, the tag itself
-is erased during code generation — Rust's own type inference already
-gives the underlying value the right type, so `<<Num>> 0` and a bare `0`
-generate identical Rust.
+at compile time and rejects a mismatch (`#n 'oops'` is a parse error; for
+an array tag, every literal *element* is checked too — `#n[] ['a', 'b']`
+is also a parse error). When the tagged value is a variable read or a
+computed expression (its static type isn't known at parse time), the
+annotation is trusted rather than checked. Either way, the tag itself is
+erased during code generation — Rust's own type inference already gives
+the underlying value the right type, so `#n 0` and a bare `0` generate
+identical Rust.
 
-Type tags are optional on a value (`<{count}> >> 0` and `<{count}> >>
-<<Num>> 0` compile identically) — they exist for readability and for
-catching literal type mistakes early, not because Kittine has (or needs) a
-full static type system. They are **mandatory** in one place: every
+Type tags are optional on a value (`<{count}> >> 0` and `<{count}> >> #n
+0` compile identically) — they exist for readability and for catching
+literal type mistakes early, not because Kittine has (or needs) a full
+static type system. They are **mandatory** in one place: every
 [prop](#props) and [`purr` return type](#functions-purr), since a function
 signature needs a real Rust type and Kittine has no inference for those
 positions yet.
@@ -982,7 +985,7 @@ Precedence, lowest to highest:
    identifiers, `<{name}>` reads, parenthesized expressions
 
 ```kitty
-purr isAdult(<<Num>> age) <<Flag>> {
+purr isAdult(#n age) #f {
     return (age >= 18)
 }
 
@@ -1006,7 +1009,7 @@ than `||`, so `a || b && c` reads as `a || (b && c)`, same as most
 languages:
 
 ```kitty
-purr isWorkingAge(<<Num>> age) <<Flag>> {
+purr isWorkingAge(#n age) #f {
     return (age >= 18 && age <= 65)
 }
 
@@ -1135,7 +1138,7 @@ function     := "purr" IDENT param_list type_tag_name
                 "{" stmt* return_stmt? "}"
 param_list   := "(" (param ("," param)*)? ")"
 param        := type_tag_name IDENT | "children"
-type_tag_name:= "<<" ("Num" | "Word" | "Flag") ("[" "]")? ">>"
+type_tag_name:= "#" ("n" | "w" | "f") ("[" "]")?
 return_stmt  := "return" "(" jsx_node | expr ")"
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
@@ -1229,7 +1232,7 @@ all of them look freshly modified regardless of what actually changed.
 These are intentional scope boundaries of the current prototype, not bugs:
 
 - **No prop type inference.** Every prop and `purr` return type needs an
-  explicit `<<Num>>`/`<<Word>>`/`<<Flag>>` tag — there's no way to omit it
+  explicit `#n`/`#w`/`#f` tag — there's no way to omit it
   and have the compiler figure it out.
 - **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
   works via `leptos_router`'s own components composed as-is — real, but
