@@ -8,6 +8,31 @@ grouped by date until the first tagged release.
 
 ## [Unreleased] - 2026-07-19
 
+### Added (syntax branch)
+
+- **Scalar type tags on a prop/`purr` param or return type are now
+  optional.** `purr greet(name) { return ('Hello, ' + name) }` needs no
+  `#w` anywhere — `kittine-compiler` infers `Word` from the string
+  concatenation in the body, the same way a human reading the code would.
+  A new `infer` pass runs once, right after parsing, and fills in every
+  omitted `ty`/`return_type` before codegen (or `known_functions`
+  signature collection) ever sees the `Program` — so call-site coercions
+  (e.g. the `Word`-parameter string-literal `.to_string()` treatment) work
+  identically whether the type came from a hand-written tag or an
+  inferred one. Rules: arithmetic/ordering comparison → `Num`; `+`/`==`/
+  `!=` against a string literal → `Word`; `==`/`!=` against `yes>`/`no>`,
+  or either side of `&&`/`\|\|` → `Flag`; no clue at all → `Word`
+  (default). Explicit tags always win outright. Two intentional limits:
+  inference is local to one function/component (doesn't propagate through
+  a call to another `purr`), and array tags (`#n[]`/`#w[]`/`#f[]`) are
+  still mandatory. See
+  [docs/LANGUAGE.md § Type inference](docs/LANGUAGE.md#type-inference).
+  Verified with 7 new compiler tests (85 total) and a real `cargo check`
+  against Leptos 0.7 — `example-app`'s `Greetings.kitty`/`Home.kitty` had
+  their tags dropped as a real demonstration, and regenerating them
+  produced **byte-identical** `.rs` output to the explicitly-tagged
+  version, confirming inference is purely front-end sugar.
+
 ### Added
 
 - **Kebab-case JSX attribute names** (`data-*`, `aria-*`, and any other

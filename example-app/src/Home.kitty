@@ -1,15 +1,15 @@
 import { Nav, Card, NavList } from './components.kitty'
 import { greet } from './Greetings.kitty'
 
-private purr doubled(#n n) #n {
+private purr doubled(n) {
     return (n * 2)
 }
 
-purr isAdult(#n age) #f {
+purr isAdult(age) {
     return (age >= 18)
 }
 
-purr isWorkingAge(#n age) #f {
+purr isWorkingAge(age) {
     return (age >= 18 && age <= 65)
 }
 

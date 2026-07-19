@@ -59,7 +59,7 @@ This repository is a monorepo with five parts:
 ```kitty
 import { Nav } from './Nav.kitty'
 
-purr doubled(#n n) #n {
+purr doubled(n) {
     return (n * 2)
 }
 
@@ -102,9 +102,11 @@ func Counter() {
 - `'...'` and `"..."` are fully interchangeable string literals.
 - `yes>` / `no>` are boolean literals; `[a, b, c]` is an array literal.
 - `#n` / `#w` / `#f` (or `#n[]`/`#w[]`/`#f[]`
-  for an array of one) are type tags — optional on a value, mandatory on a
-  prop or a `purr` return type — checked against literal values at compile
-  time and erased in the generated Rust.
+  for an array of one) are type tags — optional everywhere, including a
+  prop or `purr` param/return type, where an omitted one is
+  [inferred](docs/LANGUAGE.md#type-inference) from how the name is used —
+  checked against literal values at compile time and erased in the
+  generated Rust. Array tags are the one spot still mandatory.
 - `craft<expr>` logs via `leptos::logging::log!`.
 - `if>` / `orif>` / `else>` are indentation-delimited (no braces), with
   `>>`/`<`/`<=`/`>`/`>=`/`!=` as comparisons — usable in conditions and
@@ -116,13 +118,14 @@ func Counter() {
   statement it's a plain imperative loop; inside `return ( ... )` it
   renders one element per item via a reactive Leptos `<For>`, keyed by
   `format!("{item}")` by default or by an optional `key(expr)` clause.
-- `func Name(#t prop) { .. }` takes typed props; `<Name prop='x' />`
-  composes it into another view (a capitalized JSX tag is a component
-  reference, lowercase is a plain HTML element).
-- `func Card(children) { .. { children() } .. }` — an untyped `children`
-  param accepts nested JSX from wherever the component is composed:
-  `<Card><p>"nested"</p></Card>`, no extra syntax needed at the call site.
-- `purr name(#t param) #t { .. return (expr) }` is a plain
+- `func Name((#t)? prop) { .. }` takes props, typed or inferred;
+  `<Name prop='x' />` composes it into another view (a capitalized JSX tag
+  is a component reference, lowercase is a plain HTML element).
+- `func Card(children) { .. { children() } .. }` — the special untyped
+  `children` param accepts nested JSX from wherever the component is
+  composed: `<Card><p>"nested"</p></Card>`, no extra syntax needed at the
+  call site.
+- `purr name((#t)? param) (#t)? { .. return (expr) }` is a plain
   function — computes and returns a value, renders no view — called like
   `name(arg)` anywhere an expression is valid.
 - `import { Name } from './file.kitty'` brings another file's
@@ -159,15 +162,17 @@ different from it:
 
 | Kittine | Generated Rust |
 | --- | --- |
-| `greet('World')` (where `greet(#w name)`) | `greet("World".to_string())` |
+| `purr greet(name) { return ('Hello, ' + name) }` | `pub fn greet(name: String) -> String { format!("Hello, {name}") }` |
+| `greet('World')` (no tag anywhere — [inferred](docs/LANGUAGE.md#type-inference) from `'Hello, ' + name`) | `greet("World".to_string())` |
 | `<{count}> >> #n 0` | `let (count, set_count) = signal(0f64);` |
 | `<{ready}> >> yes>` | `let (ready, set_ready) = signal(true);` |
 | `craft<'Welcome Admin'>` | `leptos::logging::log!("Welcome Admin");` |
 | `spin<{n}> in [1, 2, 3] }{ craft<n> }{` | `for n in (vec![1, 2, 3]).into_iter() { leptos::logging::log!("{}", n); }` |
 
 See [docs/LANGUAGE.md § Brevity by design](docs/LANGUAGE.md#brevity-by-design)
-for the two rules that keep this true as the language grows, and more
-side-by-sides.
+for the two rules that keep this true as the language grows, and
+[docs/LANGUAGE.md § Type inference](docs/LANGUAGE.md#type-inference) for
+how a `purr`/prop signature can drop its type tags entirely.
 
 ## Prerequisites
 

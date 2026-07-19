@@ -27,7 +27,10 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
   arrays (including array-typed props/returns — `#n[]`/`#w[]`/`#f[]`),
   booleans, type tags (`#n`/`#w`/`#f`, a two-character sigil form —
-  see [LANGUAGE.md § Type tags](LANGUAGE.md#type-tags)),
+  see [LANGUAGE.md § Type tags](LANGUAGE.md#type-tags)) that are now
+  **optional** on a prop or `purr` param/return type, inferred from body
+  usage when omitted (see [LANGUAGE.md § Type
+  inference](LANGUAGE.md#type-inference)),
   logical `&&`/`||` combining comparisons into one condition, method
   calls (`receiver.method(arg, ..)`, chains work), calling the result of
   an expression (`callee(arg, ..)` where `callee` isn't a bare name),
@@ -177,7 +180,16 @@ architecture decision rather than a quick increment) is done too — see
 [SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
 turns up (per the standing rule at the top of this file).
 
-Done: ~~Kebab-case JSX attributes~~ (`data-*`/`aria-*` parse as a single
+Done: ~~Scalar type inference for props/`purr` params and return types~~
+(`purr greet(name) { return ('Hello, ' + name) }` needs no `#w` tag at all
+— a new post-parse `infer` pass derives `Word`/`Num`/`Flag` from how the
+name is used in the body, local to that one function/component, scalars
+only; an explicit tag still always wins. Verified with 7 new tests and a
+real `cargo check`, and by regenerating `example-app`'s `Greetings.kitty`/
+`Home.kitty` with their tags dropped — byte-identical `.rs` output to the
+explicitly-tagged version. See [LANGUAGE.md § Type
+inference](LANGUAGE.md#type-inference)) — landed 2026-07-19 on the
+`syntax` branch. ~~Kebab-case JSX attributes~~ (`data-*`/`aria-*` parse as a single
 attribute name, not identifier-minus-identifier; found while building the
 real marketing site's `data-kittine-component` inspect-mode fingerprint)
 and ~~`leptos_meta` in scope~~ (unconditional `use leptos_meta::*;` in
@@ -261,9 +273,12 @@ stays a plan, not a spec, until an item graduates into `LANGUAGE.md`.
 ### Phase 1 — Language completeness (extends [Next up](#next-up))
 
 Structs/records, enums, pattern matching, generics groundwork, a real type
-system beyond the current three scalar tags, module visibility, proper
-error types/`Result`-style handling in Kittine syntax, a formal grammar
-spec document.
+system beyond the current three scalar tags (basic same-function-body
+inference for those three scalars has landed — see [Type
+inference](LANGUAGE.md#type-inference) — but there's still no cross-function
+propagation, no array-element inference, and no tags beyond `Num`/`Word`/
+`Flag`), module visibility, proper error types/`Result`-style handling in
+Kittine syntax, a formal grammar spec document.
 
 ### Phase 2 — Standard library
 

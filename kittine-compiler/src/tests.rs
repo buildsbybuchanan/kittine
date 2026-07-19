@@ -1630,3 +1630,124 @@ func Toggle() {
     );
     assert!(out.contains("data-active-view=move ||"));
 }
+
+// ---- type inference (untyped `purr`/`func` params, `purr` return type) ---
+//
+// A param/return type tag (`#n`/`#w`/`#f`) is now optional: when omitted,
+// `infer::apply` fills it in from how the name is used in the body. See
+// `docs/LANGUAGE.md § Type inference` for the rule table these mirror.
+
+/// The exact case from `docs/LANGUAGE.md § Brevity by design`'s own
+/// `greet` row, minus the tag entirely: string-concat with a literal (`'
+/// ' + name`) is enough to infer `Word` for the param, and the function's
+/// own return type from the same expression. The call site still gets the
+/// existing `Word`-parameter string-literal `.to_string()` coercion,
+/// proving the inferred type reaches `known_functions` exactly like an
+/// explicit tag would.
+#[test]
+fn untyped_param_and_return_infer_word_from_string_concat() {
+    let out = compile(
+        r#"
+purr greet(name) {
+    return ('Hello, ' + name)
+}
+
+func Home() {
+    return ( <p>{ greet('World') }</p> )
+}
+"#,
+    );
+    assert!(out.contains("pub fn greet(name: String) -> String"));
+    assert!(out.contains(r#"greet("World".to_string())"#));
+}
+
+/// Arithmetic (`n * 2`) is enough to infer `Num` for both the param and
+/// the return type with no tag anywhere in the signature.
+#[test]
+fn untyped_param_and_return_infer_num_from_arithmetic() {
+    let out = compile(
+        r#"
+purr doubled(n) {
+    return (n * 2)
+}
+"#,
+    );
+    assert!(out.contains("pub fn doubled(n: f64) -> f64"));
+}
+
+/// A numeric comparison (`age >= 18`) infers `Num` for the param and
+/// `Flag` for the return type — two different types inferred from the
+/// same expression, one for each role.
+#[test]
+fn untyped_param_infers_num_and_return_infers_flag_from_comparison() {
+    let out = compile(
+        r#"
+purr isAdult(age) {
+    return (age >= 18)
+}
+"#,
+    );
+    assert!(out.contains("pub fn isAdult(age: f64) -> bool"));
+}
+
+/// A bare param combined with `&&` (no comparison operator touching the
+/// param directly — `age >= 18` is the *other* side, `ready` is the
+/// combinator's own left-hand operand) still infers `Flag`, since being
+/// either side of `&&`/`||` is itself a Flag-typed position, independent
+/// of what the other side looks like.
+#[test]
+fn untyped_param_combined_with_and_infers_flag() {
+    let out = compile(
+        r#"
+purr canProceed(ready, age) {
+    return (ready && age >= 18)
+}
+"#,
+    );
+    assert!(out.contains("pub fn canProceed(ready: bool, age: f64) -> bool"));
+}
+
+/// An untyped `func` prop follows the same rule as a `purr` param — used
+/// here as a plain JSX child with no operator touching it, so it falls
+/// through every clue and lands on the `Word` default, matching what this
+/// exact prop was explicitly tagged as before inference existed.
+#[test]
+fn untyped_component_prop_falls_back_to_word_default() {
+    let out = compile(
+        r#"
+func Nav(active) {
+    return ( <span>{ active }</span> )
+}
+"#,
+    );
+    assert!(out.contains("fn Nav(active: String)"));
+}
+
+/// An explicit tag always wins outright, even when the body would have
+/// inferred something else — inference only fills a gap, never overrides
+/// a tag the author actually wrote.
+#[test]
+fn explicit_type_tag_is_not_overridden_by_inference() {
+    let out = compile(
+        r#"
+purr weird(#w n) {
+    return (n)
+}
+"#,
+    );
+    assert!(out.contains("pub fn weird(n: String) -> String"));
+}
+
+/// Mixing an untyped and an explicitly-tagged param in the same signature
+/// works — inference only touches the params that actually omitted a tag.
+#[test]
+fn mixed_typed_and_untyped_params_in_one_signature() {
+    let out = compile(
+        r#"
+purr greet(#w greeting, name) {
+    return (greeting + name)
+}
+"#,
+    );
+    assert!(out.contains("pub fn greet(greeting: String, name: String) -> String"));
+}

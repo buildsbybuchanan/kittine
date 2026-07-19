@@ -195,10 +195,26 @@ impl Parser {
         Ok(ty)
     }
 
-    /// Parses a single `#t name` parameter — or the special untyped
+    /// `true` if the current token is a type-tag sigil (`#n`/`#w`/`#f`) —
+    /// used to decide whether a param/return-type position has an explicit
+    /// tag at all, since both are now optional (see `infer`).
+    fn peek_is_type_sigil(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag
+        )
+    }
+
+    /// Parses a single `(#t)? name` parameter — or the special untyped
     /// `children` shorthand, which needs no type tag since it isn't one of
     /// `Num`/`Word`/`Flag`: it's Leptos's `Children`, bound to whatever JSX
     /// content a caller nests inside `<ThisComponent>..</ThisComponent>`.
+    /// A scalar (non-array) tag is optional — see `infer::apply`, which
+    /// fills `ty` in with `Num`/`Word`/`Flag` after parsing by looking at
+    /// how the name is used in the body, so `greet(name)` needs no sigil
+    /// at all when the body already makes the type obvious. An array
+    /// param (`#n[]`/`#w[]`/`#f[]`) still needs its tag written out —
+    /// inference doesn't reach into array element types.
     fn parse_param(&mut self) -> PResult<Param> {
         if let TokenKind::Ident(name) = self.peek().kind.clone()
             && name == "children"
@@ -209,7 +225,11 @@ impl Parser {
                 name,
             });
         }
-        let ty = self.parse_signature_type()?;
+        let ty = if self.peek_is_type_sigil() {
+            self.parse_signature_type()?
+        } else {
+            String::new()
+        };
         let name = self.expect_ident()?;
         Ok(Param { ty, name })
     }
@@ -229,12 +249,19 @@ impl Parser {
         Ok(params)
     }
 
-    /// Parses `purr name(#t param, ..) #t { stmt* return (expr) }`.
+    /// Parses `purr name((#t)? param, ..) (#t)? { stmt* return (expr) }`.
+    /// The return-type tag is optional too, same reasoning as
+    /// `parse_param` — `infer::apply` fills it in from the shape of the
+    /// `return (expr)` once parsing is done.
     fn parse_function(&mut self, is_private: bool) -> PResult<Function> {
         self.expect(TokenKind::KeywordPurr)?;
         let name = self.expect_ident()?;
         let params = self.parse_param_list()?;
-        let return_type = self.parse_signature_type()?;
+        let return_type = if self.peek_is_type_sigil() {
+            self.parse_signature_type()?
+        } else {
+            String::new()
+        };
         self.expect(TokenKind::LBrace)?;
 
         let mut body = Vec::new();
@@ -1053,7 +1080,9 @@ impl Parser {
 }
 
 pub fn parse(tokens: Vec<Token>) -> PResult<Program> {
-    Parser::new(tokens).parse_program()
+    let mut program = Parser::new(tokens).parse_program()?;
+    crate::infer::apply(&mut program);
+    Ok(program)
 }
 
 /// `true` if every *literal* element of an array matches an array type

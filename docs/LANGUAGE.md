@@ -30,6 +30,7 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Booleans (`yes>` / `no>`)](#booleans)
 - [Arrays (`[ ]`)](#arrays)
 - [Type tags (`#n` / `#w` / `#f`)](#type-tags)
+- [Type inference](#type-inference)
 - [Printing (`craft<...>`)](#printing-craft)
 - [Control flow (`if>` / `orif>` / `else>`)](#control-flow)
 - [Loops (`spin` / `}{`)](#loops)
@@ -53,7 +54,7 @@ invented for effect:
 
 | Kittine | Generated Rust |
 | --- | --- |
-| `greet('World')` (where `greet(#w name)`) | `greet("World".to_string())` |
+| `greet('World')` (where `purr greet(name) { .. }`, tag-free — see [Type inference](#type-inference)) | `greet("World".to_string())` |
 | `<{count}> >> #n 0` | `let (count, set_count) = signal(0f64);` |
 | `<{ready}> >> yes>` | `let (ready, set_ready) = signal(true);` |
 | `if><{username}> >> 'Admin'` … `orif>` … `else>` | `if username.get() == "Admin" { .. } else if .. { .. } else { .. }` |
@@ -99,7 +100,7 @@ A component compiles to a Leptos `#[component] pub fn Name(..) -> impl IntoView 
 ## Props
 
 ```kitty
-func Nav(#w active) {
+func Nav(active) {
     return ( <span>{ active }</span> )
 }
 ```
@@ -111,11 +112,12 @@ composition](#component-composition)). Unlike `<{name}> >> value` signals,
 a prop is a plain value, not reactive state — there's no setter, and
 reading it is just the bare name (`active`, not `<{active}>`).
 
-Every prop must carry an explicit [type tag](#type-tags): `#n`,
-`#w`, `#f`, or an array of one of those (`#n[]`,
-`#w[]`, `#f[]`). There is no prop-type inference. The one
-exception is the special `children` parameter — see
-[Children](#children) — which takes no type tag at all.
+A prop's [type tag](#type-tags) (`#n`, `#w`, `#f`) is **optional** — see
+[Type inference](#type-inference). Writing one out (or an array tag,
+`#n[]`/`#w[]`/`#f[]`, which inference doesn't cover) always overrides
+whatever inference would have guessed. The one exception either way is
+the special `children` parameter — see [Children](#children) — which
+takes no type tag at all, tagged or not.
 
 ### Compilation
 
@@ -148,15 +150,16 @@ local](#plain-local-bindings-hold) — not just props.
 ## Functions (`purr`)
 
 ```kitty
-purr double(#n n) #n {
+purr double(n) {
     return (n * 2)
 }
 ```
 
-`purr name(#t param, ..) #t { .. return (expr) }` declares
+`purr name((#t)? param, ..) (#t)? { .. return (expr) }` declares
 a plain function: it computes and returns a value, and does not render a
-view. Unlike a component, its signature also carries an explicit
-**return-type** tag right after the parameter list, before the body's `{`.
+view. Unlike a component, its signature also has room for an explicit
+**return-type** tag right after the parameter list, before the body's `{`
+— optional, same as a param's tag (see [Type inference](#type-inference)).
 
 A `purr` function is the idiomatic Kittine way to share logic (formatting,
 computed values) between components without duplicating it.
@@ -168,7 +171,7 @@ computed values) between components without duplicating it.
 attribute, no `view!`):
 
 ```kitty
-purr double(#n n) #n {
+purr double(n) {
     return (n * 2)
 }
 ```
@@ -210,7 +213,12 @@ model](#compilation-model)):
 
 | Kittine | Generated Rust |
 |---|---|
-| `greet('World')` (where `greet(#w name)`) | `greet("World".to_string())` |
+| `greet('World')` (where `purr greet(name) { .. }`) | `greet("World".to_string())` |
+
+`greet`'s `Word` type here isn't written anywhere — it's derived by [Type
+inference](#type-inference) from how `name` is used inside `greet`'s own
+body, then flows into `known_functions` exactly like an explicit `#w`
+tag would.
 
 This works whether `greet` is defined in the same file or brought in via
 `import` — only a call to a function Kittine has *no* signature for at
@@ -806,10 +814,65 @@ identical Rust.
 Type tags are optional on a value (`<{count}> >> 0` and `<{count}> >> #n
 0` compile identically) — they exist for readability and for catching
 literal type mistakes early, not because Kittine has (or needs) a full
-static type system. They are **mandatory** in one place: every
-[prop](#props) and [`purr` return type](#functions-purr), since a function
-signature needs a real Rust type and Kittine has no inference for those
-positions yet.
+static type system. They're also optional on a prop or `purr`
+param/return type now — see [Type inference](#type-inference) — with one
+exception: an array tag (`#n[]`/`#w[]`/`#f[]`) in a signature position is
+still required, since inference doesn't reach into array element types.
+
+## Type inference
+
+```kitty
+purr greet(name) {
+    return ('Hello, ' + name)
+}
+```
+```rust
+pub fn greet(name: String) -> String {
+    format!("Hello, {name}")
+}
+```
+
+A [prop](#props)'s or [`purr`](#functions-purr) scalar param/return type
+tag can be omitted entirely — no `#n`/`#w`/`#f`, no placeholder, just the
+bare name. `kittine-compiler` fills the concrete type in by looking at how
+the name is actually used inside that function or component's own body,
+the same way a human would read the code to figure out what `name` in
+`greet` above has to be: it's concatenated with a string literal (`'Hello,
+' + name`), so it's a `Word`. This is real inference — the tag isn't
+merely hidden, it's *derived*, and everything downstream (the generated
+Rust signature, the `Word`-parameter string-literal `.to_string()`
+coercion at call sites — see [Calling functions](#calling-functions)) sees
+exactly the type a hand-written tag would have produced. Regenerating
+`greet('World')` this way and with the old `purr greet(#w name) #w { .. }`
+form produces byte-identical Rust output — inference is purely front-end
+sugar, same as the type tags it's now optional in front of.
+
+The rules, applied to how a name is used anywhere in its own function's
+body or return expression (a component prop also looks at the `return (
+... )` view):
+
+| Usage | Inferred type |
+|---|---|
+| `+`/`-`/`*`/`/` against a number literal, or `<`/`<=`/`>`/`>=` at all | `Num` |
+| `+` against a string literal (concatenation) | `Word` |
+| `==`/`!=` against a string literal | `Word` |
+| `==`/`!=` against `yes>`/`no>` | `Flag` |
+| either side of `&&`/`\|\|` | `Flag` |
+| none of the above (e.g. passed straight through with no operator touching it) | `Word` (default) |
+
+An explicit tag always wins outright — inference only ever fills a gap
+left by omitting one, never overrides a tag actually written. Two real
+scoping limits, both intentional rather than bugs:
+
+- **Local to one function/component.** Inference never looks at *other*
+  functions, same file or not — passing an untyped param straight into a
+  same-file `purr` whose own param is `Num`-typed doesn't propagate that
+  type backward. Give the param an explicit tag if the default guess
+  (`Word`) is wrong for a passthrough case like that.
+- **Scalars only.** An array-typed prop/param/return
+  (`#n[]`/`#w[]`/`#f[]`) still needs its tag written out in full —
+  inference doesn't look inside a `spin` loop body to guess an array's
+  element type.
 
 ## Printing (`craft<...>`)
 
@@ -1139,11 +1202,14 @@ program      := import* item*
 item         := "private"? (component | function)
 import       := "import" "{" IDENT ("," IDENT)* "}" "from" STRING
 component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
-function     := "purr" IDENT param_list type_tag_name
+function     := "purr" IDENT param_list type_tag_name?
                 "{" stmt* return_stmt? "}"
 param_list   := "(" (param ("," param)*)? ")"
-param        := type_tag_name IDENT | "children"
+param        := type_tag_name? IDENT | "children"
 type_tag_name:= "#" ("n" | "w" | "f") ("[" "]")?
+// An omitted type_tag_name on a param/return type is filled in by
+// inference after parsing -- see "Type inference". Array tags ("[]")
+// are the one case inference doesn't cover, so they're always explicit.
 return_stmt  := "return" "(" jsx_node | expr ")"
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
@@ -1245,9 +1311,10 @@ all of them look freshly modified regardless of what actually changed.
 
 These are intentional scope boundaries of the current prototype, not bugs:
 
-- **No prop type inference.** Every prop and `purr` return type needs an
-  explicit `#n`/`#w`/`#f` tag — there's no way to omit it
-  and have the compiler figure it out.
+- **Type inference is local to one function/component and scalars-only.**
+  See [Type inference](#type-inference) — it doesn't propagate a type
+  through a call to another `purr`, and array-typed
+  props/params/returns still need an explicit `#n[]`/`#w[]`/`#f[]` tag.
 - **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
   works via `leptos_router`'s own components composed as-is — real, but
   client-side-rendered only (no SSR/SSG integration yet). Reading a
