@@ -8,6 +8,55 @@ grouped by date until the first tagged release.
 
 ## [Unreleased] - 2026-07-19
 
+### Added (Phase 1 completion: traits, bounded generics)
+
+- **`claw Name { method(params) type, .. }`** — a trait (Kittine's term
+  for a named capability contract; a "claw" is something a cat *has*).
+  Every method is a bare signature — name, params, return type, all
+  mandatory (no body to infer from). Compiles to `pub trait Name { fn
+  method(&self, params) -> Type; }`.
+- **`bare Claw for Target { purr method(..) .. }`** — implements a `claw`
+  for a `litter`/`breed` (Rust's `impl Claw for Target`; a cat "bares its
+  claws" to show a capability). Each method reuses the ordinary `purr`
+  grammar/codegen verbatim, plus an implicit `self` available in the body
+  with no declaration needed — the same treatment `children` already
+  gets in a component. Calling the method on a value needs no new call
+  syntax: `value.method(arg)` is just an ordinary method call, already
+  supported.
+- **Bounded generics**: a `litter`/`breed`'s type parameter can now name
+  a `claw` it must implement — `litter NamedHolder<#t: Named> { value #t
+  }` — compiling to a real Rust trait bound (`struct NamedHolder<T:
+  Named> { .. }`), checked by Rust's own compiler at every construction
+  site. This closes the "no bounds" gap from the previous round's minimal
+  generics groundwork.
+- **Fixed a real, pre-existing bug**: a `Word`-returning `purr` (or now,
+  `claw` method) whose `return (expr)` was a *bare* string literal (no
+  `+` concatenation to trigger the existing string-format special case)
+  rendered as an uncoerced `&'static str`, which doesn't type-check
+  against the `String` the signature promises (`E0308`, confirmed
+  against real rustc). `purr constant() #w { return ('hi') }` now
+  correctly renders `"hi".to_string()`. Found while building the `claw`
+  demo below — a method that just returns a literal hit it immediately —
+  but it affected any plain `purr` with this exact shape, not just
+  methods.
+- This closes Phase 1 — [ROADMAP.md § Full
+  vision](docs/ROADMAP.md#full-vision-phased-honest) — in full: module
+  visibility was judged already-closed (uniform `private` across every
+  declaration kind, and Kittine's flat single-module compilation model
+  has no real crate/package boundary for `pub(crate)`-style granularity
+  to mean anything), and a full trait system (this entry) closes the
+  remaining "real type system" gap alongside the structs/enums/pattern-
+  matching/minimal-generics work from the previous round. The one
+  documented exception is `pounce>` staying statement-only — see
+  [docs/LANGUAGE.md § Known limitations](docs/LANGUAGE.md#known-limitations).
+- Verified with 6 new compiler tests (97 total, 0 regressions) and real
+  `cargo check`/`npm run build` (full Vite → `cargo` → `wasm-bindgen`
+  pipeline) against Leptos 0.7 — `example-app`'s `Shapes.kitty` gained a
+  `Named` claw implemented for `Point`, called via `origin.describe()`,
+  and a bounded `NamedHolder<#t: Named>` instantiated with a real `Point`
+  value, compiling clean under `wasm32-unknown-unknown` to a working wasm
+  binary.
+
 ### Added (Phase 1: structs, enums, pattern matching, minimal generics)
 
 - **`litter Name { field type, .. }`** — a plain data record (Kittine's

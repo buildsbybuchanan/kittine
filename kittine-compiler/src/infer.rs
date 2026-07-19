@@ -32,10 +32,19 @@ pub fn apply(program: &mut Program) {
         match item {
             Item::Function(f) => infer_function(f),
             Item::Component(c) => infer_component(c),
-            // A `litter` field's or `breed` variant's type is always
-            // explicit (`#n`/`#w`/`#f`/`#t`/a custom type name) — there's
-            // no untyped-field syntax for this pass to fill in.
-            Item::Litter(_) | Item::Breed(_) => {}
+            // A `litter` field's, `breed` variant's, or `claw` method
+            // signature's type is always explicit (`#n`/`#w`/`#f`/`#t`/a
+            // custom type name) — there's no untyped-field syntax for
+            // this pass to fill in.
+            Item::Litter(_) | Item::Breed(_) | Item::Claw(_) => {}
+            // A `bare .. for ..` method is an ordinary `Function` (just
+            // nested inside a `Wear` instead of top-level) — same
+            // inference as any other `purr`.
+            Item::Wear(w) => {
+                for method in &mut w.methods {
+                    infer_function(method);
+                }
+            }
         }
     }
 }

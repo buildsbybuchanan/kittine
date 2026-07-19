@@ -63,6 +63,9 @@ pub enum TokenKind {
     KeywordHold,   // hold name >> expr -- plain (non-reactive) local binding
     KeywordLitter, // litter Name (<#t>)? { field (#t)?, .. } -- a struct
     KeywordBreed,  // breed Name (<#t>)? { Variant (type)?, .. } -- an enum
+    KeywordClaw,   // claw Name { method(params) type, .. } -- a trait
+    KeywordBare,   // bare Claw for Target { purr method(..) .. }* -- an impl
+    KeywordFor,    // the "for" in "bare Claw for Target"
 
     // Literals / identifiers
     Ident(String),
@@ -125,6 +128,9 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordHold => write!(f, "hold"),
             TokenKind::KeywordLitter => write!(f, "litter"),
             TokenKind::KeywordBreed => write!(f, "breed"),
+            TokenKind::KeywordClaw => write!(f, "claw"),
+            TokenKind::KeywordBare => write!(f, "bare"),
+            TokenKind::KeywordFor => write!(f, "for"),
             TokenKind::Ident(s) => write!(f, "{s}"),
             TokenKind::Number(n) => write!(f, "{n}"),
             TokenKind::Str(s) => write!(f, "\"{s}\""),
@@ -457,6 +463,9 @@ impl Lexer {
                     "hold" => TokenKind::KeywordHold,
                     "litter" => TokenKind::KeywordLitter,
                     "breed" => TokenKind::KeywordBreed,
+                    "claw" => TokenKind::KeywordClaw,
+                    "bare" => TokenKind::KeywordBare,
+                    "for" => TokenKind::KeywordFor,
                     "pounce" if self.peek() == Some('>') => {
                         self.advance();
                         TokenKind::KeywordPounce

@@ -174,7 +174,14 @@ pub fn collect_signatures(items: &[Item]) -> Signatures {
                     );
                 }
             }
-            Item::Component(_) => {}
+            // A `claw`'s method signatures never need collecting here: a
+            // method is only ever called via `receiver.method(args)`
+            // (`Expr::MethodCall`), which already renders verbatim,
+            // trusting Rust's own type checker — same reasoning as any
+            // other method call. A `bare .. for ..` block has no name of
+            // its own to key a map by, and its methods aren't callable
+            // by bare name either.
+            Item::Component(_) | Item::Claw(_) | Item::Wear(_) => {}
         }
     }
     signatures
@@ -217,6 +224,8 @@ pub fn generate(program: &Program, signatures: &Signatures) -> String {
             Item::Function(f) => out.push_str(&gen_function(f, signatures)),
             Item::Litter(l) => out.push_str(&gen_litter(l)),
             Item::Breed(b) => out.push_str(&gen_breed(b)),
+            Item::Claw(c) => out.push_str(&gen_claw(c)),
+            Item::Wear(w) => out.push_str(&gen_wear(w, signatures)),
         }
         out.push('\n');
     }
@@ -380,21 +389,33 @@ fn gen_function(function: &Function, signatures: &Signatures) -> String {
     for stmt in &function.body {
         gen_stmt(stmt, &mut scope, &mut out, 1);
     }
-    let return_code = render_top_level(&function.return_expr, &scope);
+    let return_code = render_return_value(&function.return_expr, &function.return_type, &scope);
     push_line(&mut out, 1, &return_code);
 
     out.push_str("}\n");
     out
 }
 
-/// `litter Name (<#t>)? { field type, .. }` becomes a plain Rust `struct`
-/// — `#[derive(Clone, Debug)]` so a `litter`-typed value can be read from
-/// more than one reactive closure the same way a `Word` prop already can
-/// (see `is_non_copy_param_type`).
+/// Renders a `litter`/`breed`'s optional `TypeParam` as the Rust generic
+/// parameter suffix — `""` (no type param), `"<T>"` (unbounded), or
+/// `"<T: Bound>"` (bounded by a `claw`, checked by Rust's own trait
+/// system once generated, not re-verified here).
+fn generics_suffix(type_param: &Option<TypeParam>) -> String {
+    match type_param {
+        None => String::new(),
+        Some(TypeParam { bound: None }) => "<T>".to_string(),
+        Some(TypeParam { bound: Some(b) }) => format!("<T: {b}>"),
+    }
+}
+
+/// `litter Name type_param? { field type, .. }` becomes a plain Rust
+/// `struct` — `#[derive(Clone, Debug)]` so a `litter`-typed value can be
+/// read from more than one reactive closure the same way a `Word` prop
+/// already can (see `is_non_copy_param_type`).
 fn gen_litter(litter: &Litter) -> String {
     let mut out = String::new();
     out.push_str("#[derive(Clone, Debug)]\n");
-    let generics = if litter.has_type_param { "<T>" } else { "" };
+    let generics = generics_suffix(&litter.type_param);
     out.push_str(&format!(
         "{}struct {}{generics} {{\n",
         visibility(litter.is_private),
@@ -411,12 +432,12 @@ fn gen_litter(litter: &Litter) -> String {
     out
 }
 
-/// `breed Name (<#t>)? { Variant (type)?, .. }` becomes a plain Rust
+/// `breed Name type_param? { Variant (type)?, .. }` becomes a plain Rust
 /// `enum` — same `Clone, Debug` derive reasoning as `gen_litter`.
 fn gen_breed(breed: &Breed) -> String {
     let mut out = String::new();
     out.push_str("#[derive(Clone, Debug)]\n");
-    let generics = if breed.has_type_param { "<T>" } else { "" };
+    let generics = generics_suffix(&breed.type_param);
     out.push_str(&format!(
         "{}enum {}{generics} {{\n",
         visibility(breed.is_private),
@@ -430,6 +451,68 @@ fn gen_breed(breed: &Breed) -> String {
     }
     out.push_str("}\n");
     out
+}
+
+/// `claw Name { method(params) type, .. }` becomes a plain Rust `trait`
+/// — every method a bare signature (no body, see `ast::Claw`), each
+/// taking an implicit `&self` (see `method_param_list_rust`).
+fn gen_claw(claw: &Claw) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{}trait {} {{\n",
+        visibility(claw.is_private),
+        claw.name
+    ));
+    for method in &claw.methods {
+        out.push_str(&format!(
+            "    fn {}({}) -> {};\n",
+            method.name,
+            method_param_list_rust(&method.params),
+            rust_type(&method.return_type)
+        ));
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// `bare Claw for Target { purr method(..) .. }*` becomes a plain Rust
+/// `impl Claw for Target { .. }`, reusing the exact same statement/
+/// expression codegen a top-level `purr` gets (see `gen_function`) —
+/// just with an implicit `&self` receiver instead of `pub fn`.
+fn gen_wear(wear: &Wear, signatures: &Signatures) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("impl {} for {} {{\n", wear.claw, wear.target));
+    for method in &wear.methods {
+        push_line(
+            &mut out,
+            1,
+            &format!(
+                "fn {}({}) -> {} {{",
+                method.name,
+                method_param_list_rust(&method.params),
+                rust_type(&method.return_type)
+            ),
+        );
+        let mut scope = Scope::for_params(&method.params, signatures);
+        for stmt in &method.body {
+            gen_stmt(stmt, &mut scope, &mut out, 2);
+        }
+        let return_code = render_return_value(&method.return_expr, &method.return_type, &scope);
+        push_line(&mut out, 2, &return_code);
+        push_line(&mut out, 1, "}");
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// Like `param_list_rust`, but for a `claw` method/`bare` impl method,
+/// which always takes an implicit `&self` first — never written by a
+/// `.kitty` author (the same "no declaration needed" treatment
+/// `children` already gets), but always present in the generated Rust.
+fn method_param_list_rust(params: &[Param]) -> String {
+    let mut parts = vec!["&self".to_string()];
+    parts.extend(params.iter().map(|p| format!("{}: {}", p.name, rust_type(&p.ty))));
+    parts.join(", ")
 }
 
 // ---- statements ----------------------------------------------------------
@@ -1044,6 +1127,24 @@ fn render_top_level(expr: &Expr, scope: &Scope) -> String {
             )
         }
         other => expr_to_rust(other, scope),
+    }
+}
+
+/// Renders a `purr`/`bare`-method's `return (expr)` value, additionally
+/// coercing a bare `Word`-typed string literal to an owned `String` (see
+/// [`is_bare_string_literal`]) — [`render_top_level`] alone doesn't know
+/// the function's own declared return type, so `purr constant() #w {
+/// return ('hi') }` would otherwise render `"hi"` verbatim: an
+/// uncoerced `&'static str` that doesn't type-check against the `String`
+/// the signature promises (`E0308: expected String, found &str` —
+/// confirmed by actually compiling that exact pattern against rustc, the
+/// same string-concatenation `+` already got this treatment for, just
+/// extended to a bare literal with no `+` in sight).
+fn render_return_value(expr: &Expr, return_type: &str, scope: &Scope) -> String {
+    if return_type == "Word" && is_bare_string_literal(expr) {
+        format!("{}.to_string()", render_top_level(expr, scope))
+    } else {
+        render_top_level(expr, scope)
     }
 }
 

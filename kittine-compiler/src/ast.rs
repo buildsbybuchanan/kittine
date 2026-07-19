@@ -21,27 +21,37 @@ pub struct Import {
 }
 
 /// A top-level declaration: a view-rendering component (`func`), a plain
-/// value-returning function (`purr`), a data record (`litter`), or a
-/// closed variant type (`breed`).
+/// value-returning function (`purr`), a data record (`litter`), a closed
+/// variant type (`breed`), a trait (`claw`), or a `claw` implementation
+/// for a `litter`/`breed` (`bare .. for ..`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Component(Component),
     Function(Function),
     Litter(Litter),
     Breed(Breed),
+    Claw(Claw),
+    Wear(Wear),
 }
 
-/// `(private)? litter Name ("<" "#t" ">")? "{" field ("," field)* ","? "}"`
+/// `"<" "#t" (":" IDENT)? ">"` — a `litter`/`breed`'s own generic type
+/// parameter declaration: minimal groundwork (at most one parameter, no
+/// multiple params), but a real bound (`bound: Some(claw_name)`) is
+/// allowed, checked by Rust's own trait system once generated (Kittine
+/// doesn't re-verify it). See `docs/LANGUAGE.md` § Generics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeParam {
+    pub bound: Option<String>,
+}
+
+/// `(private)? litter Name type_param? "{" field ("," field)* ","? "}"`
 /// — a plain data record, Kittine's term for what Rust calls a struct.
 /// Fields are declared the same `name type` shape as a function
 /// [`Param`], just comma-separated instead of parenthesized.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Litter {
     pub name: String,
-    /// `true` for `litter Name<#t> { .. }` — at most one type parameter,
-    /// minimal generics groundwork (no bounds, no multiple params). See
-    /// `docs/LANGUAGE.md` § Generics.
-    pub has_type_param: bool,
+    pub type_param: Option<TypeParam>,
     pub fields: Vec<LitterField>,
     /// `true` for `private litter ..` — see `Component::is_private`.
     pub is_private: bool,
@@ -51,20 +61,20 @@ pub struct Litter {
 pub struct LitterField {
     pub name: String,
     /// `Num`/`Word`/`Flag`, an array form, `"T"` (this litter's own type
-    /// parameter — only valid when `has_type_param` is `true`), or
-    /// another `litter`/`breed`'s name (a nested custom type, rendered
-    /// verbatim as the Rust type name).
+    /// parameter — only valid when `type_param` is `Some`), or another
+    /// `litter`/`breed`'s name (a nested custom type, rendered verbatim
+    /// as the Rust type name).
     pub ty: String,
 }
 
-/// `(private)? breed Name ("<" "#t" ">")? "{" variant ("," variant)* ","? "}"`
+/// `(private)? breed Name type_param? "{" variant ("," variant)* ","? "}"`
 /// — a closed set of named variants, Kittine's term for what Rust calls
 /// an enum. A variant carries at most one payload value (same minimal-
 /// groundwork scope as `Litter`'s single type parameter).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Breed {
     pub name: String,
-    pub has_type_param: bool,
+    pub type_param: Option<TypeParam>,
     pub variants: Vec<BreedVariant>,
     pub is_private: bool,
 }
@@ -74,6 +84,44 @@ pub struct BreedVariant {
     pub name: String,
     /// `Some(ty)` for `Variant(ty)`, `None` for a bare unit variant.
     pub payload: Option<String>,
+}
+
+/// `(private)? claw Name "{" claw_method ("," claw_method)* ","? "}"` — a
+/// trait: a named set of method signatures a `litter`/`breed` can promise
+/// to implement (see [`Wear`]). Every signature is fully explicit (no
+/// inference — there's no body here for `infer::apply` to look at, and a
+/// trait's signature has to be fixed independent of any one
+/// implementation).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Claw {
+    pub name: String,
+    pub methods: Vec<ClawMethod>,
+    /// `true` for `private claw ..` — see `Component::is_private`.
+    pub is_private: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClawMethod {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: String,
+}
+
+/// `bare ClawName "for" TypeName "{" ("purr" method)* "}"` — implements
+/// `claw` for `litter`/`breed` `target`, Kittine's term for what Rust
+/// calls `impl Claw for Target`. Each method reuses the ordinary `purr`
+/// grammar/AST (`Function`) verbatim; `self` is available inside a
+/// method's body with no declaration needed (see
+/// `codegen::method_param_list_rust`), the same way `children` needs
+/// none in a component. There's no cross-check here that `methods`
+/// actually matches `claw`'s own signatures — a mismatch is caught by
+/// Rust's own trait-impl type checking once generated, the same trust
+/// model an unknown method call already gets (see `Expr::MethodCall`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Wear {
+    pub claw: String,
+    pub target: String,
+    pub methods: Vec<Function>,
 }
 
 /// A typed parameter in a `func`/`purr` signature: `#t name`.

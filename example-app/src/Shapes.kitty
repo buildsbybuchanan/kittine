@@ -13,12 +13,27 @@ breed Shape {
     Idle
 }
 
+claw Named {
+    describe() #w
+}
+
+bare Named for Point {
+    purr describe() #w {
+        return ('a point')
+    }
+}
+
+litter NamedHolder<#t: Named> {
+    value #t
+}
+
 func Shapes() {
     <{origin}> >> Point { x: 3, y: 4 }
     <{shape}> >> Circle(5)
     <{description}> >> 'unknown'
     <{numHolder}> >> Holder { value: 42 }
     <{wordHolder}> >> Holder { value: 'hello' }
+    <{namedHolder}> >> NamedHolder { value: origin }
 
     pounce> <{shape}>
         Circle(r) >> <{description}> >> 'circle'
@@ -32,6 +47,8 @@ func Shapes() {
             <p>"Shape: " <{description}></p>
             <p>"NumHolder: " { numHolder.value }</p>
             <p>"WordHolder: " { wordHolder.value }</p>
+            <p>"Origin describes itself as: " { origin.describe() }</p>
+            <p>"NamedHolder wraps a: " { namedHolder.value.describe() }</p>
         </div>
     )
 }

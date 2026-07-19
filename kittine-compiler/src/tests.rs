@@ -480,6 +480,28 @@ purr double(#n n) #n {
     assert!(!out.contains("(n * 2f64)"));
 }
 
+/// A `Word`-returning `purr` whose `return (expr)` is a *bare* string
+/// literal (no `+` concatenation in sight, so `render_binary`'s string-
+/// format special case never triggers) needs the same owned-`String`
+/// coercion a `Word` parameter/field/variant-payload literal already
+/// gets — found while building the `claw`/`bare` trait system (a method
+/// body that just returns a literal hit this immediately), but it's a
+/// pre-existing gap in plain `purr` too: `"hi"` alone doesn't type-check
+/// against a `String` return type (confirmed against real rustc:
+/// `E0308: expected String, found &str`).
+#[test]
+fn word_returning_purr_with_bare_string_literal_return_is_owned() {
+    let out = compile(
+        r#"
+purr constant() #w {
+    return ('hi')
+}
+"#,
+    );
+    assert!(out.contains(r#""hi".to_string()"#));
+    assert!(!out.contains("-> String {\n    \"hi\"\n"));
+}
+
 #[test]
 fn component_composition_passes_props_as_plain_values() {
     let out = compile(
@@ -1925,4 +1947,137 @@ func Home() {
     assert!(!out.contains("pub struct Internal"));
     assert!(out.contains("enum Status {"));
     assert!(!out.contains("pub enum Status"));
+}
+
+// ---- claw (traits), bare .. for .. (impls), bounded generics -----------
+//
+// Closing the last open item in Phase 1's "a real type system" gap: a
+// full trait system, not just the litter/breed/pounce/minimal-generics
+// groundwork from the previous round. See `docs/LANGUAGE.md` § Claws.
+
+/// `claw Name { method(params) type, .. }` becomes a Rust `trait`; `bare
+/// Claw for Target { purr method(..) .. }` becomes `impl Claw for
+/// Target`, with an implicit `&self` no `.kitty` author writes. Calling
+/// the method on a value (`p.describe()`) is just an ordinary method
+/// call — no new call syntax needed.
+#[test]
+fn claw_and_bare_declare_a_trait_and_implement_it() {
+    let out = compile(
+        r#"
+claw Named {
+    describe() #w
+}
+
+litter Point {
+    x #n,
+    y #n
+}
+
+bare Named for Point {
+    purr describe() #w {
+        return ('a point')
+    }
+}
+
+func Home() {
+    hold p >> Point { x: 1, y: 2 }
+    return ( <p>{ p.describe() }</p> )
+}
+"#,
+    );
+    assert!(out.contains("trait Named {"));
+    assert!(out.contains("fn describe(&self) -> String;"));
+    assert!(out.contains("impl Named for Point {"));
+    assert!(out.contains("fn describe(&self) -> String {"));
+    assert!(out.contains(r#""a point".to_string()"#));
+    assert!(out.contains(".describe()"));
+}
+
+/// A `claw` method with a parameter renders that parameter after the
+/// implicit `&self`, and the method body can read it as an ordinary
+/// local (it's a real `Param`, tracked in `Scope` exactly like a `purr`
+/// parameter would be).
+#[test]
+fn claw_method_with_a_parameter() {
+    let out = compile(
+        r#"
+claw Scalable {
+    scale(#n factor) #n
+}
+
+litter Point {
+    x #n,
+    y #n
+}
+
+bare Scalable for Point {
+    purr scale(#n factor) #n {
+        return (self.x * factor)
+    }
+}
+
+func Home() {
+    hold p >> Point { x: 2, y: 3 }
+    return ( <p>{ p.scale(2) }</p> )
+}
+"#,
+    );
+    assert!(out.contains("fn scale(&self, factor: f64) -> f64;"));
+    assert!(out.contains("fn scale(&self, factor: f64) -> f64 {"));
+    assert!(out.contains("self.x"));
+}
+
+/// `private claw ..` emits a plain (non-`pub`) Rust `trait` — same
+/// treatment as `private litter`/`breed`/`func`/`purr`.
+#[test]
+fn private_claw_is_not_pub() {
+    let out = compile(
+        r#"
+private claw Named {
+    describe() #w
+}
+
+func Home() {
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(out.contains("trait Named {"));
+    assert!(!out.contains("pub trait Named"));
+}
+
+/// A bounded type parameter (`litter Holder<#t: Named> { .. }`) renders
+/// as a real Rust trait bound (`struct Holder<T: Named> { .. }`) — Rust's
+/// own compiler enforces it at every construction site, Kittine doesn't
+/// re-check it.
+#[test]
+fn bounded_generic_type_parameter_renders_as_a_trait_bound() {
+    let out = compile(
+        r#"
+claw Named {
+    describe() #w
+}
+
+litter Holder<#t: Named> {
+    value #t
+}
+"#,
+    );
+    assert!(out.contains("struct Holder<T: Named> {"));
+    assert!(out.contains("pub value: T,"));
+}
+
+/// An unbounded type parameter still renders with no bound (regression
+/// check against the bounded case above sharing the same code path).
+#[test]
+fn unbounded_generic_type_parameter_has_no_bound() {
+    let out = compile(
+        r#"
+litter Holder<#t> {
+    value #t
+}
+"#,
+    );
+    assert!(out.contains("struct Holder<T> {"));
+    assert!(!out.contains("Holder<T:"));
 }

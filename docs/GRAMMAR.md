@@ -78,6 +78,9 @@ KEYWORD_EXPORT  := "export"
 KEYWORD_HOLD    := "hold"
 KEYWORD_LITTER  := "litter"
 KEYWORD_BREED   := "breed"
+KEYWORD_CLAW    := "claw"
+KEYWORD_BARE    := "bare"
+KEYWORD_FOR     := "for"
 
 // Operators and punctuation
 "<{"  ">>"  "<"  ">"  "/>"  "</"  "<="  ">="  "!="  "&&"  "||"
@@ -111,7 +114,10 @@ constructs — everything else is fully delimited by explicit punctuation
 ```
 program   := import* item*
 import    := "export"? "import" "{" IDENT ("," IDENT)* "}" "from" STRING
-item      := "private"? (component | function | litter | breed)
+item      := "private"? (component | function | litter | breed | claw)
+           | wear
+           // "wear" (bare .. for ..) is never "private" -- an impl block
+           // isn't itself an importable name
 ```
 
 Imports must appear before any `item`. `export import ..` re-exports the
@@ -153,8 +159,10 @@ litter_field := IDENT field_type
 breed        := "breed" IDENT type_param? "{" variant ("," variant)* ","? "}"
 variant      := IDENT ("(" field_type ")")?
 
-type_param   := "<" TYPE_GENERIC ">"
-               // at most one type parameter, no bounds -- see
+type_param   := "<" TYPE_GENERIC (":" IDENT)? ">"
+               // at most one type parameter; the optional ":" IDENT is a
+               // claw bound (Rust's own trait system checks it once
+               // generated, not re-verified here) -- see
                // LANGUAGE.md § Generics
 field_type   := type_tag_name | TYPE_GENERIC | IDENT
                // a scalar/array tag, this litter/breed's own generic
@@ -164,6 +172,29 @@ field_type   := type_tag_name | TYPE_GENERIC | IDENT
 A `breed` variant carries at most one payload value (`Circle(#n)`) or none
 (`Idle`). See [LANGUAGE.md § Litters](LANGUAGE.md#litters) and [§
 Breeds](LANGUAGE.md#breeds).
+
+### Claws
+
+```
+claw       := "claw" IDENT "{" claw_method ("," claw_method)* ","? "}"
+claw_method := IDENT "(" (claw_param ("," claw_param)*)? ")" field_type
+claw_param := field_type IDENT
+            // every claw_method's params/return are mandatory -- there's
+            // no body here for type inference to work from
+
+wear       := "bare" IDENT "for" IDENT "{" function* "}"
+            // == Rust's "impl <claw IDENT> for <target IDENT> { .. }";
+            // each function reuses the "function" production verbatim
+            // (starts with "purr"), plus an implicit `self` available in
+            // its body -- never declared, same treatment "children"
+            // already gets in a component
+```
+
+`wear`'s `<claw IDENT>` and `<target IDENT>` aren't cross-checked against
+`claw`'s own declared method list by this grammar or by
+`kittine-compiler` — a missing/extra/mismatched method surfaces as a
+plain Rust trait-impl error once generated. See [LANGUAGE.md §
+Claws](LANGUAGE.md#claws).
 
 ### Type tags
 
@@ -283,9 +314,22 @@ precise day-to-day boundary:
 
 - Pattern matching (`pounce>`) as a value-producing *expression* — today
   it's statement-only.
-- Multiple type parameters, bounds, or generic `purr`/`func` — today a
-  `litter`/`breed` may have at most one unbounded type parameter.
+- Multiple type parameters or generic `purr`/`func` — today a
+  `litter`/`breed` may have at most one type parameter (optionally
+  bounded by one `claw`), and only `litter`/`breed` can be generic at
+  all.
 - Multi-field breed-variant payloads (`Circle(#n, #n)`) — today a variant
   carries at most one payload value.
-- Module-level visibility beyond `private`/importable (no `pub(crate)`-
-  style granularity).
+- Type-checked cross-referencing between a `claw`'s declared methods and
+  a `bare` block's implementation — today a mismatch is only caught by
+  Rust's own trait-impl type checking once generated.
+- Argument-type coercion for a `claw` method call — a method call's
+  arguments render bare regardless of the callee's actual parameter
+  types, the same as any other [method
+  call](LANGUAGE.md#method-calls).
+
+Module-level visibility is considered closed as of this document's last
+update: `private`/importable-by-default now covers `func`, `purr`,
+`litter`, `breed`, and `claw` uniformly, and Kittine's compilation model
+(one flat Rust module tree per app) has no real crate/package boundary
+for `pub(crate)`-style granularity to mean anything.

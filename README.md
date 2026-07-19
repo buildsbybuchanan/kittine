@@ -43,9 +43,10 @@ This repository is a monorepo with five parts:
   list-rendering forms), `purr` functions, and composed
   `Nav`/`Card`/`NavList` components; `User.kitty` reads its dynamic segment
   via a method-call chain on `use_params_map()`; `Shapes.kitty` demonstrates
-  `litter`/`breed`/`pounce>`/generics (a `Point` struct, a generic
-  `Holder<#t>`, a `Shape` enum pattern-matched to derive a description) —
-  all wired up through the Vite plugin.
+  `litter`/`breed`/`pounce>`/generics/`claw` (a `Point` struct, a generic
+  `Holder<#t>`, a `Shape` enum pattern-matched to derive a description, a
+  `Named` claw implemented for `Point` and used to bound a second generic
+  `NamedHolder<#t: Named>`) — all wired up through the Vite plugin.
 - **`example-ssr/`** — the same idea, **server-side rendered** via
   `cargo-leptos` + Axum instead of Vite: real HTML content in the first
   response (verified with `curl`, no JavaScript needed), hydrated
@@ -166,9 +167,17 @@ func Counter() {
   limitations](docs/LANGUAGE.md#known-limitations)). Both `litter` and
   `breed` may carry one generic type parameter (`litter Holder<#t> {
   value #t }`), inferred at each construction site with no explicit
-  instantiation needed. See [Litters](docs/LANGUAGE.md#litters), [Breeds](docs/LANGUAGE.md#breeds),
+  instantiation needed — and that parameter can be bounded by a `claw`
+  (`litter NamedHolder<#t: Named> { value #t }`). See
+  [Litters](docs/LANGUAGE.md#litters), [Breeds](docs/LANGUAGE.md#breeds),
   [Pattern matching](docs/LANGUAGE.md#pattern-matching),
   [Generics](docs/LANGUAGE.md#generics).
+- `claw Name { method(params) type, .. }` is a trait — a named capability
+  contract. `bare Claw for Target { purr method(..) .. }` implements one
+  for a `litter`/`breed` (Rust's `impl Claw for Target`), with `self`
+  available in each method body with no declaration needed. Calling it
+  is just an ordinary method call: `value.method(arg)`. See
+  [Claws](docs/LANGUAGE.md#claws).
 
 ## Shorter than the Rust it generates
 

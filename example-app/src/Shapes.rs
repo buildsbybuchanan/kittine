@@ -25,6 +25,21 @@ pub enum Shape {
     Idle,
 }
 
+pub trait Named {
+    fn describe(&self) -> String;
+}
+
+impl Named for Point {
+    fn describe(&self) -> String {
+        "a point".to_string()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NamedHolder<T: Named> {
+    pub value: T,
+}
+
 #[component]
 pub fn Shapes() -> impl IntoView {
     let (origin, set_origin) = signal(Point { x: 3f64, y: 4f64 });
@@ -32,6 +47,7 @@ pub fn Shapes() -> impl IntoView {
     let (description, set_description) = signal("unknown".to_string());
     let (numHolder, set_numHolder) = signal(Holder { value: 42f64 });
     let (wordHolder, set_wordHolder) = signal(Holder { value: "hello".to_string() });
+    let (namedHolder, set_namedHolder) = signal(NamedHolder { value: origin.get() });
     match shape.get() {
         Shape::Circle(r) => {
             set_description.update(|n| *n = "circle".to_string());
@@ -64,6 +80,14 @@ pub fn Shapes() -> impl IntoView {
             <p>
                 "WordHolder: "
                 {move || wordHolder.get().value}
+            </p>
+            <p>
+                "Origin describes itself as: "
+                {move || origin.get().describe()}
+            </p>
+            <p>
+                "NamedHolder wraps a: "
+                {move || namedHolder.get().value.describe()}
             </p>
         </div>
     }

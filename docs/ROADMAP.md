@@ -43,10 +43,15 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   pattern-matching a `breed` value (statement-only for now), and minimal
   generics groundwork (at most one type parameter per `litter`/`breed`,
   e.g. `litter Holder<#t> { value #t }`, inferred at each construction
-  site with no explicit instantiation). See [LANGUAGE.md §
+  site with no explicit instantiation) — and now a real **trait system**:
+  `claw Name { method(params) type, .. }` declares one, `bare Claw for
+  Target { purr method(..) .. }` implements it (Rust's `impl Claw for
+  Target`), and the generic type parameter above can be bounded by one
+  (`litter NamedHolder<#t: Named> { value #t }`, a real Rust trait bound
+  Rust's own compiler enforces). See [LANGUAGE.md §
   Litters](LANGUAGE.md#litters), [§ Breeds](LANGUAGE.md#breeds), [§
   Pattern matching](LANGUAGE.md#pattern-matching), [§
-  Generics](LANGUAGE.md#generics).
+  Generics](LANGUAGE.md#generics), [§ Claws](LANGUAGE.md#claws).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
   `private func`/`purr` opts an item out of being importable, enforced by
@@ -137,7 +142,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (91+ tests, every feature round-tripped against actual
+tested compiler (97+ tests, every feature round-tripped against actual
 Leptos under both CSR/hydrate and SSR configurations, routing (including
 dynamic segments) driven end-to-end in a real browser) with a language
 core solid enough for a genuine multi-page site, CSR or server-rendered.
@@ -173,10 +178,11 @@ still missing:
 
 None of these are hard blockers to *experimenting* with Kittine or
 building the planned example site — they're what stands between "this
-works" and "I'd stake a real product on this." Phase 1 (real error
-handling, a real type system) and Phase 6 (security review, semver,
-grammar freeze) in [Full vision](#full-vision-phased-honest) are where
-these get addressed.
+works" and "I'd stake a real product on this." Phase 1 (language
+completeness — done as of 2026-07-19, with `pounce>`-as-expression the
+one tracked exception feeding directly into gap 1 above) and Phase 6
+(security review, semver, grammar freeze) in [Full
+vision](#full-vision-phased-honest) are where these get addressed.
 
 ## Next up
 
@@ -197,6 +203,26 @@ below). SSR/SSG (previously the one open item, flagged as needing a real
 architecture decision rather than a quick increment) is done too — see
 [SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
 turns up (per the standing rule at the top of this file).
+
+Done: ~~Traits (`claw`), trait implementations (`bare .. for ..`), bounded
+generics~~ (closes Phase 1's "a real type system" gap — see
+[LANGUAGE.md § Claws](LANGUAGE.md#claws), [§
+Generics](LANGUAGE.md#generics). `claw Name { method(params) type, .. }`
+declares a trait; `bare Claw for Target { purr method(..) .. }`
+implements it, reusing ordinary `purr` codegen with an implicit `self`;
+`litter`/`breed`'s existing generic type parameter can now be bounded by
+a `claw` (`<#t: Named>`), a real Rust trait bound Rust's own compiler
+enforces. Also fixed a real pre-existing bug found along the way: a
+`Word`-returning `purr`/method with a bare string-literal `return`
+rendered an uncoerced `&str` (`E0308` against real rustc) — now correctly
+owned. Verified with 6 new compiler tests (97 total) and a real `cargo
+check`/`npm run build` against Leptos 0.7 — `example-app`'s
+`Shapes.kitty` gained a `Named` claw implemented for `Point` and a
+bounded `NamedHolder<#t: Named>`) — landed 2026-07-19. This closes Phase
+1 in full (module visibility was judged already-closed — see the Phase 1
+section below); the one documented exception is `pounce>` staying
+statement-only, tracked as [Production readiness](#production-readiness)
+gap 1, not a Phase 1 item.
 
 Done: ~~Structs (`litter`), enums (`breed`), pattern matching (`pounce>`),
 minimal generics groundwork~~ (Phase 1 language-completeness work — see
@@ -305,34 +331,42 @@ above. Writing full docs/tutorials for anything in this list before it's
 real would mean documenting features that don't exist — so this section
 stays a plan, not a spec, until an item graduates into `LANGUAGE.md`.
 
-### Phase 1 — Language completeness (extends [Next up](#next-up))
+### Phase 1 — Language completeness (extends [Next up](#next-up)) — **done, with one documented exception**
 
-~~Structs/records~~ (`litter`), ~~enums~~ (`breed`), ~~pattern matching~~
-(`pounce>`), and ~~generics groundwork~~ (one unbounded type parameter per
-`litter`/`breed`) all landed 2026-07-19 — see [Litters](LANGUAGE.md#litters),
-[Breeds](LANGUAGE.md#breeds), [Pattern
-matching](LANGUAGE.md#pattern-matching), [Generics](LANGUAGE.md#generics).
-~~A formal grammar spec document~~ also landed the same day —
-[GRAMMAR.md](GRAMMAR.md). What's still open in this phase:
+Every item originally listed under this phase has landed, as of
+2026-07-19:
 
-- **A real type system beyond the current three scalar tags.** Basic
-  same-function-body inference for `Num`/`Word`/`Flag` has landed (see
-  [Type inference](LANGUAGE.md#type-inference)), and `litter`/`breed` add
-  user-declared structural types — but there's still no cross-function
-  type propagation, no array-element inference, no traits/interfaces, and
-  generics remain groundwork-only (one unbounded parameter, no bounds, no
-  generic `purr`/`func` — see [Generics](LANGUAGE.md#generics)).
-- **Module visibility** beyond `private`/importable-by-default (now
-  covering `litter`/`breed` too, not just `func`/`purr`) — no
-  `pub(crate)`-style granularity.
-- **`pounce>` as a value-producing expression**, so a `purr` can compute
-  and `return` a value depending on which `breed` variant matched, the
-  way Rust's own `match`/`?` can — see [Pattern
-  matching](LANGUAGE.md#pattern-matching) and [Production
-  readiness](#production-readiness) gap 1. This is the remaining piece of
-  "proper error types/`Result`-style handling in Kittine syntax" — the
-  type + branching half is real today, the compute-and-return half isn't
-  yet.
+- ~~Structs/records~~ (`litter`) — [Litters](LANGUAGE.md#litters).
+- ~~Enums~~ (`breed`) — [Breeds](LANGUAGE.md#breeds).
+- ~~Pattern matching~~ (`pounce>`) — [Pattern
+  matching](LANGUAGE.md#pattern-matching).
+- ~~Generics groundwork~~ — one type parameter per `litter`/`breed`,
+  optionally bounded by a `claw` — [Generics](LANGUAGE.md#generics).
+- ~~A real type system beyond the current three scalar tags~~ —
+  same-function-body inference for `Num`/`Word`/`Flag` ([Type
+  inference](LANGUAGE.md#type-inference)), `litter`/`breed` as
+  user-declared structural types, and a full trait system (`claw`/`bare
+  .. for ..`) for shared behavior/capability contracts across them —
+  [Claws](LANGUAGE.md#claws). Two intentional scope limits remain, not
+  bugs: type inference doesn't propagate across function calls or into
+  array element types, and generics stay single-parameter (no bounds
+  beyond one `claw`, no generic `purr`/`func`).
+- ~~Module visibility~~ — judged already closed rather than extended:
+  `private`/importable-by-default is now uniform across every
+  declaration kind (`func`, `purr`, `litter`, `breed`, `claw`), and
+  Kittine's compilation model (every file folds into one flat Rust
+  module tree for a single app) has no real crate/package boundary for
+  `pub(crate)`-style granularity to actually mean anything. Revisit if a
+  real multi-package use case ever demonstrates otherwise.
+- ~~A formal grammar spec document~~ — [GRAMMAR.md](GRAMMAR.md).
+
+**The one deliberate exception**: `pounce>` is still statement-only — a
+`purr` can't compute and `return` a value depending on which `breed`
+variant matched, the way Rust's own `match`/`?` can. This is tracked as
+[Production readiness](#production-readiness) gap 1, not re-listed as an
+open Phase 1 item, because it's a narrow, well-scoped, already-documented
+gap rather than an open-ended one — closing it is a natural next
+increment, not a blocker to calling the rest of this phase done.
 
 ### Phase 2 — Standard library
 

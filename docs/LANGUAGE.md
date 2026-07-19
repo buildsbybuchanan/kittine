@@ -37,6 +37,7 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 - [Breeds (`breed`, enums)](#breeds)
 - [Pattern matching (`pounce>`)](#pattern-matching)
 - [Generics](#generics)
+- [Claws (`claw`, `bare`, traits)](#claws)
 - [Printing (`craft<...>`)](#printing-craft)
 - [Control flow (`if>` / `orif>` / `else>`)](#control-flow)
 - [Loops (`spin` / `}{`)](#loops)
@@ -1066,9 +1067,10 @@ litter Holder<#t> {
 A [`litter`](#litters) or [`breed`](#breeds) can declare **at most one**
 type parameter — `<#t>` right after its name — minimal groundwork rather
 than a full generics system (see [Known limitations](#known-limitations)
-below): no bounds, no multiple parameters, no generic `purr`/`func`.
-`#t` inside that litter/breed's own field/variant types then means
-"whatever concrete type this specific value was built with":
+below): no multiple parameters, no generic `purr`/`func` (only
+`litter`/`breed` can be generic at all). `#t` inside that litter/breed's
+own field/variant types then means "whatever concrete type this specific
+value was built with":
 
 ```kitty
 hold numHolder >> Holder { value: 42 }
@@ -1082,13 +1084,29 @@ constructor's type parameter, so leaving it unwritten is both simpler to
 implement and, per [Brevity by design](#brevity-by-design), shorter than
 spelling it out would be.
 
+The type parameter can be **bounded** by a [`claw`](#claws) — `<#t:
+Named>` — restricting it to types that implement that claw:
+
+```kitty
+litter NamedHolder<#t: Named> {
+    value #t
+}
+```
+
 ### Compilation
 
 The `<#t>` becomes a single Rust generic parameter, conventionally named
-`T`:
+`T`; a bound becomes a real Rust trait bound, checked by Rust's own
+compiler at every construction site — Kittine doesn't re-verify it
+itself, the same trust model an unknown [method call](#method-calls)
+already gets:
 
 ```kitty
 litter Holder<#t> {
+    value #t
+}
+
+litter NamedHolder<#t: Named> {
     value #t
 }
 ```
@@ -1096,6 +1114,87 @@ litter Holder<#t> {
 #[derive(Clone, Debug)]
 pub struct Holder<T> {
     pub value: T,
+}
+
+#[derive(Clone, Debug)]
+pub struct NamedHolder<T: Named> {
+    pub value: T,
+}
+```
+
+## Claws
+
+```kitty
+claw Named {
+    describe() #w
+}
+```
+
+`claw Name { method(params) type, .. }` declares a trait — Kittine's term
+for a named capability/behavior contract a [`litter`](#litters) or
+[`breed`](#breeds) can promise to provide (a "claw" is something a cat
+*has*, matching a type *having* a described capability). Each method is a
+signature only — a name, a parameter list (using the same [type
+tags](#type-tags) as anywhere else), and a return type — **all fully
+explicit**: there's no body here for [type inference](#type-inference) to
+work from, and a trait's signature has to stay fixed independent of any
+one implementation.
+
+A `litter`/`breed` implements a `claw` with a separate `bare` block —
+Kittine's term for `impl Claw for Type` (a cat "bares its claws" to show
+a capability):
+
+```kitty
+bare Named for Point {
+    purr describe() #w {
+        return ('a point')
+    }
+}
+```
+
+Each method inside a `bare` block is written exactly like an ordinary
+[`purr`](#functions-purr) — including the `purr` keyword — with one
+difference: the special name `self` is available inside its body with no
+declaration needed (the same "no declaration needed" treatment
+[`children`](#children) already gets), referring to the value the claw
+was implemented for. Read a field off it the same way as any other
+[litter field](#litters) — `self.x`.
+
+Calling a claw method on a value needs no new syntax at all — it's just
+an ordinary [method call](#method-calls):
+
+```kitty
+hold p >> Point { x: 3, y: 4 }
+craft<p.describe()>
+```
+
+### Compilation
+
+`claw` becomes a plain Rust `trait`, every method taking an implicit
+`&self` no `.kitty` author ever writes. `bare Claw for Target { .. }`
+becomes `impl Claw for Target { .. }`, reusing the exact same
+statement/expression codegen a top-level `purr` gets:
+
+```kitty
+claw Named {
+    describe() #w
+}
+
+bare Named for Point {
+    purr describe() #w {
+        return ('a point')
+    }
+}
+```
+```rust
+pub trait Named {
+    fn describe(&self) -> String;
+}
+
+impl Named for Point {
+    fn describe(&self) -> String {
+        "a point".to_string()
+    }
 }
 ```
 
@@ -1428,7 +1527,8 @@ this summary is deliberately a shorter, denser version of.
 
 ```
 program      := import* item*
-item         := "private"? (component | function | litter | breed)
+item         := "private"? (component | function | litter | breed | claw)
+              | wear                        // never "private" -- see "Claws"
 import       := "import" "{" IDENT ("," IDENT)* "}" "from" STRING
 component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
 function     := "purr" IDENT param_list type_tag_name?
@@ -1445,10 +1545,22 @@ litter       := "litter" IDENT type_param? "{" litter_field ("," litter_field)* 
 litter_field := IDENT field_type
 breed        := "breed" IDENT type_param? "{" variant ("," variant)* ","? "}"
 variant      := IDENT ("(" field_type ")")?
-type_param   := "<" "#t" ">"           // at most one -- see "Generics"
+type_param   := "<" "#t" (":" IDENT)? ">"      // at most one, optionally
+                                                // bounded by a claw -- see
+                                                // "Generics"
 field_type   := type_tag_name | "#t" | IDENT   // scalar/array, the litter's
                                                 // own generic param, or a
                                                 // custom litter/breed name
+
+claw         := "claw" IDENT "{" claw_method ("," claw_method)* ","? "}"
+claw_method  := IDENT "(" (claw_param ("," claw_param)*)? ")" field_type
+claw_param   := field_type IDENT               // always explicit -- no body
+                                                // for inference to work from
+wear         := "bare" IDENT "for" IDENT "{" function* "}"
+// "bare Claw for Target { .. }" == Rust's "impl Claw for Target { .. }" --
+// each function reuses the "function" production verbatim (still starts
+// with "purr"), with the implicit `self` available in its body with no
+// declaration needed, same treatment "children" already gets in a func.
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | pounce_stmt | expr_stmt
 var_stmt     := "<{" IDENT "}>" ">>" expr
@@ -1530,12 +1642,15 @@ use leptos_meta::*;
 ```
 
 followed by one `mod` + `use` pair per `import`, and then one item per
-`func`/`purr`/`litter`/`breed` in the source file, in source order: a
-`func` becomes `#[component] pub fn Name(..) -> impl IntoView { ... }`; a
-`purr` becomes a plain `pub fn name(..) -> ReturnType { ... }`; a `litter`
-becomes a `#[derive(Clone, Debug)] pub struct Name { ... }`; a `breed`
-becomes a `#[derive(Clone, Debug)] pub enum Name { ... }` (see
-[Litters](#litters), [Breeds](#breeds)). The `leptos_router` and
+`func`/`purr`/`litter`/`breed`/`claw`/`bare` in the source file, in
+source order: a `func` becomes `#[component] pub fn Name(..) -> impl
+IntoView { ... }`; a `purr` becomes a plain `pub fn name(..) ->
+ReturnType { ... }`; a `litter` becomes a `#[derive(Clone, Debug)] pub
+struct Name { ... }`; a `breed` becomes a `#[derive(Clone, Debug)] pub
+enum Name { ... }`; a `claw` becomes a `pub trait Name { ... }`; a `bare
+Claw for Target { .. }` becomes an `impl Claw for Target { ... }` (see
+[Litters](#litters), [Breeds](#breeds), [Claws](#claws)). The
+`leptos_router` and
 `leptos_meta` imports are unconditional (see [Routing](#routing)) —
 `unused_imports` is allowed at the crate level so files that don't route
 or set page metadata stay warning-free. `leptos_meta` brings `<Title>`,
@@ -1554,7 +1669,11 @@ lex+parse-only walk collects every reachable file's `purr`/`litter`/
 the `Word`-parameter string-literal coercion above work across `import`s
 (for a `purr` argument *or* a `litter` field *or* a `breed` variant
 payload), not just within one file — then each file is actually generated
-using that whole-graph map. Every file gets parsed twice across a full
+using that whole-graph map. `claw`/`bare` deliberately aren't part of
+this map — a claw method is only ever called via `receiver.method(args)`,
+which already renders verbatim regardless of any other type information
+(see [Method calls](#method-calls)), so there's nothing for a whole-graph
+signature lookup to add there. Every file gets parsed twice across a full
 build — real, but cheap next to what `cargo`/`wasm-bindgen` cost
 downstream.
 
@@ -1586,21 +1705,39 @@ These are intentional scope boundaries of the current prototype, not bugs:
   branching on it both work today, but a function can't yet unwrap one
   and return the unwrapped value in the same expression the way Rust's
   own `match` (or `?`) can.
-- **Generics are groundwork, not a system.** See [Generics](#generics): a
-  `litter`/`breed` may have at most one type parameter, with no bounds,
-  no multiple parameters, and no generic `purr`/`func` (only
-  `litter`/`breed` can be generic at all).
-- **A `litter`/`breed` field/variant type is always explicit — there's no
-  inference for these positions.** Unlike a `purr` param or prop (see
-  [Type inference](#type-inference)), a `litter` field or `breed` variant
-  payload always needs its own `#n`/`#w`/`#f`/`#t`/custom-type-name
-  written out.
-- **A `litter`/`breed` name isn't reserved from colliding with a real
-  Rust type.** Naming one `Box`, `String`, `Vec`, etc. shadows the real
-  Rust prelude type within that generated file — it happens to still
-  compile in every case tried so far (a local item takes precedence over
-  a prelude import in Rust), but produces a confusing generated file.
-  Kittine doesn't warn about this.
+- **Generics are groundwork, not a full system.** See
+  [Generics](#generics): a `litter`/`breed` may have at most one type
+  parameter (optionally bounded by a [`claw`](#claws)), but still no
+  multiple parameters and no generic `purr`/`func` (only `litter`/`breed`
+  can be generic at all).
+- **A `litter`/`breed`/`claw` field/variant/method type is always
+  explicit — there's no inference for these positions.** Unlike a `purr`
+  param or prop (see [Type inference](#type-inference)), a `litter`
+  field, `breed` variant payload, or `claw` method signature always needs
+  its own `#n`/`#w`/`#f`/`#t`/custom-type-name written out. A `bare`
+  block's own method *bodies* do get ordinary `purr`-style inference —
+  only the signature positions above don't.
+- **A claw method call gets no argument type coercion.** [Method
+  calls](#method-calls) already render an argument bare, with no lookup
+  against the callee's actual parameter types (Kittine doesn't track a
+  method-call receiver's type) — this applies to a `claw` method the same
+  way it applies to any other method call, so a bare string-literal
+  argument to a `Word`-typed claw-method parameter doesn't get the
+  `.to_string()` coercion a same-file `purr` call or `litter`
+  field/`breed` variant construction would. Give the argument as a
+  `Word`-typed signal/prop instead of a bare literal to avoid this.
+- **A `litter`/`breed`/`claw` name isn't reserved from colliding with a
+  real Rust type/trait.** Naming one `Box`, `String`, `Vec`, `Clone`,
+  etc. shadows the real Rust prelude item within that generated file —
+  it happens to still compile in every case tried so far (a local item
+  takes precedence over a prelude import in Rust), but produces a
+  confusing generated file. Kittine doesn't warn about this.
+- **No cross-check between a `claw`'s declared signatures and a `bare`
+  block's method bodies.** A `bare Claw for Target { .. }` isn't verified
+  against `Claw`'s own method list at all by Kittine — a missing method,
+  an extra one, or a mismatched signature is caught by Rust's own
+  trait-impl type checking once generated (`E0046`/`E0050`/etc.), the
+  same trust model an unknown method call already gets.
 - **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
   works via `leptos_router`'s own components composed as-is — real, but
   client-side-rendered only (no SSR/SSG integration yet). Reading a

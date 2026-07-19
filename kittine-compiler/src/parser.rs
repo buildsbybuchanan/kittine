@@ -115,8 +115,15 @@ impl Parser {
 
         let mut items = Vec::new();
         while !matches!(self.peek().kind, TokenKind::Eof) {
-            // `private` is optional and precedes `func`/`purr`; see
-            // `Component::is_private`/`Function::is_private`.
+            // `bare .. for .. { .. }` is never `private` -- an impl block
+            // isn't itself an importable name, so it doesn't participate
+            // in the private-prefix dispatch below at all.
+            if matches!(self.peek().kind, TokenKind::KeywordBare) {
+                items.push(Item::Wear(self.parse_wear()?));
+                continue;
+            }
+            // `private` is optional and precedes `func`/`purr`/`litter`/
+            // `breed`/`claw`; see `Component::is_private`.
             let is_private = matches!(self.peek().kind, TokenKind::KeywordPrivate);
             if is_private {
                 self.advance();
@@ -126,7 +133,8 @@ impl Parser {
                 TokenKind::KeywordPurr => Item::Function(self.parse_function(is_private)?),
                 TokenKind::KeywordLitter => Item::Litter(self.parse_litter(is_private)?),
                 TokenKind::KeywordBreed => Item::Breed(self.parse_breed(is_private)?),
-                _ => return Err(self.err("expected 'func', 'purr', 'litter', or 'breed' (optionally preceded by 'private') at the top level")),
+                TokenKind::KeywordClaw => Item::Claw(self.parse_claw(is_private)?),
+                _ => return Err(self.err("expected 'func', 'purr', 'litter', 'breed', 'claw', or 'bare' (optionally preceded by 'private', except 'bare') at the top level")),
             };
             items.push(item);
         }
@@ -342,19 +350,28 @@ impl Parser {
         })
     }
 
-    /// Parses an optional `<#t>` generic-parameter declaration right after
-    /// a `litter`/`breed`'s name — minimal groundwork, exactly one type
-    /// parameter, no bounds, no multiple params. Returns whether one was
-    /// present. `<` here can't be confused with a comparison — a
-    /// litter/breed declaration is never in expression position.
-    fn parse_optional_type_param(&mut self) -> PResult<bool> {
+    /// Parses an optional `<#t (: IDENT)?>` generic-parameter declaration
+    /// right after a `litter`/`breed`'s name — minimal groundwork, at
+    /// most one type parameter, no multiple params, but a real bound
+    /// (`<#t: Named>`) is allowed: Rust's own trait system checks it once
+    /// generated, Kittine doesn't re-verify it (same trust model an
+    /// unknown method call already gets). `<` here can't be confused with
+    /// a comparison — a litter/breed declaration is never in expression
+    /// position.
+    fn parse_optional_type_param(&mut self) -> PResult<Option<TypeParam>> {
         if matches!(self.peek().kind, TokenKind::Lt) {
             self.advance();
             self.expect(TokenKind::TypeGeneric)?;
+            let bound = if matches!(self.peek().kind, TokenKind::Colon) {
+                self.advance();
+                Some(self.expect_ident()?)
+            } else {
+                None
+            };
             self.expect(TokenKind::Gt)?;
-            Ok(true)
+            Ok(Some(TypeParam { bound }))
         } else {
-            Ok(false)
+            Ok(None)
         }
     }
 
@@ -388,7 +405,7 @@ impl Parser {
     fn parse_litter(&mut self, is_private: bool) -> PResult<Litter> {
         self.expect(TokenKind::KeywordLitter)?;
         let name = self.expect_ident()?;
-        let has_type_param = self.parse_optional_type_param()?;
+        let type_param = self.parse_optional_type_param()?;
         self.expect(TokenKind::LBrace)?;
         let mut fields = Vec::new();
         if !matches!(self.peek().kind, TokenKind::RBrace) {
@@ -404,7 +421,7 @@ impl Parser {
         self.expect(TokenKind::RBrace)?;
         Ok(Litter {
             name,
-            has_type_param,
+            type_param,
             fields,
             is_private,
         })
@@ -420,7 +437,7 @@ impl Parser {
     fn parse_breed(&mut self, is_private: bool) -> PResult<Breed> {
         self.expect(TokenKind::KeywordBreed)?;
         let name = self.expect_ident()?;
-        let has_type_param = self.parse_optional_type_param()?;
+        let type_param = self.parse_optional_type_param()?;
         self.expect(TokenKind::LBrace)?;
         let mut variants = Vec::new();
         if !matches!(self.peek().kind, TokenKind::RBrace) {
@@ -436,7 +453,7 @@ impl Parser {
         self.expect(TokenKind::RBrace)?;
         Ok(Breed {
             name,
-            has_type_param,
+            type_param,
             variants,
             is_private,
         })
@@ -455,6 +472,91 @@ impl Parser {
             None
         };
         Ok(BreedVariant { name, payload })
+    }
+
+    /// Parses `claw Name "{" claw_method ("," claw_method)* ","? "}"`.
+    fn parse_claw(&mut self, is_private: bool) -> PResult<Claw> {
+        self.expect(TokenKind::KeywordClaw)?;
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut methods = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RBrace) {
+            methods.push(self.parse_claw_method()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RBrace) {
+                    break; // tolerate a trailing comma
+                }
+                methods.push(self.parse_claw_method()?);
+            }
+        }
+        self.expect(TokenKind::RBrace)?;
+        Ok(Claw {
+            name,
+            methods,
+            is_private,
+        })
+    }
+
+    /// Parses `IDENT "(" (claw_param ("," claw_param)*)? ")" field_type` —
+    /// a signature only, no body: every type is mandatory (no inference
+    /// possible with nothing to infer *from*).
+    fn parse_claw_method(&mut self) -> PResult<ClawMethod> {
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::LParen)?;
+        let mut params = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RParen) {
+            params.push(self.parse_claw_param()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                params.push(self.parse_claw_param()?);
+            }
+        }
+        self.expect(TokenKind::RParen)?;
+        let return_type = self.parse_field_type()?;
+        Ok(ClawMethod {
+            name,
+            params,
+            return_type,
+        })
+    }
+
+    fn parse_claw_param(&mut self) -> PResult<Param> {
+        let ty = self.parse_field_type()?;
+        let name = self.expect_ident()?;
+        Ok(Param { ty, name })
+    }
+
+    /// Parses `bare ClawName "for" TypeName "{" ("purr" method)* "}"`.
+    /// Each method reuses [`Parser::parse_function`] verbatim — it already
+    /// starts by expecting `KeywordPurr`, so this just calls it in a loop
+    /// until the closing brace. `is_private` is meaningless for an impl
+    /// block's own methods (an `impl` isn't itself an importable name),
+    /// so `parse_function` is always called with `false` here.
+    fn parse_wear(&mut self) -> PResult<Wear> {
+        self.expect(TokenKind::KeywordBare)?;
+        let claw = self.expect_ident()?;
+        self.expect(TokenKind::KeywordFor)?;
+        let target = self.expect_ident()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut methods = Vec::new();
+        loop {
+            match self.peek().kind {
+                TokenKind::RBrace => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::Eof => {
+                    return Err(self.err("unexpected end of file inside 'bare .. for ..' block"));
+                }
+                _ => methods.push(self.parse_function(false)?),
+            }
+        }
+        Ok(Wear {
+            claw,
+            target,
+            methods,
+        })
     }
 
     // ---- statements --------------------------------------------------------
