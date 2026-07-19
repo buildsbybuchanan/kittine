@@ -20,12 +20,60 @@ pub struct Import {
     pub is_export: bool,
 }
 
-/// A top-level declaration: either a view-rendering component (`func`) or a
-/// plain value-returning function (`purr`).
+/// A top-level declaration: a view-rendering component (`func`), a plain
+/// value-returning function (`purr`), a data record (`litter`), or a
+/// closed variant type (`breed`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Component(Component),
     Function(Function),
+    Litter(Litter),
+    Breed(Breed),
+}
+
+/// `(private)? litter Name ("<" "#t" ">")? "{" field ("," field)* ","? "}"`
+/// — a plain data record, Kittine's term for what Rust calls a struct.
+/// Fields are declared the same `name type` shape as a function
+/// [`Param`], just comma-separated instead of parenthesized.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Litter {
+    pub name: String,
+    /// `true` for `litter Name<#t> { .. }` — at most one type parameter,
+    /// minimal generics groundwork (no bounds, no multiple params). See
+    /// `docs/LANGUAGE.md` § Generics.
+    pub has_type_param: bool,
+    pub fields: Vec<LitterField>,
+    /// `true` for `private litter ..` — see `Component::is_private`.
+    pub is_private: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LitterField {
+    pub name: String,
+    /// `Num`/`Word`/`Flag`, an array form, `"T"` (this litter's own type
+    /// parameter — only valid when `has_type_param` is `true`), or
+    /// another `litter`/`breed`'s name (a nested custom type, rendered
+    /// verbatim as the Rust type name).
+    pub ty: String,
+}
+
+/// `(private)? breed Name ("<" "#t" ">")? "{" variant ("," variant)* ","? "}"`
+/// — a closed set of named variants, Kittine's term for what Rust calls
+/// an enum. A variant carries at most one payload value (same minimal-
+/// groundwork scope as `Litter`'s single type parameter).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Breed {
+    pub name: String,
+    pub has_type_param: bool,
+    pub variants: Vec<BreedVariant>,
+    pub is_private: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BreedVariant {
+    pub name: String,
+    /// `Some(ty)` for `Variant(ty)`, `None` for a bare unit variant.
+    pub payload: Option<String>,
 }
 
 /// A typed parameter in a `func`/`purr` signature: `#t name`.
@@ -97,6 +145,31 @@ pub enum Stmt {
     /// lazily inside an event handler — see `docs/LANGUAGE.md` §
     /// Programmatic navigation.
     Hold { name: String, value: Expr },
+    /// `pounce> subject` `(Variant(binding)? ">>" stmt)*` `(else> stmt)?`
+    /// — pattern-matches `subject` (a `breed` value) against each arm's
+    /// variant in turn, arms indented one level under `pounce>` itself
+    /// (not siblings of it, unlike `orif>`/`else>` beside `if>`). Each
+    /// arm's body is exactly one statement. Statement-only: there's no
+    /// way yet to use a `pounce>`'s result as a value (see
+    /// `docs/LANGUAGE.md` § Known limitations) — this is for branching on
+    /// which variant a value is and taking action, not computing one.
+    Pounce {
+        subject: Expr,
+        arms: Vec<PounceArm>,
+        catch_all: Option<Vec<Stmt>>,
+    },
+}
+
+/// One arm of a [`Stmt::Pounce`]: `Variant(binding)? >> stmt`. `binding` is
+/// `Some` only when the variant carries a payload (`Circle(r)`) — a unit
+/// variant's arm (`Idle >> ..`) has none. `body` always holds exactly one
+/// statement (see `Parser::parse_pounce_stmt`), but stays a `Vec` to reuse
+/// `gen_stmt`'s existing per-statement codegen unchanged.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PounceArm {
+    pub variant: String,
+    pub binding: Option<String>,
+    pub body: Vec<Stmt>,
 }
 
 /// An expression in Kittine source.
@@ -168,6 +241,23 @@ pub enum Expr {
     /// `Type::method(args)` and `Type::CONST` without any dedicated call
     /// syntax of its own.
     Path(Vec<String>),
+    /// `receiver.field` — reads a [`Litter`] field. Unlike `Expr::MethodCall`
+    /// (which always has an `arg_list`, even an empty `()`), this has no
+    /// parens at all — that's what distinguishes a field read from a
+    /// zero-argument method call at parse time.
+    FieldAccess {
+        receiver: Box<Expr>,
+        field: String,
+    },
+    /// `Name { field: expr, .. }` — a [`Litter`] struct literal. For a
+    /// generic litter (`Litter::has_type_param`), there's no explicit
+    /// turbofish-style instantiation — Rust infers the type parameter from
+    /// the field values themselves, the same way it infers any other
+    /// generic constructor call.
+    StructInit {
+        name: String,
+        fields: Vec<(String, Expr)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

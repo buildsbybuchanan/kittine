@@ -36,6 +36,17 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   an expression (`callee(arg, ..)` where `callee` isn't a bare name),
   tuple literals (`(expr, expr, ..)`), path-qualified expressions
   (`Type::method()`, `Type::CONST`, multi-segment paths).
+- **User-declared data types**: `litter Name { field type, .. }` (a
+  struct — `Name { field: expr, .. }` constructs it, `.field` reads a
+  field), `breed Name { Variant(type)?, .. }` (a closed set of variants —
+  an enum — `Circle(5)`/bare `Idle` construct one), `pounce> subject`
+  pattern-matching a `breed` value (statement-only for now), and minimal
+  generics groundwork (at most one type parameter per `litter`/`breed`,
+  e.g. `litter Holder<#t> { value #t }`, inferred at each construction
+  site with no explicit instantiation). See [LANGUAGE.md §
+  Litters](LANGUAGE.md#litters), [§ Breeds](LANGUAGE.md#breeds), [§
+  Pattern matching](LANGUAGE.md#pattern-matching), [§
+  Generics](LANGUAGE.md#generics).
 - **Modules**: `import { A, B } from './file.kitty'`, resolved and compiled
   recursively by `kittine-compiler build` (cycle detection included).
   `private func`/`purr` opts an item out of being importable, enforced by
@@ -126,17 +137,24 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (76+ tests, every feature round-tripped against actual
+tested compiler (91+ tests, every feature round-tripped against actual
 Leptos under both CSR/hydrate and SSR configurations, routing (including
 dynamic segments) driven end-to-end in a real browser) with a language
 core solid enough for a genuine multi-page site, CSR or server-rendered.
 That's real progress, not the same thing as production-ready. What's
 still missing:
 
-1. **No error-handling story.** Kittine has no `Result`/`Option`-shaped
-   construct; a runtime panic in generated Rust is a hard crash reported
-   only in the browser devtools console, with nothing a `.kitty` author
-   can catch or recover from.
+1. **Error handling is narrower than "no story" now, but still real.**
+   `breed Result { Ok(#t), Err(#w) }`-shaped types and `pounce>` branching
+   on them both work today (see [LANGUAGE.md §
+   Breeds](LANGUAGE.md#breeds), [§ Pattern
+   matching](LANGUAGE.md#pattern-matching)) — a `.kitty` author *can*
+   model and react to failure now. What's still missing: `pounce>` is
+   statement-only, so a function can't unwrap a `Result` and `return` the
+   unwrapped value in one expression the way Rust's own `match`/`?` can;
+   and an *un*-modeled runtime panic (an actual Rust `panic!`, not a
+   `breed`-modeled failure) is still a hard crash reported only in the
+   browser devtools console.
 2. **No way for a Kittine *program* to have its own tests.** The compiler
    is well-tested; a person writing `.kitty` files has no test runner
    surfaced to them at all.
@@ -180,7 +198,24 @@ architecture decision rather than a quick increment) is done too — see
 [SSR.md](SSR.md) and the Done entry below. Add here the moment a real gap
 turns up (per the standing rule at the top of this file).
 
-Done: ~~Scalar type inference for props/`purr` params and return types~~
+Done: ~~Structs (`litter`), enums (`breed`), pattern matching (`pounce>`),
+minimal generics groundwork~~ (Phase 1 language-completeness work — see
+[LANGUAGE.md § Litters](LANGUAGE.md#litters), [§
+Breeds](LANGUAGE.md#breeds), [§ Pattern
+matching](LANGUAGE.md#pattern-matching), [§
+Generics](LANGUAGE.md#generics), and the CHANGELOG entry for the full
+design. A `litter`/`breed` may carry at most one unbounded type parameter;
+a `breed` variant carries at most one payload value; `pounce>` is
+statement-only (can't yet compute a value for a `return`). Verified with 6
+new compiler tests (91 total) and a real `cargo check`/`npm run build`
+against Leptos 0.7 — `example-app` gained a real `Shapes.kitty` composing
+all four features together, wired into `Home.kitty`) — landed 2026-07-19.
+~~A formal grammar spec document~~ ([GRAMMAR.md](GRAMMAR.md), the complete
+EBNF grammar derived from the lexer/parser source, not written
+aspirationally — closes that specific Phase 1 item; [LANGUAGE.md § Full
+grammar summary](LANGUAGE.md#full-grammar-summary) stays as a shorter
+quick-reference version) — landed 2026-07-19. ~~Scalar type inference for
+props/`purr` params and return types~~
 (`purr greet(name) { return ('Hello, ' + name) }` needs no `#w` tag at all
 — a new post-parse `infer` pass derives `Word`/`Num`/`Flag` from how the
 name is used in the body, local to that one function/component, scalars
@@ -272,13 +307,32 @@ stays a plan, not a spec, until an item graduates into `LANGUAGE.md`.
 
 ### Phase 1 — Language completeness (extends [Next up](#next-up))
 
-Structs/records, enums, pattern matching, generics groundwork, a real type
-system beyond the current three scalar tags (basic same-function-body
-inference for those three scalars has landed — see [Type
-inference](LANGUAGE.md#type-inference) — but there's still no cross-function
-propagation, no array-element inference, and no tags beyond `Num`/`Word`/
-`Flag`), module visibility, proper error types/`Result`-style handling in
-Kittine syntax, a formal grammar spec document.
+~~Structs/records~~ (`litter`), ~~enums~~ (`breed`), ~~pattern matching~~
+(`pounce>`), and ~~generics groundwork~~ (one unbounded type parameter per
+`litter`/`breed`) all landed 2026-07-19 — see [Litters](LANGUAGE.md#litters),
+[Breeds](LANGUAGE.md#breeds), [Pattern
+matching](LANGUAGE.md#pattern-matching), [Generics](LANGUAGE.md#generics).
+~~A formal grammar spec document~~ also landed the same day —
+[GRAMMAR.md](GRAMMAR.md). What's still open in this phase:
+
+- **A real type system beyond the current three scalar tags.** Basic
+  same-function-body inference for `Num`/`Word`/`Flag` has landed (see
+  [Type inference](LANGUAGE.md#type-inference)), and `litter`/`breed` add
+  user-declared structural types — but there's still no cross-function
+  type propagation, no array-element inference, no traits/interfaces, and
+  generics remain groundwork-only (one unbounded parameter, no bounds, no
+  generic `purr`/`func` — see [Generics](LANGUAGE.md#generics)).
+- **Module visibility** beyond `private`/importable-by-default (now
+  covering `litter`/`breed` too, not just `func`/`purr`) — no
+  `pub(crate)`-style granularity.
+- **`pounce>` as a value-producing expression**, so a `purr` can compute
+  and `return` a value depending on which `breed` variant matched, the
+  way Rust's own `match`/`?` can — see [Pattern
+  matching](LANGUAGE.md#pattern-matching) and [Production
+  readiness](#production-readiness) gap 1. This is the remaining piece of
+  "proper error types/`Result`-style handling in Kittine syntax" — the
+  type + branching half is real today, the compute-and-return half isn't
+  yet.
 
 ### Phase 2 — Standard library
 

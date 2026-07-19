@@ -8,8 +8,8 @@ use crate::parser;
 fn compile(src: &str) -> String {
     let tokens = lexer::tokenize(src).expect("lex should succeed");
     let program = parser::parse(tokens).expect("parse should succeed");
-    let known_functions = codegen::collect_function_signatures(&program.items);
-    codegen::generate(&program, &known_functions)
+    let signatures = codegen::collect_signatures(&program.items);
+    codegen::generate(&program, &signatures)
 }
 
 /// Returns the parser error message for source that should fail to parse.
@@ -1750,4 +1750,179 @@ purr greet(#w greeting, name) {
 "#,
     );
     assert!(out.contains("pub fn greet(greeting: String, name: String) -> String"));
+}
+
+// ---- litter (structs), breed (enums), pounce> (pattern matching) --------
+//
+// Phase 1 language-completeness work: `litter` is Kittine's term for a
+// plain data record (Rust struct), `breed` for a closed set of variants
+// (Rust enum), `pounce>` for matching on a `breed` value. Minimal
+// generics groundwork: at most one type parameter, no bounds. See
+// `docs/LANGUAGE.md` § Litters, § Breeds, § Pattern matching.
+
+/// `litter Name { field type, .. }` becomes a plain Rust struct; a struct
+/// literal (`Point { x: 1, y: 2 }`) becomes the same shape verbatim, and
+/// `.field` reads a field with no method-call parens.
+#[test]
+fn litter_declares_a_struct_and_struct_literal_constructs_it() {
+    let out = compile(
+        r#"
+litter Point {
+    x #n,
+    y #n
+}
+
+purr sum(#n a, #n b) #n {
+    return (a + b)
+}
+
+func Home() {
+    hold p >> Point { x: 1, y: 2 }
+    return ( <p>{ sum(p.x, p.y) }</p> )
+}
+"#,
+    );
+    assert!(out.contains("struct Point {"));
+    assert!(out.contains("pub x: f64,"));
+    assert!(out.contains("pub y: f64,"));
+    assert!(out.contains("Point { x: 1f64, y: 2f64 }"));
+    // `p` is `hold`-bound (a litter is non-`Copy`, see
+    // `is_non_copy_param_type`), so a field read clones first, same as
+    // any other `hold`/`spin`-tracked non-`Copy` value.
+    assert!(out.contains("sum(p.clone().x, p.clone().y)"));
+}
+
+/// A `Word`-typed litter field initialized from a bare string literal gets
+/// the same `.to_string()` coercion a `Word`-typed `purr` parameter does
+/// (see `string_literal_argument_to_same_file_word_param_is_owned`) —
+/// otherwise `name: "bob"` doesn't type-check against a `String` field.
+#[test]
+fn word_typed_litter_field_string_literal_is_owned() {
+    let out = compile(
+        r#"
+litter User {
+    name #w,
+    age #n
+}
+
+func Home() {
+    hold u >> User { name: 'Bob', age: 30 }
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(out.contains(r#"name: "Bob".to_string()"#));
+    assert!(out.contains("age: 30f64"));
+}
+
+/// `breed Name { Variant(type)?, .. }` becomes a plain Rust enum. A
+/// payload-carrying variant constructed call-style (`Circle(5)`) renders
+/// as `Shape::Circle(5f64)`; a unit variant referenced bare (`Idle`)
+/// renders as `Shape::Idle`.
+#[test]
+fn breed_declares_an_enum_and_variants_construct_it() {
+    let out = compile(
+        r#"
+breed Shape {
+    Circle(#n),
+    Idle
+}
+
+func Home() {
+    hold a >> Circle(5)
+    hold b >> Idle
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(out.contains("enum Shape {"));
+    assert!(out.contains("Circle(f64),"));
+    assert!(out.contains("Idle,"));
+    assert!(out.contains("let a = Shape::Circle(5f64);"));
+    assert!(out.contains("let b = Shape::Idle;"));
+}
+
+/// `pounce> subject` `Variant(binding)? >> ..` `else> ..` lowers to a real
+/// Rust `match`, fully qualifying each pattern with its breed name and
+/// binding the payload where the arm asked for it.
+#[test]
+fn pounce_lowers_to_a_rust_match() {
+    let out = compile(
+        r#"
+breed Shape {
+    Circle(#n),
+    Square(#n)
+}
+
+func Home() {
+    hold shape >> Circle(5)
+
+    pounce> shape
+        Circle(r) >> craft<r * 2>
+        Square(s) >> craft<s>
+        else> craft<'unknown'>
+
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    // `shape` is `hold`-bound, so reading it clones — see
+    // `hold_bound_value_is_cloned_at_every_read`.
+    assert!(out.contains("match shape.clone() {"));
+    assert!(out.contains("Shape::Circle(r) => {"));
+    assert!(out.contains("Shape::Square(s) => {"));
+    assert!(out.contains("_ => {"));
+}
+
+/// Minimal generics groundwork: `litter Name<#t> { field #t }` becomes a
+/// Rust struct with one type parameter, and a struct literal needs no
+/// explicit instantiation — Rust infers `T` from each field value's own
+/// shape, so the same generic litter can be built with a `Num` value in
+/// one place and a `Word` value in another.
+#[test]
+fn generic_litter_infers_type_parameter_from_field_value() {
+    let out = compile(
+        r#"
+litter Box<#t> {
+    value #t
+}
+
+func Home() {
+    hold numBox >> Box { value: 5 }
+    hold wordBox >> Box { value: 'hi' }
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(out.contains("struct Box<T> {"));
+    assert!(out.contains("pub value: T,"));
+    assert!(out.contains("Box { value: 5f64 }"));
+    assert!(out.contains(r#"Box { value: "hi".to_string() }"#));
+}
+
+/// `private litter`/`private breed` emit a plain (non-`pub`) Rust item —
+/// same treatment as `private func`/`purr` (see
+/// `private_component_is_not_pub`).
+#[test]
+fn private_litter_and_breed_are_not_pub() {
+    let out = compile(
+        r#"
+private litter Internal {
+    x #n
+}
+
+private breed Status {
+    Ready,
+    Waiting
+}
+
+func Home() {
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(out.contains("struct Internal {"));
+    assert!(!out.contains("pub struct Internal"));
+    assert!(out.contains("enum Status {"));
+    assert!(!out.contains("pub enum Status"));
 }

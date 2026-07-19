@@ -18,6 +18,7 @@ pub enum TokenKind {
     KeywordOrif,    // orif>
     KeywordElse,    // else>
     KeywordCraft,   // craft<
+    KeywordPounce,  // pounce> subject  Variant(binding)? >> .. else> ..
 
     // Type-tag sigils: #n (Num), #w (Word), #f (Flag), each optionally
     // followed by `[]` for an array of that type. Deliberately shorter than
@@ -26,6 +27,12 @@ pub enum TokenKind {
     TypeNum,  // #n
     TypeWord, // #w
     TypeFlag, // #f
+    /// `#t` — the generic type-parameter placeholder inside a `litter`/
+    /// `breed`'s own `<#t>` declaration and field/variant types (e.g.
+    /// `litter Box<#t> { value #t }`). Distinct from `TypeNum`/`TypeWord`/
+    /// `TypeFlag`, which name a concrete scalar; this names "whatever type
+    /// this specific litter/breed was instantiated with."
+    TypeGeneric,
 
     // JSX punctuation
     Lt,      // <
@@ -54,6 +61,8 @@ pub enum TokenKind {
     KeywordFrom,
     KeywordExport, // export import { A } from '...' -- re-export
     KeywordHold,   // hold name >> expr -- plain (non-reactive) local binding
+    KeywordLitter, // litter Name (<#t>)? { field (#t)?, .. } -- a struct
+    KeywordBreed,  // breed Name (<#t>)? { Variant (type)?, .. } -- an enum
 
     // Literals / identifiers
     Ident(String),
@@ -70,6 +79,7 @@ pub enum TokenKind {
     RBracket, // ]
     Comma,
     Dot,
+    Colon,      // : (struct-literal field: value)
     ColonColon, // :: (path-qualified expressions: Type::method(), Type::CONST)
     Eq, // = (JSX attribute assignment)
     Plus,
@@ -90,9 +100,11 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordOrif => write!(f, "orif>"),
             TokenKind::KeywordElse => write!(f, "else>"),
             TokenKind::KeywordCraft => write!(f, "craft<"),
+            TokenKind::KeywordPounce => write!(f, "pounce>"),
             TokenKind::TypeNum => write!(f, "#n"),
             TokenKind::TypeWord => write!(f, "#w"),
             TokenKind::TypeFlag => write!(f, "#f"),
+            TokenKind::TypeGeneric => write!(f, "#t"),
             TokenKind::Lt => write!(f, "<"),
             TokenKind::Gt => write!(f, ">"),
             TokenKind::SlashGt => write!(f, "/>"),
@@ -111,6 +123,8 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordFrom => write!(f, "from"),
             TokenKind::KeywordExport => write!(f, "export"),
             TokenKind::KeywordHold => write!(f, "hold"),
+            TokenKind::KeywordLitter => write!(f, "litter"),
+            TokenKind::KeywordBreed => write!(f, "breed"),
             TokenKind::Ident(s) => write!(f, "{s}"),
             TokenKind::Number(n) => write!(f, "{n}"),
             TokenKind::Str(s) => write!(f, "\"{s}\""),
@@ -124,6 +138,7 @@ impl fmt::Display for TokenKind {
             TokenKind::RBracket => write!(f, "]"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Dot => write!(f, "."),
+            TokenKind::Colon => write!(f, ":"),
             TokenKind::ColonColon => write!(f, "::"),
             TokenKind::Eq => write!(f, "="),
             TokenKind::Plus => write!(f, "+"),
@@ -400,10 +415,11 @@ impl Lexer {
                     Some('n') => TokenKind::TypeNum,
                     Some('w') => TokenKind::TypeWord,
                     Some('f') => TokenKind::TypeFlag,
+                    Some('t') => TokenKind::TypeGeneric,
                     other => {
                         return Err(LexError {
                             message: format!(
-                                "unknown type sigil '#{}': expected #n (Num), #w (Word), or #f (Flag)",
+                                "unknown type sigil '#{}': expected #n (Num), #w (Word), #f (Flag), or #t (a litter/breed's own generic type parameter)",
                                 other.map(String::from).unwrap_or_default()
                             ),
                             line,
@@ -439,6 +455,12 @@ impl Lexer {
                     "from" => TokenKind::KeywordFrom,
                     "export" => TokenKind::KeywordExport,
                     "hold" => TokenKind::KeywordHold,
+                    "litter" => TokenKind::KeywordLitter,
+                    "breed" => TokenKind::KeywordBreed,
+                    "pounce" if self.peek() == Some('>') => {
+                        self.advance();
+                        TokenKind::KeywordPounce
+                    }
                     "if" if self.peek() == Some('>') => {
                         self.advance();
                         TokenKind::KeywordIf
@@ -506,6 +528,7 @@ impl Lexer {
                 ']' => TokenKind::RBracket,
                 ',' => TokenKind::Comma,
                 '.' => TokenKind::Dot,
+                ':' => TokenKind::Colon,
                 '=' => TokenKind::Eq,
                 '+' => TokenKind::Plus,
                 '-' => TokenKind::Minus,

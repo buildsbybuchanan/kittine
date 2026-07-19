@@ -7,7 +7,7 @@ mod parser;
 mod tests;
 
 use clap::{Parser as ClapParser, Subcommand};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -63,7 +63,7 @@ fn main() -> ExitCode {
 /// `bool` is whether `input`'s own output file was actually (re)written, as
 /// opposed to already being byte-identical and left untouched.
 fn build(input: &Path, output: Option<&Path>) -> Result<(PathBuf, bool), String> {
-    let mut signatures = HashMap::new();
+    let mut signatures = codegen::Signatures::default();
     collect_all_signatures(input, &mut HashSet::new(), &mut signatures)?;
     let mut compiled = HashSet::new();
     let mut stack = Vec::new();
@@ -71,11 +71,11 @@ fn build(input: &Path, output: Option<&Path>) -> Result<(PathBuf, bool), String>
 }
 
 /// Recursively parses (lex + parse only, no codegen) every `.kitty` file
-/// reachable from `input` through `import`s, merging each file's `purr`
-/// signatures into one whole-graph map — this is what lets a string
-/// literal passed to an *imported* `purr` get the same `Word`-parameter
-/// `.to_string()` treatment a same-file call already had (see
-/// `codegen::collect_function_signatures`). Every file gets parsed twice
+/// reachable from `input` through `import`s, merging each file's
+/// `purr`/`litter`/`breed` signatures into one whole-graph map — this is
+/// what lets a string literal passed to an *imported* `purr` get the same
+/// `Word`-parameter `.to_string()` treatment a same-file call already had
+/// (see `codegen::collect_signatures`). Every file gets parsed twice
 /// across a full build (once here, once in `compile_recursive`) — real,
 /// but cheap: parsing a `.kitty` file is milliseconds, nowhere near the
 /// cost `cargo`/`wasm-bindgen` add downstream, so doing it twice to keep
@@ -88,7 +88,7 @@ fn build(input: &Path, output: Option<&Path>) -> Result<(PathBuf, bool), String>
 fn collect_all_signatures(
     input: &Path,
     visited: &mut HashSet<PathBuf>,
-    signatures: &mut HashMap<String, Vec<String>>,
+    signatures: &mut codegen::Signatures,
 ) -> Result<(), String> {
     let canonical = input
         .canonicalize()
@@ -101,7 +101,7 @@ fn collect_all_signatures(
         .map_err(|e| format!("failed to read '{}': {e}", input.display()))?;
     let tokens = lexer::tokenize(&source).map_err(|e| e.to_string())?;
     let program = parser::parse(tokens).map_err(|e| e.to_string())?;
-    signatures.extend(codegen::collect_function_signatures(&program.items));
+    signatures.merge(codegen::collect_signatures(&program.items));
 
     let base_dir = input.parent().unwrap_or_else(|| Path::new("."));
     for import in &program.imports {
@@ -120,7 +120,7 @@ fn compile_recursive(
     output: Option<&Path>,
     compiled: &mut HashSet<PathBuf>,
     stack: &mut Vec<PathBuf>,
-    signatures: &HashMap<String, Vec<String>>,
+    signatures: &codegen::Signatures,
 ) -> Result<(PathBuf, bool), String> {
     let canonical = input
         .canonicalize()

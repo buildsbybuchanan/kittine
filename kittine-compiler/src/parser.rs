@@ -124,7 +124,9 @@ impl Parser {
             let item = match self.peek().kind {
                 TokenKind::KeywordFunc => Item::Component(self.parse_component(is_private)?),
                 TokenKind::KeywordPurr => Item::Function(self.parse_function(is_private)?),
-                _ => return Err(self.err("expected 'func' or 'purr' (optionally preceded by 'private') at the top level")),
+                TokenKind::KeywordLitter => Item::Litter(self.parse_litter(is_private)?),
+                TokenKind::KeywordBreed => Item::Breed(self.parse_breed(is_private)?),
+                _ => return Err(self.err("expected 'func', 'purr', 'litter', or 'breed' (optionally preceded by 'private') at the top level")),
             };
             items.push(item);
         }
@@ -340,6 +342,121 @@ impl Parser {
         })
     }
 
+    /// Parses an optional `<#t>` generic-parameter declaration right after
+    /// a `litter`/`breed`'s name — minimal groundwork, exactly one type
+    /// parameter, no bounds, no multiple params. Returns whether one was
+    /// present. `<` here can't be confused with a comparison — a
+    /// litter/breed declaration is never in expression position.
+    fn parse_optional_type_param(&mut self) -> PResult<bool> {
+        if matches!(self.peek().kind, TokenKind::Lt) {
+            self.advance();
+            self.expect(TokenKind::TypeGeneric)?;
+            self.expect(TokenKind::Gt)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Parses a `litter`/`breed` field or variant payload's type: a scalar
+    /// tag (`#n`/`#w`/`#f`, with an optional `[]`), the `#t` generic
+    /// placeholder, or a bare capitalized identifier naming another
+    /// `litter`/`breed`.
+    fn parse_field_type(&mut self) -> PResult<String> {
+        match self.peek().kind.clone() {
+            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag => {
+                self.parse_signature_type()
+            }
+            TokenKind::TypeGeneric => {
+                self.advance();
+                Ok("T".to_string())
+            }
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(name)
+            }
+            other => Err(self.err(format!(
+                "expected a field type (#n, #w, #f, #t, or a litter/breed name), found '{other}'"
+            ))),
+        }
+    }
+
+    /// Parses `litter Name ("<" "#t" ">")? "{" field ("," field)* ","? "}"`.
+    /// A field is `name type` — the same shape as a function [`Param`], just
+    /// comma-separated (not parenthesized) and with no `children`-style
+    /// special case.
+    fn parse_litter(&mut self, is_private: bool) -> PResult<Litter> {
+        self.expect(TokenKind::KeywordLitter)?;
+        let name = self.expect_ident()?;
+        let has_type_param = self.parse_optional_type_param()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RBrace) {
+            fields.push(self.parse_litter_field()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RBrace) {
+                    break; // tolerate a trailing comma
+                }
+                fields.push(self.parse_litter_field()?);
+            }
+        }
+        self.expect(TokenKind::RBrace)?;
+        Ok(Litter {
+            name,
+            has_type_param,
+            fields,
+            is_private,
+        })
+    }
+
+    fn parse_litter_field(&mut self) -> PResult<LitterField> {
+        let name = self.expect_ident()?;
+        let ty = self.parse_field_type()?;
+        Ok(LitterField { name, ty })
+    }
+
+    /// Parses `breed Name ("<" "#t" ">")? "{" variant ("," variant)* ","? "}"`.
+    fn parse_breed(&mut self, is_private: bool) -> PResult<Breed> {
+        self.expect(TokenKind::KeywordBreed)?;
+        let name = self.expect_ident()?;
+        let has_type_param = self.parse_optional_type_param()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut variants = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RBrace) {
+            variants.push(self.parse_breed_variant()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RBrace) {
+                    break; // tolerate a trailing comma
+                }
+                variants.push(self.parse_breed_variant()?);
+            }
+        }
+        self.expect(TokenKind::RBrace)?;
+        Ok(Breed {
+            name,
+            has_type_param,
+            variants,
+            is_private,
+        })
+    }
+
+    /// Parses `IDENT ("(" field_type ")")?` — a variant with at most one
+    /// payload value (minimal groundwork; see `ast::BreedVariant`).
+    fn parse_breed_variant(&mut self) -> PResult<BreedVariant> {
+        let name = self.expect_ident()?;
+        let payload = if matches!(self.peek().kind, TokenKind::LParen) {
+            self.advance();
+            let ty = self.parse_field_type()?;
+            self.expect(TokenKind::RParen)?;
+            Some(ty)
+        } else {
+            None
+        };
+        Ok(BreedVariant { name, payload })
+    }
+
     // ---- statements --------------------------------------------------------
 
     fn parse_stmt(&mut self) -> PResult<Stmt> {
@@ -349,11 +466,79 @@ impl Parser {
             TokenKind::KeywordIf => self.parse_if_stmt(),
             TokenKind::KeywordSpin => self.parse_spin_stmt(),
             TokenKind::KeywordHold => self.parse_hold_stmt(),
+            TokenKind::KeywordPounce => self.parse_pounce_stmt(),
             _ => {
                 let expr = self.parse_expr()?;
                 Ok(Stmt::Expr(expr))
             }
         }
+    }
+
+    /// Parses `pounce> subject` `(Variant(binding)? ">>" stmt)+`
+    /// `(else> stmt)?`. Unlike `if>`/`orif>`/`else>` (siblings, all at the
+    /// *same* column as `if>` itself — see [`Parser::parse_if_stmt`]),
+    /// `pounce>`'s arms sit one indentation level *under* `pounce>`,
+    /// their shared column pinned by wherever the first arm actually
+    /// starts — the same "column defines the block" idea, just nested
+    /// one level deeper. Each arm's body is exactly one statement (not an
+    /// indented block): `Variant(binding)? >> stmt` reads as one line,
+    /// matching how compact every other Kittine control-flow form is.
+    fn parse_pounce_stmt(&mut self) -> PResult<Stmt> {
+        let pounce_tok = self.expect(TokenKind::KeywordPounce)?;
+        let pounce_col = pounce_tok.col;
+        let subject = self.parse_expr()?;
+
+        let arms_col = self.peek().col;
+        if arms_col <= pounce_col {
+            return Err(self.err(
+                "'pounce>' needs at least one indented 'Variant >> ..' arm below it",
+            ));
+        }
+
+        let mut arms = Vec::new();
+        let mut catch_all = None;
+        loop {
+            let tok = self.peek().clone();
+            if tok.col != arms_col {
+                break;
+            }
+            match tok.kind {
+                TokenKind::KeywordElse => {
+                    self.advance();
+                    catch_all = Some(vec![self.parse_stmt()?]);
+                    break;
+                }
+                TokenKind::Ident(variant) => {
+                    self.advance();
+                    let binding = if matches!(self.peek().kind, TokenKind::LParen) {
+                        self.advance();
+                        let b = self.expect_ident()?;
+                        self.expect(TokenKind::RParen)?;
+                        Some(b)
+                    } else {
+                        None
+                    };
+                    self.expect(TokenKind::OpAssign)?;
+                    let body = vec![self.parse_stmt()?];
+                    arms.push(PounceArm {
+                        variant,
+                        binding,
+                        body,
+                    });
+                }
+                _ => break,
+            }
+        }
+
+        if arms.is_empty() {
+            return Err(self.err("'pounce>' needs at least one 'Variant >> ..' arm"));
+        }
+
+        Ok(Stmt::Pounce {
+            subject,
+            arms,
+            catch_all,
+        })
     }
 
     /// Parses `hold name >> expr` — a plain (non-reactive) local binding.
@@ -720,12 +905,24 @@ impl Parser {
         loop {
             if matches!(self.peek().kind, TokenKind::Dot) {
                 self.advance();
-                let method = self.expect_ident()?;
-                let args = self.parse_paren_arg_list()?;
-                expr = Expr::MethodCall {
-                    receiver: Box::new(expr),
-                    method,
-                    args,
+                let name = self.expect_ident()?;
+                // A trailing `(` makes this a method call (existing
+                // behavior); with no parens at all, it's a `litter` field
+                // read instead — see `ast::Expr::FieldAccess`. This is what
+                // distinguishes `point.x` (a field) from `point.clone()` (a
+                // method call, even with zero arguments) at parse time.
+                expr = if matches!(self.peek().kind, TokenKind::LParen) {
+                    let args = self.parse_paren_arg_list()?;
+                    Expr::MethodCall {
+                        receiver: Box::new(expr),
+                        method: name,
+                        args,
+                    }
+                } else {
+                    Expr::FieldAccess {
+                        receiver: Box::new(expr),
+                        field: name,
+                    }
                 };
             } else if matches!(self.peek().kind, TokenKind::LParen) {
                 // Calling the *result* of `expr` (not a bare named
@@ -787,6 +984,8 @@ impl Parser {
                     Ok(Expr::Path(segments))
                 } else if matches!(self.peek().kind, TokenKind::LParen) {
                     self.parse_call(name)
+                } else if matches!(self.peek().kind, TokenKind::LBrace) {
+                    self.parse_struct_init(name)
                 } else {
                     Ok(Expr::Ident(name))
                 }
@@ -836,6 +1035,34 @@ impl Parser {
         }
         self.expect(TokenKind::RParen)?;
         Ok(Expr::Call { name, args })
+    }
+
+    /// Parses `Name { field: expr, .. }` following an already-consumed
+    /// `litter` name, producing `Expr::StructInit`. A generic litter's type
+    /// parameter needs no explicit instantiation here — Rust infers it from
+    /// the field values themselves.
+    fn parse_struct_init(&mut self, name: String) -> PResult<Expr> {
+        self.expect(TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RBrace) {
+            fields.push(self.parse_struct_init_field()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RBrace) {
+                    break; // tolerate a trailing comma
+                }
+                fields.push(self.parse_struct_init_field()?);
+            }
+        }
+        self.expect(TokenKind::RBrace)?;
+        Ok(Expr::StructInit { name, fields })
+    }
+
+    fn parse_struct_init_field(&mut self) -> PResult<(String, Expr)> {
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::Colon)?;
+        let value = self.parse_expr()?;
+        Ok((name, value))
     }
 
     /// Parses `[expr, expr, ..]`.

@@ -13,6 +13,9 @@ use __kittine_mod_components::{Nav, Card, NavList};
 #[path = "./Greetings.rs"]
 mod __kittine_mod_greetings;
 use __kittine_mod_greetings::{greet};
+#[path = "./Shapes.rs"]
+mod __kittine_mod_shapes;
+use __kittine_mod_shapes::{Shapes};
 
 fn doubled(n: f64) -> f64 {
     n * 2f64
@@ -88,6 +91,7 @@ pub fn Home() -> impl IntoView {
                 </p>
             </Card>
             <NavList items=sections.get()/>
+            <Shapes/>
         </div>
     }
 }

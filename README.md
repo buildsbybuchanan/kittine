@@ -18,6 +18,7 @@ Part of the [BuildsByBuchanan](https://buildsbybuchanan.com) code
 portfolio.
 
 📖 **[Full documentation](docs/)** — [language reference](docs/LANGUAGE.md) ·
+[formal grammar](docs/GRAMMAR.md) ·
 [getting started](docs/GETTING_STARTED.md) · [CLI reference](docs/CLI.md) ·
 [VS Code extension](docs/VSCODE_EXTENSION.md) ·
 [architecture](docs/ARCHITECTURE.md) · [SSR](docs/SSR.md) ·
@@ -41,8 +42,10 @@ This repository is a monorepo with five parts:
   `&&`/`||`-combined conditions), a `spin` loop (both imperative and
   list-rendering forms), `purr` functions, and composed
   `Nav`/`Card`/`NavList` components; `User.kitty` reads its dynamic segment
-  via a method-call chain on `use_params_map()` — all wired up through the
-  Vite plugin.
+  via a method-call chain on `use_params_map()`; `Shapes.kitty` demonstrates
+  `litter`/`breed`/`pounce>`/generics (a `Point` struct, a generic
+  `Holder<#t>`, a `Shape` enum pattern-matched to derive a description) —
+  all wired up through the Vite plugin.
 - **`example-ssr/`** — the same idea, **server-side rendered** via
   `cargo-leptos` + Axum instead of Vite: real HTML content in the first
   response (verified with `curl`, no JavaScript needed), hydrated
@@ -153,6 +156,19 @@ func Counter() {
   expressions](docs/LANGUAGE.md#path-qualified-expressions).
 - `return ( ... )` holds a JSX-like tree that lowers to a Leptos
   `view! { ... }` block; `onX` attributes become Leptos `on:x=` bindings.
+- `litter Name { field type, .. }` is a plain data record (a Rust
+  struct); `Name { field: expr, .. }` constructs one, `.field` reads a
+  field with no method-call parens. `breed Name { Variant(type)?, .. }`
+  is a closed set of named variants (a Rust enum) — `Circle(5)`
+  constructs a payload-carrying one, a bare `Idle` references a unit one.
+  `pounce> subject` `Variant(binding)? >> stmt` `else> stmt` pattern-
+  matches a `breed` value, statement-only for now (see [Known
+  limitations](docs/LANGUAGE.md#known-limitations)). Both `litter` and
+  `breed` may carry one generic type parameter (`litter Holder<#t> {
+  value #t }`), inferred at each construction site with no explicit
+  instantiation needed. See [Litters](docs/LANGUAGE.md#litters), [Breeds](docs/LANGUAGE.md#breeds),
+  [Pattern matching](docs/LANGUAGE.md#pattern-matching),
+  [Generics](docs/LANGUAGE.md#generics).
 
 ## Shorter than the Rust it generates
 

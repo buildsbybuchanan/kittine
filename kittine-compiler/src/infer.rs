@@ -32,6 +32,10 @@ pub fn apply(program: &mut Program) {
         match item {
             Item::Function(f) => infer_function(f),
             Item::Component(c) => infer_component(c),
+            // A `litter` field's or `breed` variant's type is always
+            // explicit (`#n`/`#w`/`#f`/`#t`/a custom type name) — there's
+            // no untyped-field syntax for this pass to fill in.
+            Item::Litter(_) | Item::Breed(_) => {}
         }
     }
 }
@@ -175,6 +179,30 @@ fn walk_stmt(stmt: &Stmt, name: &str) -> Option<&'static str> {
             None
         }
         Stmt::Hold { value, .. } => walk_expr(value, name, false),
+        Stmt::Pounce {
+            subject,
+            arms,
+            catch_all,
+        } => {
+            if let Some(t) = walk_expr(subject, name, false) {
+                return Some(t);
+            }
+            for arm in arms {
+                for s in &arm.body {
+                    if let Some(t) = walk_stmt(s, name) {
+                        return Some(t);
+                    }
+                }
+            }
+            if let Some(catch_all) = catch_all {
+                for s in catch_all {
+                    if let Some(t) = walk_stmt(s, name) {
+                        return Some(t);
+                    }
+                }
+            }
+            None
+        }
     }
 }
 
@@ -197,6 +225,10 @@ fn walk_expr(expr: &Expr, name: &str, in_bool_context: bool) -> Option<&'static 
         Expr::CallResult { callee, args } => walk_expr(callee, name, false)
             .or_else(|| args.iter().find_map(|e| walk_expr(e, name, false))),
         Expr::Tuple(items) => items.iter().find_map(|e| walk_expr(e, name, false)),
+        Expr::FieldAccess { receiver, .. } => walk_expr(receiver, name, false),
+        Expr::StructInit { fields, .. } => {
+            fields.iter().find_map(|(_, e)| walk_expr(e, name, false))
+        }
         _ => None,
     }
 }

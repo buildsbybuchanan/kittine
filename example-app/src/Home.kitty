@@ -1,5 +1,6 @@
 import { Nav, Card, NavList } from './components.kitty'
 import { greet } from './Greetings.kitty'
+import { Shapes } from './Shapes.kitty'
 
 private purr doubled(n) {
     return (n * 2)
@@ -71,6 +72,7 @@ func Home() {
                 <p>"This card's children came from the composing view."</p>
             </Card>
             <NavList items={sections}/>
+            <Shapes/>
         </div>
     )
 }

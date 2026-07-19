@@ -7,6 +7,8 @@ compiles to WebAssembly and runs client-side in the browser.
 
 This document is the authoritative syntax and semantics reference. For how to
 actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_STARTED.md).
+For the complete, formal grammar (every token and production, not this
+document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 
 ## Table of contents
 
@@ -31,6 +33,10 @@ actually build and run a Kittine project, see [GETTING_STARTED.md](GETTING_START
 - [Arrays (`[ ]`)](#arrays)
 - [Type tags (`#n` / `#w` / `#f`)](#type-tags)
 - [Type inference](#type-inference)
+- [Litters (`litter`, structs)](#litters)
+- [Breeds (`breed`, enums)](#breeds)
+- [Pattern matching (`pounce>`)](#pattern-matching)
+- [Generics](#generics)
 - [Printing (`craft<...>`)](#printing-craft)
 - [Control flow (`if>` / `orif>` / `else>`)](#control-flow)
 - [Loops (`spin` / `}{`)](#loops)
@@ -874,6 +880,225 @@ scoping limits, both intentional rather than bugs:
   inference doesn't look inside a `spin` loop body to guess an array's
   element type.
 
+## Litters
+
+```kitty
+litter Point {
+    x #n,
+    y #n
+}
+```
+
+`litter Name { field type, .. }` declares a plain data record — Kittine's
+term for what Rust calls a struct (a "litter" of related fields, matching
+the cat theme every other keyword follows: `purr`, `craft`, `spin`,
+`hold`). Each field is a `name type` pair, comma-separated, using the same
+[type tags](#type-tags) as a prop or `purr` param — `#n`/`#w`/`#f`, an
+array form, [`#t`](#generics) for a generic litter's own type parameter,
+or another `litter`/`breed`'s name for a nested custom type. `private
+litter ..` opts it out of being importable, same as [`private
+func`/`purr`](#visibility).
+
+A litter value is constructed with a struct literal — `Name { field:
+expr, .. }` — and a field is read with a bare `.field` (no parens, unlike
+a [method call](#method-calls)):
+
+```kitty
+hold p >> Point { x: 3, y: 4 }
+craft<p.x>
+```
+
+### Compilation
+
+`litter` becomes a plain Rust `struct`, `#[derive(Clone, Debug)]` so a
+litter-typed value can be read from more than one reactive closure the
+same way a `Word` prop already can — a litter is never `Copy`. A struct
+literal becomes the same shape verbatim, with each field value getting
+the same coercion its declared type would give a `purr` argument (a
+`Word` field's bare string literal becomes an owned `String`, a `Num`
+field's bare number becomes an unambiguous `f64`):
+
+```kitty
+litter Point {
+    x #n,
+    y #n
+}
+```
+```rust
+#[derive(Clone, Debug)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+```
+```kitty
+Point { x: 3, y: 4 }
+```
+```rust
+Point { x: 3f64, y: 4f64 }
+```
+
+## Breeds
+
+```kitty
+breed Shape {
+    Circle(#n),
+    Square(#n),
+    Idle
+}
+```
+
+`breed Name { Variant (type)?, .. }` declares a closed set of named
+variants — Kittine's term for what Rust calls an enum (a "breed" is one
+of several kinds of cat, matching a variant being one of several kinds of
+value). A variant carries **at most one** payload value — `Circle(#n)` —
+or none at all — `Idle`. `private breed ..` works the same as `private
+litter`/`func`/`purr`.
+
+A payload-carrying variant is constructed exactly like a function call —
+`Circle(5)` — and a unit variant is referenced bare — `Idle`. Both are
+told apart from an ordinary `purr` call or variable read by
+`kittine-compiler` already knowing every reachable `breed`'s variants
+(the same whole-`import`-graph signature collection [calling
+functions](#calling-functions) already relies on for the `Word`-parameter
+string-literal coercion):
+
+```kitty
+hold shape >> Circle(5)
+hold idle >> Idle
+```
+
+### Compilation
+
+`breed` becomes a plain Rust `enum`, same `Clone, Debug` derive as
+`litter`. A variant construction becomes a fully-qualified Rust variant
+constructor, with the same payload coercion a `litter` field or `purr`
+argument gets:
+
+```kitty
+breed Shape {
+    Circle(#n),
+    Idle
+}
+```
+```rust
+#[derive(Clone, Debug)]
+pub enum Shape {
+    Circle(f64),
+    Idle,
+}
+```
+```kitty
+Circle(5)
+```
+```rust
+Shape::Circle(5f64)
+```
+
+## Pattern matching
+
+```kitty
+pounce> shape
+    Circle(r) >> craft<r * 2>
+    Square(s) >> craft<s>
+    else> craft<'not a circle or square'>
+```
+
+`pounce> subject` matches `subject` (a [`breed`](#breeds) value) against
+each arm in turn, running the first arm whose variant matches. Each arm —
+`Variant(binding)? >> stmt` — is exactly one statement; `binding` is only
+written for a payload-carrying variant (`Circle(r)`, not `Idle`), and is
+in scope for that arm's statement, holding the payload value. An optional
+final `else> stmt` arm catches every variant not named explicitly above
+it — required unless every variant is listed, since the generated Rust
+`match` needs to be exhaustive one way or the other (Rust's own compiler
+enforces this — `kittine-compiler` doesn't duplicate the check, the same
+trust model an unknown [method call](#method-calls) already gets).
+
+Arms are indented **one level under `pounce>` itself**, not beside it —
+unlike [`orif>`/`else>`, which sit at the same column as their `if>`](#control-flow):
+
+```kitty
+pounce> shape          // col 1
+    Circle(r) >> ..     // col 5 -- arms' shared column
+    Square(s) >> ..     // col 5
+    else> ..             // col 5 -- also an arm, not a sibling of pounce>
+```
+
+**`pounce>` is statement-only.** There's no way yet to use its result as
+a *value* — it can't appear inside a `purr`'s `return ( ... )` to compute
+one thing or another depending on which variant matched. It's for
+branching on which variant a value is and taking action (logging,
+mutating a signal), not computing a value from the branch — see [Known
+limitations](#known-limitations).
+
+### Compilation
+
+`pounce>` becomes a plain Rust `match`, each pattern qualified with its
+variant's owning `breed` name (looked up the same way a variant
+construction is — see [Breeds § Compilation](#breeds)), and an `else>`
+arm becomes Rust's wildcard `_ =>`:
+
+```kitty
+pounce> shape
+    Circle(r) >> craft<r>
+    else> craft<'other'>
+```
+```rust
+match shape.get() {
+    Shape::Circle(r) => {
+        leptos::logging::log!("{}", r);
+    }
+    _ => {
+        leptos::logging::log!("other");
+    }
+}
+```
+
+## Generics
+
+```kitty
+litter Holder<#t> {
+    value #t
+}
+```
+
+A [`litter`](#litters) or [`breed`](#breeds) can declare **at most one**
+type parameter — `<#t>` right after its name — minimal groundwork rather
+than a full generics system (see [Known limitations](#known-limitations)
+below): no bounds, no multiple parameters, no generic `purr`/`func`.
+`#t` inside that litter/breed's own field/variant types then means
+"whatever concrete type this specific value was built with":
+
+```kitty
+hold numHolder >> Holder { value: 42 }
+hold wordHolder >> Holder { value: 'hi' }
+```
+
+There's no explicit instantiation syntax at the construction site
+(`Holder<#n> { .. }`) — Rust infers the concrete type parameter from the
+field value itself, the same way it infers any other generic
+constructor's type parameter, so leaving it unwritten is both simpler to
+implement and, per [Brevity by design](#brevity-by-design), shorter than
+spelling it out would be.
+
+### Compilation
+
+The `<#t>` becomes a single Rust generic parameter, conventionally named
+`T`:
+
+```kitty
+litter Holder<#t> {
+    value #t
+}
+```
+```rust
+#[derive(Clone, Debug)]
+pub struct Holder<T> {
+    pub value: T,
+}
+```
+
 ## Printing (`craft<...>`)
 
 ```kitty
@@ -1197,9 +1422,13 @@ rendered output. The JSX-like tree supports:
 
 ## Full grammar summary
 
+A quick-reference sketch — see [GRAMMAR.md](GRAMMAR.md) for the complete,
+formal EBNF spec (every token, every production, unambiguous precedence)
+this summary is deliberately a shorter, denser version of.
+
 ```
 program      := import* item*
-item         := "private"? (component | function)
+item         := "private"? (component | function | litter | breed)
 import       := "import" "{" IDENT ("," IDENT)* "}" "from" STRING
 component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
 function     := "purr" IDENT param_list type_tag_name?
@@ -1212,7 +1441,16 @@ type_tag_name:= "#" ("n" | "w" | "f") ("[" "]")?
 // are the one case inference doesn't cover, so they're always explicit.
 return_stmt  := "return" "(" jsx_node | expr ")"
 
-stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | expr_stmt
+litter       := "litter" IDENT type_param? "{" litter_field ("," litter_field)* ","? "}"
+litter_field := IDENT field_type
+breed        := "breed" IDENT type_param? "{" variant ("," variant)* ","? "}"
+variant      := IDENT ("(" field_type ")")?
+type_param   := "<" "#t" ">"           // at most one -- see "Generics"
+field_type   := type_tag_name | "#t" | IDENT   // scalar/array, the litter's
+                                                // own generic param, or a
+                                                // custom litter/breed name
+
+stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | pounce_stmt | expr_stmt
 var_stmt     := "<{" IDENT "}>" ">>" expr
 craft_stmt   := "craft<" craft_expr ">"
 if_stmt      := "if>" condition INDENT_BLOCK
@@ -1224,6 +1462,12 @@ cond_and     := cond_atom ("&&" cond_atom)*
 cond_atom    := "<{" IDENT "}>" cmp_op expr
 cmp_op       := ">>" | "<" | "<=" | ">" | ">=" | "!="
 spin_stmt    := "spin" "<{" IDENT "}>" "in" expr "}{" stmt* "}{"
+pounce_stmt  := "pounce>" expr pounce_arm+ pounce_else?
+                // pounce_arm/pounce_else are indented one level *under*
+                // pounce>'s own column, all sharing one column together
+                // (unlike orif>/else>, which sit beside if> itself)
+pounce_arm   := IDENT ("(" IDENT ")")? ">>" stmt
+pounce_else  := "else>" stmt
 expr_stmt    := expr
 
 expr         := logic_or
@@ -1237,15 +1481,26 @@ craft_equality := additive ((">>" | "<" | "<=" | ">=" | "!=") additive)?  // no 
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
 unary        := "-" unary | postfix
-postfix      := primary ( ("." IDENT arg_list) | arg_list )*  // method call, or calling the result of an expression
+postfix      := primary ( ("." IDENT arg_list?) | arg_list )*
+// ".IDENT" with an arg_list is a method call; with none, a litter field
+// read (Expr::FieldAccess) -- see "Litters". A bare arg_list calls the
+// result of an expression.
 arg_list     := "(" (expr ("," expr)*)? ")"
-primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | CALL | IDENT
+primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | CALL
+              | STRUCT_INIT | IDENT
               | "<{" IDENT "}>" (">>" expr)?  // >> here is inline mutation, not comparison
               | "(" expr ")" | tuple
 
 array        := "[" (expr ("," expr)*)? "]"
 type_tag     := type_tag_name unary
 call         := IDENT "(" (expr ("," expr)*)? ")"
+// A `breed` variant construction (`Circle(5)`) and a bare unit-variant
+// reference (`Idle`, via the plain IDENT primary) share this same syntax
+// with a purr call/variable read -- told apart by which one `IDENT`
+// actually names, via the whole-import-graph Signatures map (see
+// "Compilation model").
+struct_init  := IDENT "{" (struct_field ("," struct_field)* ","?)? "}"
+struct_field := IDENT ":" expr
 tuple        := "(" expr "," expr ("," expr)* ","? ")"  // a lone "(" expr ")" is just grouping
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
@@ -1275,9 +1530,12 @@ use leptos_meta::*;
 ```
 
 followed by one `mod` + `use` pair per `import`, and then one item per
-`func`/`purr` in the source file, in source order: a `func` becomes
-`#[component] pub fn Name(..) -> impl IntoView { ... }`; a `purr` becomes a
-plain `pub fn name(..) -> ReturnType { ... }`. The `leptos_router` and
+`func`/`purr`/`litter`/`breed` in the source file, in source order: a
+`func` becomes `#[component] pub fn Name(..) -> impl IntoView { ... }`; a
+`purr` becomes a plain `pub fn name(..) -> ReturnType { ... }`; a `litter`
+becomes a `#[derive(Clone, Debug)] pub struct Name { ... }`; a `breed`
+becomes a `#[derive(Clone, Debug)] pub enum Name { ... }` (see
+[Litters](#litters), [Breeds](#breeds)). The `leptos_router` and
 `leptos_meta` imports are unconditional (see [Routing](#routing)) —
 `unused_imports` is allowed at the crate level so files that don't route
 or set page metadata stay warning-free. `leptos_meta` brings `<Title>`,
@@ -1290,12 +1548,15 @@ documented Kittine pattern).
 
 `kittine-compiler build <entry>.kitty` compiles the whole reachable
 `import` graph, not just `<entry>` itself, in two passes: first a
-lex+parse-only walk collects every reachable file's `purr` signatures into
-one map (this is what makes the `Word`-parameter string-literal coercion
-above work across `import`s, not just within one file), then each file is
-actually generated using that whole-graph map. Every file gets parsed
-twice across a full build — real, but cheap next to what `cargo`/
-`wasm-bindgen` cost downstream.
+lex+parse-only walk collects every reachable file's `purr`/`litter`/
+`breed` signatures into one `Signatures` (`purr` param/return types,
+`litter` field types, `breed` variant payload types) — this is what makes
+the `Word`-parameter string-literal coercion above work across `import`s
+(for a `purr` argument *or* a `litter` field *or* a `breed` variant
+payload), not just within one file — then each file is actually generated
+using that whole-graph map. Every file gets parsed twice across a full
+build — real, but cheap next to what `cargo`/`wasm-bindgen` cost
+downstream.
 
 `kittine-compiler build` also only actually *rewrites* a dependency's
 `.rs` file when the freshly generated content differs from what's already
@@ -1315,6 +1576,31 @@ These are intentional scope boundaries of the current prototype, not bugs:
   See [Type inference](#type-inference) — it doesn't propagate a type
   through a call to another `purr`, and array-typed
   props/params/returns still need an explicit `#n[]`/`#w[]`/`#f[]` tag.
+- **`pounce>` is statement-only — it can't compute a value.** See [Pattern
+  matching](#pattern-matching): there's no way yet to use a `pounce>`'s
+  result directly inside a `purr`'s `return ( ... )` (or any other
+  expression position) to *compute* one thing or another depending on
+  which `breed` variant matched — only to *act* differently (log, mutate
+  a signal). This is the specific remaining gap in Kittine's error-
+  handling story: a `breed Result { Ok(#t), Err(#w) }`-shaped type and
+  branching on it both work today, but a function can't yet unwrap one
+  and return the unwrapped value in the same expression the way Rust's
+  own `match` (or `?`) can.
+- **Generics are groundwork, not a system.** See [Generics](#generics): a
+  `litter`/`breed` may have at most one type parameter, with no bounds,
+  no multiple parameters, and no generic `purr`/`func` (only
+  `litter`/`breed` can be generic at all).
+- **A `litter`/`breed` field/variant type is always explicit — there's no
+  inference for these positions.** Unlike a `purr` param or prop (see
+  [Type inference](#type-inference)), a `litter` field or `breed` variant
+  payload always needs its own `#n`/`#w`/`#f`/`#t`/custom-type-name
+  written out.
+- **A `litter`/`breed` name isn't reserved from colliding with a real
+  Rust type.** Naming one `Box`, `String`, `Vec`, etc. shadows the real
+  Rust prelude type within that generated file — it happens to still
+  compile in every case tried so far (a local item takes precedence over
+  a prelude import in Rust), but produces a confusing generated file.
+  Kittine doesn't warn about this.
 - **Routing is CSR-only, and has no dedicated Kittine syntax.** [Routing](#routing)
   works via `leptos_router`'s own components composed as-is — real, but
   client-side-rendered only (no SSR/SSG integration yet). Reading a

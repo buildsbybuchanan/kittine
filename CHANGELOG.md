@@ -8,6 +8,71 @@ grouped by date until the first tagged release.
 
 ## [Unreleased] - 2026-07-19
 
+### Added (Phase 1: structs, enums, pattern matching, minimal generics)
+
+- **`litter Name { field type, .. }`** — a plain data record (Kittine's
+  term for a Rust struct; a "litter" of related fields, matching the
+  cat-themed naming of every other keyword). A struct literal (`Point {
+  x: 1, y: 2 }`) constructs one; `.field` reads a field with no
+  method-call parens, unlike `.method()`. Compiles to `#[derive(Clone,
+  Debug)] pub struct Name { pub field: Type, .. }`. A field's `Word`
+  literal value gets the same `.to_string()` coercion a `purr` argument
+  does, via the same whole-`import`-graph `Signatures` collection
+  `purr`/`breed` already used (extended, not duplicated).
+- **`breed Name { Variant(type)?, .. }`** — a closed set of named
+  variants (a Rust enum; a "breed" is one of several kinds of cat, a
+  variant one of several kinds of value). A variant carries at most one
+  payload value. `Circle(5)` constructs a payload-carrying variant
+  (`Shape::Circle(5f64)`); a bare `Idle` references a unit one
+  (`Shape::Idle`) — both told apart from an ordinary `purr` call/variable
+  read by the compiler already knowing every reachable `breed`'s
+  variants, not by any new syntax. Compiles to `#[derive(Clone, Debug)]
+  pub enum Name { Variant(Type), .. }`.
+- **`pounce> subject` `Variant(binding)? >> stmt` `else> stmt`** — pattern
+  matches a `breed` value, lowering to a real Rust `match` with each
+  pattern fully qualified (`Shape::Circle(r) => { .. }`) and `else>`
+  becoming the wildcard `_ =>`. Arms are indented **one level under**
+  `pounce>` (its own children, not siblings the way `orif>`/`else>` sit
+  beside `if>`), and each arm is exactly one statement. **Statement-only
+  for this round** — there's no way yet to use a `pounce>`'s result as a
+  value inside a `return ( ... )`; see [docs/LANGUAGE.md § Known
+  limitations](docs/LANGUAGE.md#known-limitations). This is the concrete
+  piece of Kittine's "no error-handling story" gap that's now closed: a
+  `breed Result { Ok(#t), Err(#w) }`-shaped type plus branching on it
+  both work for real today.
+- **Minimal generics groundwork**: a `litter`/`breed` may declare *at
+  most one* type parameter — `litter Holder<#t> { value #t }` — with no
+  bounds, no multiple parameters, and no generic `purr`/`func`. No
+  explicit instantiation syntax at the construction site either
+  (`Holder<#n> { .. }`) — Rust infers the concrete type from the field
+  value itself, the same way it infers any other generic constructor's
+  type parameter, which is both simpler to implement and shorter to
+  write. Compiles to a single Rust generic parameter, `T`.
+- New `#t` type-tag sigil (`TokenKind::TypeGeneric`) for the above, and a
+  new `:` token for struct-literal `field: value` syntax.
+- `kittine-compiler`'s signature-collection map (previously
+  `known_functions: HashMap<String, Vec<String>>`, `purr`-only) is now a
+  `Signatures` struct covering `purr` params/return, `litter` fields, and
+  `breed` variants together, threaded through `codegen::Scope` the same
+  way as before — this is what lets a `litter` field's or `breed`
+  variant's `Word`-typed value get the same cross-file string-literal
+  coercion a `purr` argument already had.
+- New [docs/GRAMMAR.md](docs/GRAMMAR.md): the complete, formal EBNF
+  grammar for the whole language (lexical tokens through every syntactic
+  production), derived directly from the lexer/parser source rather than
+  written aspirationally — the Phase 1 "formal grammar spec document"
+  item. [docs/LANGUAGE.md § Full grammar
+  summary](docs/LANGUAGE.md#full-grammar-summary) stays as a shorter
+  quick-reference version of the same grammar.
+- Verified with 6 new compiler tests (91 total, 0 regressions) and real
+  `cargo check`/`cargo build`/`npm run build` (full Vite → `cargo` →
+  `wasm-bindgen` pipeline) against actual Leptos 0.7 — `example-app`
+  gained a real `Shapes.kitty` component (a `Point` struct, a generic
+  `Holder<#t>` instantiated with both a `Num` and a `Word` value, a
+  `Shape` enum pattern-matched with `pounce>`) composed into `Home.kitty`
+  and compiled clean under `wasm32-unknown-unknown`, producing a working
+  wasm binary — not just asserted against generated-string snapshots.
+
 ### Added (syntax branch)
 
 - **Scalar type tags on a prop/`purr` param or return type are now

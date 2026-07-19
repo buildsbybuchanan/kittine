@@ -1,0 +1,37 @@
+litter Point {
+    x #n,
+    y #n
+}
+
+litter Holder<#t> {
+    value #t
+}
+
+breed Shape {
+    Circle(#n),
+    Square(#n),
+    Idle
+}
+
+func Shapes() {
+    <{origin}> >> Point { x: 3, y: 4 }
+    <{shape}> >> Circle(5)
+    <{description}> >> 'unknown'
+    <{numHolder}> >> Holder { value: 42 }
+    <{wordHolder}> >> Holder { value: 'hello' }
+
+    pounce> <{shape}>
+        Circle(r) >> <{description}> >> 'circle'
+        Square(s) >> <{description}> >> 'square'
+        else> <{description}> >> 'idle'
+
+    return (
+        <div>
+            <p>"Origin x: " { origin.x }</p>
+            <p>"Origin y: " { origin.y }</p>
+            <p>"Shape: " <{description}></p>
+            <p>"NumHolder: " { numHolder.value }</p>
+            <p>"WordHolder: " { wordHolder.value }</p>
+        </div>
+    )
+}

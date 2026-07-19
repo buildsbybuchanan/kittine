@@ -40,14 +40,68 @@ use std::collections::{HashMap, HashSet};
 
 const INDENT: &str = "    ";
 
+/// A `breed` variant's owning type and payload shape — see
+/// `Signatures::variants`.
+#[derive(Debug, Clone)]
+pub struct VariantInfo {
+    pub breed: String,
+    /// `Some(ty)` for a payload-carrying variant (`Circle(#n)`), `None`
+    /// for a unit variant (`Idle`).
+    pub payload: Option<String>,
+}
+
+/// Every `purr`/`litter`/`breed` signature reachable from a compile,
+/// collected before any single file is generated — see `main.rs`'s
+/// `collect_all_signatures`, which walks the whole `import` graph to build
+/// one whole-program `Signatures` before generating any individual file's
+/// code. Threaded through every `Scope`, this is what lets a call site
+/// (`Expr::Call`), a struct literal (`Expr::StructInit`), or a bare name
+/// (`Expr::Ident`) render correctly even when the `purr`/`litter`/`breed`
+/// it refers to is defined in another file. Kittine has no namespacing, so
+/// every map here is keyed by bare name, assuming names are unique across
+/// the whole reachable graph — the same simplifying assumption Rust's own
+/// `use` resolution already makes when two files import the same name
+/// (Rust's own type checker is the source of truth on whether a *call* is
+/// actually valid; these maps only ever inform a codegen coercion hint).
+#[derive(Debug, Default)]
+pub struct Signatures {
+    /// Every `purr`'s parameter types, by function name, in declaration
+    /// order — lets a call site tell whether a bare string literal
+    /// argument needs `.to_string()` (see `render_call`).
+    pub functions: HashMap<String, Vec<String>>,
+    /// Every `litter`'s field names and types, in declaration order — lets
+    /// a struct-literal field value get the same coercion a `purr`
+    /// argument does (see `render_struct_init`).
+    pub litters: HashMap<String, Vec<(String, String)>>,
+    /// Every `breed` variant's owning type and payload shape, by variant
+    /// name — lets a bare `Idle` or a call-shaped `Circle(5)` render as
+    /// `Shape::Idle`/`Shape::Circle(5f64)` instead of being mistaken for an
+    /// ordinary variable read or `purr` call (see `render_ident`,
+    /// `render_call_or_variant`).
+    pub variants: HashMap<String, VariantInfo>,
+}
+
+impl Signatures {
+    /// Merges `other` into `self` — used to fold one file's signatures
+    /// into the whole-import-graph map (see `main.rs`'s
+    /// `collect_all_signatures`).
+    pub fn merge(&mut self, other: Signatures) {
+        self.functions.extend(other.functions);
+        self.litters.extend(other.litters);
+        self.variants.extend(other.variants);
+    }
+}
+
 /// Threads both "which signals have been declared so far" (mutated as
 /// statements are lowered) and "which names are typed parameters" (fixed
 /// for the lifetime of a single component/function) through codegen.
+#[derive(Clone)]
 struct Scope<'a> {
     declared: HashSet<String>,
     params: HashMap<String, String>,
-    /// Names bound by an enclosing view-position `spin` (`JsxNode::Spin`).
-    /// Reads of these are always `.clone()`d — see `render_var_read`.
+    /// Names bound by an enclosing view-position `spin` (`JsxNode::Spin`)
+    /// or a `pounce>` arm's pattern binding. Reads of these are always
+    /// `.clone()`d — see `render_var_read`.
     spin_items: HashSet<String>,
     /// Names bound by `hold name >> expr` (see `ast::Stmt::Hold`) — a
     /// plain, non-reactive local. Reads of these are always `.clone()`d
@@ -56,17 +110,15 @@ struct Scope<'a> {
     /// event handlers), and moving a non-`Copy` value out of the first one
     /// would make it unavailable to the second.
     hold_items: HashSet<String>,
-    /// Every same-file `purr`'s parameter types, by function name, in
-    /// declaration order — lets a call site tell whether a bare string
-    /// literal argument needs `.to_string()` (see `render_call`). Shared
-    /// (not owned) across every `Scope` in a file, since it's the same
-    /// program-wide map regardless of which component/function is being
-    /// lowered right now.
-    known_functions: &'a HashMap<String, Vec<String>>,
+    /// Every reachable `purr`/`litter`/`breed` signature — see
+    /// `Signatures`. Shared (not owned) across every `Scope` in a file,
+    /// since it's the same program-wide map regardless of which
+    /// component/function is being lowered right now.
+    signatures: &'a Signatures,
 }
 
 impl<'a> Scope<'a> {
-    fn for_params(params: &[Param], known_functions: &'a HashMap<String, Vec<String>>) -> Self {
+    fn for_params(params: &[Param], signatures: &'a Signatures) -> Self {
         Scope {
             declared: HashSet::new(),
             params: params
@@ -75,54 +127,64 @@ impl<'a> Scope<'a> {
                 .collect(),
             spin_items: HashSet::new(),
             hold_items: HashSet::new(),
-            known_functions,
+            signatures,
         }
     }
 
     /// A copy of this scope with `item` additionally marked as a
     /// spin-bound loop variable, for rendering a `JsxNode::Spin`'s body.
     fn with_spin_item(&self, item: &str) -> Self {
-        let mut spin_items = self.spin_items.clone();
-        spin_items.insert(item.to_string());
-        Scope {
-            declared: self.declared.clone(),
-            params: self.params.clone(),
-            spin_items,
-            hold_items: self.hold_items.clone(),
-            known_functions: self.known_functions,
-        }
+        let mut scope = self.clone();
+        scope.spin_items.insert(item.to_string());
+        scope
     }
 }
 
-/// Maps every `purr`'s name to its parameter types, in order, from a single
-/// file's items — used both to build a whole-import-graph map (see
-/// `main.rs`'s `collect_all_signatures`) and by `tests.rs`'s single-file
-/// `compile()` helper. Threaded through every `Scope` so a call site
-/// (`Expr::Call`) can tell whether an argument needs to be coerced (see
-/// `render_call`). Kittine has no namespacing, so a whole-graph map keyed
-/// by bare name assumes function names are unique across every reachable
-/// file — the same simplifying assumption Rust's own `use` resolution
-/// already makes when two files import the same name (the compiler for the
-/// callee's *definition* is Rust's own type checker; this map only informs
-/// a codegen coercion hint, not name resolution itself).
-pub fn collect_function_signatures(items: &[Item]) -> HashMap<String, Vec<String>> {
-    items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Function(f) => Some((
-                f.name.clone(),
-                f.params.iter().map(|p| p.ty.clone()).collect(),
-            )),
-            Item::Component(_) => None,
-        })
-        .collect()
+/// Collects a single file's own `purr`/`litter`/`breed` signatures — used
+/// both to build a whole-import-graph `Signatures` (see `main.rs`'s
+/// `collect_all_signatures`) and by `tests.rs`'s single-file `compile()`
+/// helper.
+pub fn collect_signatures(items: &[Item]) -> Signatures {
+    let mut signatures = Signatures::default();
+    for item in items {
+        match item {
+            Item::Function(f) => {
+                signatures.functions.insert(
+                    f.name.clone(),
+                    f.params.iter().map(|p| p.ty.clone()).collect(),
+                );
+            }
+            Item::Litter(l) => {
+                signatures.litters.insert(
+                    l.name.clone(),
+                    l.fields
+                        .iter()
+                        .map(|field| (field.name.clone(), field.ty.clone()))
+                        .collect(),
+                );
+            }
+            Item::Breed(b) => {
+                for v in &b.variants {
+                    signatures.variants.insert(
+                        v.name.clone(),
+                        VariantInfo {
+                            breed: b.name.clone(),
+                            payload: v.payload.clone(),
+                        },
+                    );
+                }
+            }
+            Item::Component(_) => {}
+        }
+    }
+    signatures
 }
 
-/// `known_functions` should cover every `purr` reachable from `program`
-/// through its `import`s, not just `program`'s own items — see
+/// `signatures` should cover every `purr`/`litter`/`breed` reachable from
+/// `program` through its `import`s, not just `program`'s own items — see
 /// `main.rs`'s `collect_all_signatures`, which builds exactly that map by
 /// walking the whole import graph before any file is actually generated.
-pub fn generate(program: &Program, known_functions: &HashMap<String, Vec<String>>) -> String {
+pub fn generate(program: &Program, signatures: &Signatures) -> String {
     let mut out = String::new();
     out.push_str("// Generated by kittine-compiler. Do not edit by hand.\n");
     out.push_str("#![allow(unused_braces, unused_variables, dead_code, unused_imports)]\n\n");
@@ -151,8 +213,10 @@ pub fn generate(program: &Program, known_functions: &HashMap<String, Vec<String>
     out.push_str(&gen_imports(&program.imports));
     for item in &program.items {
         match item {
-            Item::Component(c) => out.push_str(&gen_component(c, known_functions)),
-            Item::Function(f) => out.push_str(&gen_function(f, known_functions)),
+            Item::Component(c) => out.push_str(&gen_component(c, signatures)),
+            Item::Function(f) => out.push_str(&gen_function(f, signatures)),
+            Item::Litter(l) => out.push_str(&gen_litter(l)),
+            Item::Breed(b) => out.push_str(&gen_breed(b)),
         }
         out.push('\n');
     }
@@ -167,27 +231,37 @@ fn push_line(out: &mut String, indent: usize, text: &str) {
     }
 }
 
-/// Maps a Kittine type tag name to its generated Rust type. The parser
-/// already rejects anything other than these three, so the fallback arm is
-/// unreachable in practice.
-fn rust_type(ty: &str) -> &'static str {
+/// Maps a Kittine type name to its generated Rust type: the three
+/// scalars, an array of one, `Children` (the special untyped `children`
+/// param), `T` (a `litter`/`breed`'s own generic type parameter — see
+/// `ast::Litter::has_type_param`), or anything else verbatim — a reference
+/// to another `litter`/`breed` by name, since Kittine's type names and
+/// Rust's generated type names are the same identifier for a
+/// user-declared record/variant type.
+fn rust_type(ty: &str) -> String {
     match ty {
-        "Num" => "f64",
-        "Word" => "String",
-        "Flag" => "bool",
-        "Children" => "Children",
-        "Num[]" => "Vec<f64>",
-        "Word[]" => "Vec<String>",
-        "Flag[]" => "Vec<bool>",
-        _ => "f64",
+        "Num" => "f64".to_string(),
+        "Word" => "String".to_string(),
+        "Flag" => "bool".to_string(),
+        "Children" => "Children".to_string(),
+        "Num[]" => "Vec<f64>".to_string(),
+        "Word[]" => "Vec<String>".to_string(),
+        "Flag[]" => "Vec<bool>".to_string(),
+        "T" => "T".to_string(),
+        other => other.to_string(),
     }
 }
 
 /// `true` for a parameter type that isn't `Copy` in the generated Rust —
 /// reading it needs `.clone()` at use sites (see [`render_var_read`]),
-/// since a prop may be read from more than one reactive closure.
+/// since a prop may be read from more than one reactive closure. A `litter`/
+/// `breed`'s own generic type parameter (`T`) is treated as non-`Copy`
+/// (the safe default: a `Word` instantiation, for instance, wouldn't be),
+/// and so is any other name Kittine doesn't recognize as one of the three
+/// `Copy` scalars — a reference to a user-declared `litter`/`breed`, which
+/// `gen_litter`/`gen_breed` never derives `Copy` for.
 fn is_non_copy_param_type(ty: &str) -> bool {
-    matches!(ty, "Word" | "Num[]" | "Word[]" | "Flag[]")
+    !matches!(ty, "Num" | "Flag" | "Children")
 }
 
 fn param_list_rust(params: &[Param]) -> String {
@@ -264,7 +338,7 @@ fn visibility(is_private: bool) -> &'static str {
     if is_private { "" } else { "pub " }
 }
 
-fn gen_component(component: &Component, known_functions: &HashMap<String, Vec<String>>) -> String {
+fn gen_component(component: &Component, signatures: &Signatures) -> String {
     let mut out = String::new();
     out.push_str("#[component]\n");
     out.push_str(&format!(
@@ -274,7 +348,7 @@ fn gen_component(component: &Component, known_functions: &HashMap<String, Vec<St
         param_list_rust(&component.params)
     ));
 
-    let mut scope = Scope::for_params(&component.params, known_functions);
+    let mut scope = Scope::for_params(&component.params, signatures);
     for stmt in &component.body {
         gen_stmt(stmt, &mut scope, &mut out, 1);
     }
@@ -292,7 +366,7 @@ fn gen_component(component: &Component, known_functions: &HashMap<String, Vec<St
     out
 }
 
-fn gen_function(function: &Function, known_functions: &HashMap<String, Vec<String>>) -> String {
+fn gen_function(function: &Function, signatures: &Signatures) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "{}fn {}({}) -> {} {{\n",
@@ -302,13 +376,58 @@ fn gen_function(function: &Function, known_functions: &HashMap<String, Vec<Strin
         rust_type(&function.return_type)
     ));
 
-    let mut scope = Scope::for_params(&function.params, known_functions);
+    let mut scope = Scope::for_params(&function.params, signatures);
     for stmt in &function.body {
         gen_stmt(stmt, &mut scope, &mut out, 1);
     }
     let return_code = render_top_level(&function.return_expr, &scope);
     push_line(&mut out, 1, &return_code);
 
+    out.push_str("}\n");
+    out
+}
+
+/// `litter Name (<#t>)? { field type, .. }` becomes a plain Rust `struct`
+/// — `#[derive(Clone, Debug)]` so a `litter`-typed value can be read from
+/// more than one reactive closure the same way a `Word` prop already can
+/// (see `is_non_copy_param_type`).
+fn gen_litter(litter: &Litter) -> String {
+    let mut out = String::new();
+    out.push_str("#[derive(Clone, Debug)]\n");
+    let generics = if litter.has_type_param { "<T>" } else { "" };
+    out.push_str(&format!(
+        "{}struct {}{generics} {{\n",
+        visibility(litter.is_private),
+        litter.name,
+    ));
+    for field in &litter.fields {
+        out.push_str(&format!(
+            "    pub {}: {},\n",
+            field.name,
+            rust_type(&field.ty)
+        ));
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// `breed Name (<#t>)? { Variant (type)?, .. }` becomes a plain Rust
+/// `enum` — same `Clone, Debug` derive reasoning as `gen_litter`.
+fn gen_breed(breed: &Breed) -> String {
+    let mut out = String::new();
+    out.push_str("#[derive(Clone, Debug)]\n");
+    let generics = if breed.has_type_param { "<T>" } else { "" };
+    out.push_str(&format!(
+        "{}enum {}{generics} {{\n",
+        visibility(breed.is_private),
+        breed.name,
+    ));
+    for variant in &breed.variants {
+        match &variant.payload {
+            Some(ty) => out.push_str(&format!("    {}({}),\n", variant.name, rust_type(ty))),
+            None => out.push_str(&format!("    {},\n", variant.name)),
+        }
+    }
     out.push_str("}\n");
     out
 }
@@ -387,6 +506,54 @@ fn gen_stmt(stmt: &Stmt, scope: &mut Scope, out: &mut String, indent: usize) {
             let value_code = expr_to_rust(value, scope);
             push_line(out, indent, &format!("let {name} = {value_code};"));
             scope.hold_items.insert(name.clone());
+        }
+        Stmt::Pounce {
+            subject,
+            arms,
+            catch_all,
+        } => {
+            let subject_code = expr_to_rust(subject, scope);
+            push_line(out, indent, &format!("match {subject_code} {{"));
+            for arm in arms {
+                // The variant's owning breed isn't spelled out in Kittine
+                // source (`Circle(r) >> ..`, not `Shape::Circle(r) >> ..`)
+                // — looked up here the same way a call-shaped variant
+                // construction is (see `render_call_or_variant`), from the
+                // whole-reachable-graph `Signatures` rather than assumed.
+                let breed = scope
+                    .signatures
+                    .variants
+                    .get(&arm.variant)
+                    .map(|v| v.breed.as_str())
+                    .unwrap_or(&arm.variant);
+                let pattern = match &arm.binding {
+                    Some(binding) => format!("{breed}::{}({binding})", arm.variant),
+                    None => format!("{breed}::{}", arm.variant),
+                };
+                push_line(out, indent + 1, &format!("{pattern} => {{"));
+                // The pattern's bound variable gets the same "may be read
+                // from more than one place, always `.clone()` it" treatment
+                // as a `hold` binding or a `spin` loop variable — arm-local,
+                // so this clone of `scope` is discarded once the arm is
+                // rendered, exactly like a real Rust match arm's own scope.
+                let mut arm_scope = scope.clone();
+                if let Some(binding) = &arm.binding {
+                    arm_scope.hold_items.insert(binding.clone());
+                }
+                for s in &arm.body {
+                    gen_stmt(s, &mut arm_scope, out, indent + 2);
+                }
+                push_line(out, indent + 1, "}");
+            }
+            if let Some(body) = catch_all {
+                push_line(out, indent + 1, "_ => {");
+                let mut arm_scope = scope.clone();
+                for s in body {
+                    gen_stmt(s, &mut arm_scope, out, indent + 2);
+                }
+                push_line(out, indent + 1, "}");
+            }
+            push_line(out, indent, "}");
         }
     }
 }
@@ -470,7 +637,8 @@ fn render_signal_init(value: &Expr, scope: &Scope) -> String {
 fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
     match expr {
         Expr::Ident(n) | Expr::VarRead(n) if n == name => "*n".to_string(),
-        Expr::Ident(n) | Expr::VarRead(n) => render_var_read(n, scope),
+        Expr::Ident(n) => render_ident(n, scope),
+        Expr::VarRead(n) => render_var_read(n, scope),
         Expr::Number(n) => fmt_num(*n),
         Expr::Str(s) => format!("\"{}\"", escape_str(s)),
         Expr::Binary { left, op, right } => {
@@ -481,7 +649,7 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
         Expr::Array(items) => render_array(items, &|e| substitute_self(e, name, scope)),
         Expr::Typed { value, .. } => substitute_self(value, name, scope),
         Expr::Call { name: fname, args } => {
-            render_call(fname, args, &|e| substitute_self(e, name, scope), scope)
+            render_call_or_variant(fname, args, &|e| substitute_self(e, name, scope), scope)
         }
         Expr::MethodCall { receiver, method, args } => {
             render_method_call(receiver, method, args, &|e| substitute_self(e, name, scope))
@@ -491,6 +659,18 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
         }
         Expr::Tuple(items) => render_tuple(items, &|e| substitute_self(e, name, scope)),
         Expr::Path(segments) => render_path(segments),
+        Expr::FieldAccess { receiver, field } => {
+            format!("{}.{field}", substitute_self(receiver, name, scope))
+        }
+        Expr::StructInit {
+            name: struct_name,
+            fields,
+        } => render_struct_init(
+            struct_name,
+            fields,
+            &|e| substitute_self(e, name, scope),
+            scope,
+        ),
     }
 }
 
@@ -500,7 +680,7 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
 /// against an `f64` parameter without an explicit `f64` suffix either.
 ///
 /// Additionally, if `name` is a same-file `purr` whose parameter at this
-/// argument's position is `Word` (known via `scope.known_functions`), a
+/// argument's position is `Word` (known via `scope.signatures`), a
 /// bare string-literal argument gets `.to_string()` appended — otherwise
 /// it renders as `&str`, which doesn't type-check against a `Word`
 /// parameter's `String`. This is real type information, not a guess, which
@@ -510,7 +690,7 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
 /// passed to one still doesn't get this treatment — see
 /// `docs/LANGUAGE.md` § Known limitations.
 fn render_call(name: &str, args: &[Expr], render: &dyn Fn(&Expr) -> String, scope: &Scope) -> String {
-    let param_types = scope.known_functions.get(name);
+    let param_types = scope.signatures.functions.get(name);
     let rendered: Vec<String> = args
         .iter()
         .enumerate()
@@ -548,6 +728,104 @@ fn is_bare_string_literal(expr: &Expr) -> bool {
         Expr::Str(_) => true,
         Expr::Typed { ty, value } => ty == "Word" && is_bare_string_literal(value),
         _ => false,
+    }
+}
+
+/// Renders a bare `Expr::Ident` — either a known unit `breed` variant (no
+/// payload), rendered `Breed::Variant`, or an ordinary name via
+/// [`render_var_read`]. A *payload*-carrying variant is never bare like
+/// this — `Circle(5)` parses as `Expr::Call`, handled by
+/// [`render_call_or_variant`] instead, so there's no ambiguity between "an
+/// `Ident` that happens to share a variant's name" and an actual
+/// zero-payload variant reference.
+fn render_ident(name: &str, scope: &Scope) -> String {
+    match scope.signatures.variants.get(name) {
+        Some(v) if v.payload.is_none() => format!("{}::{name}", v.breed),
+        _ => render_var_read(name, scope),
+    }
+}
+
+/// Renders `name(arg, arg, ..)` where `name` might be a `breed` variant
+/// constructor (`Circle(5)` → `Shape::Circle(5f64)`) rather than a `purr`
+/// call — checked first via `scope.signatures.variants`, since a variant
+/// and a same-file `purr` share the same call-argument syntax and are only
+/// told apart by which one `name` actually names. A payload argument gets
+/// the same `Word`-parameter string-literal `.to_string()` coercion
+/// `render_call` gives a `purr` argument (see its own doc comment) — real
+/// type information from the variant's own declaration, not a guess.
+fn render_call_or_variant(
+    name: &str,
+    args: &[Expr],
+    render: &dyn Fn(&Expr) -> String,
+    scope: &Scope,
+) -> String {
+    match scope.signatures.variants.get(name) {
+        Some(v) => {
+            let rendered: Vec<String> = args
+                .iter()
+                .map(|arg| {
+                    let rendered_arg = render_arith_operand(arg, render);
+                    let needs_owned_string =
+                        is_bare_string_literal(arg) && v.payload.as_deref() == Some("Word");
+                    if needs_owned_string {
+                        format!("{rendered_arg}.to_string()")
+                    } else {
+                        rendered_arg
+                    }
+                })
+                .collect();
+            format!("{}::{name}({})", v.breed, rendered.join(", "))
+        }
+        None => render_call(name, args, render, scope),
+    }
+}
+
+/// Renders `Name { field: expr, .. }` — see `ast::Expr::StructInit`. When
+/// `name`'s fields are known (via `scope.signatures.litters`, collected
+/// across the whole reachable `import` graph the same way `purr` and
+/// `breed` signatures are), a `Word`-typed field gets the same bare-
+/// string-literal `.to_string()` coercion a `purr` argument does, and a
+/// `Num`-typed field gets the same unambiguous-`f64` treatment an
+/// arithmetic operand does. A generic (`T`-typed) field, or a `litter`
+/// this compile has no signature for, instead renders its value through
+/// [`render_generic_field_value`] — Rust infers the concrete type
+/// parameter from the value itself, the same way it infers any other
+/// generic constructor call, with no explicit instantiation needed.
+fn render_struct_init(
+    name: &str,
+    fields: &[(String, Expr)],
+    render: &dyn Fn(&Expr) -> String,
+    scope: &Scope,
+) -> String {
+    let field_types = scope.signatures.litters.get(name);
+    let rendered: Vec<String> = fields
+        .iter()
+        .map(|(field_name, field_expr)| {
+            let ty = field_types
+                .and_then(|fields| fields.iter().find(|(n, _)| n == field_name))
+                .map(|(_, ty)| ty.as_str());
+            let value_code = match ty {
+                Some("Word") if is_bare_string_literal(field_expr) => {
+                    format!("{}.to_string()", render_arith_operand(field_expr, render))
+                }
+                Some("Num") => render_arith_operand(field_expr, render),
+                _ => render_generic_field_value(field_expr, render),
+            };
+            format!("{field_name}: {value_code}")
+        })
+        .collect();
+    format!("{name} {{ {} }}", rendered.join(", "))
+}
+
+/// Renders a struct-literal field value with no declared (or generic `T`)
+/// type to guide it: a literal renders in its natural owned Rust form
+/// (same reasoning as [`render_signal_init`]), anything else renders as
+/// whatever `render` would otherwise produce.
+fn render_generic_field_value(expr: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    match expr {
+        Expr::Number(n) => fmt_num_unambiguous(*n),
+        Expr::Str(s) => format!("\"{}\".to_string()", escape_str(s)),
+        other => render(other),
     }
 }
 
@@ -696,7 +974,8 @@ fn render_var_read(name: &str, scope: &Scope) -> String {
 
 fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
     match expr {
-        Expr::Ident(name) | Expr::VarRead(name) => render_var_read(name, scope),
+        Expr::Ident(name) => render_ident(name, scope),
+        Expr::VarRead(name) => render_var_read(name, scope),
         Expr::Number(n) => fmt_num(*n),
         // Deliberately a bare `&str` here, NOT owned via `.to_string()`:
         // unlike a signal initializer (see `render_signal_init`), a
@@ -719,7 +998,9 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
         Expr::Bool(b) => b.to_string(),
         Expr::Array(items) => render_array(items, &|e| expr_to_rust(e, scope)),
         Expr::Typed { value, .. } => expr_to_rust(value, scope),
-        Expr::Call { name, args } => render_call(name, args, &|e| expr_to_rust(e, scope), scope),
+        Expr::Call { name, args } => {
+            render_call_or_variant(name, args, &|e| expr_to_rust(e, scope), scope)
+        }
         Expr::MethodCall { receiver, method, args } => {
             render_method_call(receiver, method, args, &|e| expr_to_rust(e, scope))
         }
@@ -728,6 +1009,12 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
         }
         Expr::Tuple(items) => render_tuple(items, &|e| expr_to_rust(e, scope)),
         Expr::Path(segments) => render_path(segments),
+        Expr::FieldAccess { receiver, field } => {
+            format!("{}.{field}", expr_to_rust(receiver, scope))
+        }
+        Expr::StructInit { name, fields } => {
+            render_struct_init(name, fields, &|e| expr_to_rust(e, scope), scope)
+        }
     }
 }
 
@@ -869,6 +1156,12 @@ fn non_copy_tracked_names(expr: &Expr, scope: &Scope, out: &mut Vec<String>) {
             non_copy_tracked_names(callee, scope, out);
             for arg in args {
                 non_copy_tracked_names(arg, scope, out);
+            }
+        }
+        Expr::FieldAccess { receiver, .. } => non_copy_tracked_names(receiver, scope, out),
+        Expr::StructInit { fields, .. } => {
+            for (_, value) in fields {
+                non_copy_tracked_names(value, scope, out);
             }
         }
     }
