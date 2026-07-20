@@ -6,7 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
-## [Unreleased] - 2026-07-19
+## [Unreleased] - 2026-07-21
+
+### Added (a real package manager + a WASM playground export)
+
+- **`kittine.toml` / `kittine.lock`** — a package manifest (`[package]`
+  name/version, `[dependencies]`) and a checksummed lockfile.
+  `kittine-compiler add <name>`/`install`/`publish` round out the CLI.
+  `install` resolves against a real hosted registry —
+  [`buildsbybuchanan/kittine-registry`](https://github.com/buildsbybuchanan/kittine-registry),
+  no server of its own, just an `index/<name>.json` per package fetched
+  over plain HTTPS with tarballs as GitHub Release assets — and
+  sha256-verifies every download into `kitten_modules/<name>/`. A
+  bare-name import (`import { X } from 'some-package'`) resolves there
+  via the same upward-search `node_modules` resolution uses. `publish`
+  is maintainer-only, via the `gh` CLI. Verified for real: a package
+  (`kittine-strings`) published to the live registry, then
+  added/installed fresh elsewhere and `cargo check`'d against actual
+  Leptos 0.7. See [CLI.md](docs/CLI.md), [LANGUAGE.md § Package
+  imports](docs/LANGUAGE.md#package-imports).
+- **`kittine-compiler` now builds to WebAssembly** (`crate-type =
+  ["cdylib", "rlib"]`, a `wasm-bindgen`-exported
+  `compile_kitty_single_file`): the single-file lex/parse/codegen path
+  has no filesystem dependency, so it runs in a browser with zero server
+  involvement. Verified against real generated JS under Node (success
+  and parse-error paths both). Powers `kittine-website`'s new
+  `/playground` page.
 
 ### Added (Phase 1 completion: traits, bounded generics)
 
