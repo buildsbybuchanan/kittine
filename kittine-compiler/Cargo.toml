@@ -6,12 +6,34 @@ description = "Compiler for the Kittine (.kitty) language, targeting Leptos 0.7"
 authors = ["Sivario Buchanan"]
 license = "MIT"
 
+[lib]
+name = "kittine_compiler"
+path = "src/lib.rs"
+# `cdylib` is what lets `wasm-bindgen` turn this into a browser-loadable
+# module for the playground (see `src/wasm_api.rs`); `rlib` keeps it
+# usable as a normal Rust dependency (the CLI binary below, `tests.rs`,
+# and any downstream Rust crate that wants the compiler as a library).
+crate-type = ["cdylib", "rlib"]
+
 [[bin]]
 name = "kittine-compiler"
 path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+sha2 = "0.10"
+tar = "0.4"
+flate2 = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "2", features = ["json"] }
+base64 = "0.22"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 
 [profile.release]
 opt-level = 3

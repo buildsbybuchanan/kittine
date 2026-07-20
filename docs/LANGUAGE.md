@@ -278,9 +278,25 @@ import { Nav, Footer } from './components/Nav.kitty'
 ```
 
 `import { Name, Name2 } from 'path/to/file.kitty'` brings one or more
-components/functions from another `.kitty` file into scope. The path is
-resolved relative to the importing file, and always ends in `.kitty`.
-Imports must appear before any `func`/`purr` declarations in the file.
+components/functions from another `.kitty` file into scope. A path
+containing `/` or ending in `.kitty` is resolved relative to the importing
+file, same as always. Imports must appear before any `func`/`purr`
+declarations in the file.
+
+### Package imports
+
+```kitty
+import { shout } from 'kittine-strings'
+```
+
+A bare name — no `/`, no `.kitty` extension — is a *package* import
+instead: it resolves to `kitten_modules/<name>/lib.kitty`, searched
+upward from the importing file's own directory (the same upward-search
+`node_modules` resolution uses, so it works the same from any file in the
+project). `kitten_modules/` is populated by `kittine-compiler install`,
+which resolves and downloads whatever's listed in `kittine.toml` from the
+[package registry](CLI.md#the-package-registry) — see
+[CLI.md](CLI.md) for the full `add`/`install`/`publish` reference.
 
 ### Compilation
 
@@ -300,7 +316,9 @@ use __kittine_mod_nav::{Nav};
 `kittine-compiler build` resolves this recursively: compiling a file that
 imports others also compiles each imported file (and anything *it*
 imports), writing every `.kitty` file in the import graph to its sibling
-`.rs` path. An import cycle is a compile error, not an infinite loop.
+`.rs` path. An import cycle is a compile error, not an infinite loop. A
+package import's `#[path]` points at `kitten_modules/<name>/lib.rs`
+instead, the sibling of the `lib.kitty` it resolved to.
 
 ### Visibility
 

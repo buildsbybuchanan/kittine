@@ -666,7 +666,7 @@ func Home() {
     .expect("write Home.kitty");
 
     let home_kitty = dir.join("Home.kitty");
-    let (out_path, _) = crate::build(&home_kitty, None).expect("recursive build should succeed");
+    let (out_path, _) = crate::build::build(&home_kitty, None).expect("recursive build should succeed");
 
     let home_rs = std::fs::read_to_string(&out_path).expect("read generated Home.rs");
     assert!(home_rs.contains("mod __kittine_mod_nav;"));
@@ -718,7 +718,7 @@ func Home() {
     .expect("write Home.kitty");
 
     let home_kitty = dir.join("Home.kitty");
-    let (out_path, _) = crate::build(&home_kitty, None).expect("recursive build should succeed");
+    let (out_path, _) = crate::build::build(&home_kitty, None).expect("recursive build should succeed");
 
     let home_rs = std::fs::read_to_string(&out_path).expect("read generated Home.rs");
     assert!(home_rs.contains(r#"greet("World".to_string())"#));
@@ -770,7 +770,7 @@ func App() {
     .expect("write C.kitty");
 
     let c_kitty = dir.join("C.kitty");
-    let (out_path, _) = crate::build(&c_kitty, None).expect("recursive build should succeed");
+    let (out_path, _) = crate::build::build(&c_kitty, None).expect("recursive build should succeed");
 
     let c_rs = std::fs::read_to_string(&out_path).expect("read generated C.rs");
     assert!(c_rs.contains("mod __kittine_mod_b;"));
@@ -822,7 +822,7 @@ func Home() {
     .expect("write Home.kitty");
 
     let home_kitty = dir.join("Home.kitty");
-    let (_, was_written) = crate::build(&home_kitty, None).expect("first build should succeed");
+    let (_, was_written) = crate::build::build(&home_kitty, None).expect("first build should succeed");
     assert!(was_written, "a fresh build should report the file as written");
 
     let nav_rs_path = dir.join("Nav.rs");
@@ -846,7 +846,7 @@ func Home() {
 "#,
     )
     .expect("rewrite Home.kitty");
-    let (_, was_written) = crate::build(&home_kitty, None).expect("second build should succeed");
+    let (_, was_written) = crate::build::build(&home_kitty, None).expect("second build should succeed");
     assert!(
         was_written,
         "Home.kitty's own content changed, so Home.rs should be reported as written"

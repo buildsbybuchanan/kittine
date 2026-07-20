@@ -142,9 +142,43 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   one real pre-existing issue (a false-flag on `components.kitty`'s
   barrel-file `export import`s, fixed by exempting re-exports from the
   unused-import check — barrel files are supposed to go locally unused).
-  A dedicated package manager is still not built — Kittine leans on
-  Cargo for dependencies today (see [Full vision § Phase
-  5](#phase-5--package-ecosystem--tooling-depth)).
+  **A real package manager now exists**: `kittine.toml`/`kittine.lock`
+  (a manifest + a checksummed lockfile), `kittine-compiler add`/
+  `install`/`publish`, and a real hosted registry backing them —
+  [`buildsbybuchanan/kittine-registry`](https://github.com/buildsbybuchanan/kittine-registry),
+  a public repo with no server of its own: one `index/<name>.json` per
+  package (versions, tarball URLs, sha256 checksums) fetched over plain
+  HTTPS, with tarballs hosted as GitHub Release assets. `install`
+  downloads and sha256-verifies every dependency into `kitten_modules/`;
+  a bare-name import (`import { X } from 'some-package'`, no `./` prefix)
+  resolves to `kitten_modules/some-package/lib.kitty` via the same
+  upward-search `node_modules` uses. `publish` (maintainer-only, needs
+  the `gh` CLI) packs a package directory into a tarball and uploads it.
+  Verified for real, not just unit-tested: a real package
+  (`kittine-strings`, a small `purr shout(text)`) was published to the
+  live registry, then `add`+`install`+`build`'d fresh in a separate
+  directory, and the generated Rust — including the cross-package
+  `#[path]`/`use` wiring — was checked with a real `cargo check` against
+  actual Leptos 0.7. See [CLI.md § The package
+  registry](CLI.md#the-package-registry), [LANGUAGE.md § Package
+  imports](LANGUAGE.md#package-imports). What's still scoped out: exact-
+  version-only dependency requirements (no semver ranges), and no
+  dependency-of-a-dependency resolution yet (a published package can't
+  itself declare `kittine.toml` dependencies that `install` follows
+  transitively) — see [Full vision § Phase
+  5](#phase-5--package-ecosystem--tooling-depth) for what's still open
+  there (publishing UX beyond the CLI, workspaces).
+  Separately, `kittine-compiler` now also builds to WebAssembly
+  (`crate-type = ["cdylib", "rlib"]`, a `wasm-bindgen`-exported
+  `compile_kitty_single_file`) — the single-file lex/parse/codegen path
+  has no filesystem dependency, so it compiles cleanly to
+  `wasm32-unknown-unknown` and runs in a browser with zero server
+  involvement. Verified for real: built with the exact `wasm-bindgen`
+  version already pinned elsewhere in this ecosystem, then round-tripped
+  through real generated JS glue under Node (both the success path and a
+  real parse-error path). This is what `kittine-website`'s new
+  `/playground` page runs on — see [The Kittine
+  website](#the-kittine-website).
 
 **Can it build a full website yet? Yes — the language and rendering gaps
 that were blocking it are both closed.** A real multi-page app — composed
@@ -468,9 +502,15 @@ plus Phase 3, built on the same compiler rather than as separate products.
 ### Phase 5 — Package ecosystem & tooling depth
 
 ~~A formatter and linter~~ (done — `kittine-compiler fmt`/`lint`, see
-[Status § Tooling](#status-what-works-today)). Still open: a real package
-registry, publishing, dependency resolution and lock files, workspaces; a
-production Tree-sitter grammar; a minimal-but-real Language Server Protocol
+[Status § Tooling](#status-what-works-today)). ~~A real package registry,
+publishing, dependency resolution and lock files~~ (done —
+`kittine.toml`/`kittine.lock`, `add`/`install`/`publish`, and the hosted
+`kittine-registry`, see [Status § Tooling](#status-what-works-today)).
+Still open: workspaces (a single `kittine.toml` covering multiple local
+packages), semver *ranges* for dependency requirements (exact-version-only
+today), transitive dependency resolution (a published package's own
+dependencies aren't followed yet), a production Tree-sitter grammar; a
+minimal-but-real Language Server Protocol
 implementation (diagnostics, hover, go-to-definition, rename) — `lint`'s
 CLI diagnostics are a real step toward this but aren't an LSP, since they
 carry no source position and don't run inside an editor; VS Code
@@ -510,11 +550,17 @@ rendering/language gaps, and none of them block *starting* the site, but
 they're worth knowing about before treating anything built on Kittine as
 hardened.
 
-**Do not start building the site itself until told to** — this roadmap
-is preparation, not a green light. The moment that instruction comes, the
-right starting decision is CSR (`example-app`-style, via Vite) vs. SSR
-(`example-ssr`-style, via `cargo-leptos`) for kittine.dev specifically —
-see the [comparison table in SSR.md](SSR.md#why-this-needs-a-different-toolchain)
-for the trade-off (SSR gets real SEO/first-paint; CSR keeps the simpler
-"just static files" deployment story this repo's `vercel.json` already
-relies on for `example-app`).
+**Update: the site has since been built** — it lives in its own
+[`kittine-website`](https://github.com/buildsbybuchanan/kittine-website)
+repo (not this one), went with SSR via `cargo-leptos` (real first paint +
+SEO), and deploys to Vercel as a static export produced by real GitHub
+Actions builds (see that repo's `docs`/`README.md` for specifics —
+this section stays here for the historical CSR-vs-SSR reasoning, not as
+a still-open decision). It vendors this repo as a `vendor/kittine` git
+submodule for two things: `kittine-compiler` itself (dev-time `.kitty` ->
+`.rs` compilation, checked-in output, same as `example-app`), and — new —
+a `wasm-bindgen` build of this crate's `compile_kitty_single_file` export
+powering `kittine-website`'s `/playground` page (compile a `.kitty`
+snippet to Rust entirely client-side; see [Status § Tooling](#status-what-works-today)
+for the WASM export itself). The website's own Ecosystem/Roadmap pages
+track its own status, not duplicated here.
