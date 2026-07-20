@@ -33,7 +33,11 @@ ureq = { version = "2", features = ["json"] }
 base64 = "0.22"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
+# Pinned exactly, matching kittine-website's own pin (its Cargo.toml,
+# same reasoning): the wasm-bindgen CLI that turns this crate's .wasm
+# into browser-loadable JS glue must be the *exact* same version as the
+# crate it was compiled against, or it refuses to run.
+wasm-bindgen = "=0.2.126"
 
 [profile.release]
 opt-level = 3
