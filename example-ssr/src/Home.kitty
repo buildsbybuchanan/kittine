@@ -3,12 +3,9 @@ func Home() {
 
     return (
         <div>
-            <h1>"Kittine + SSR"</h1>
-            <p>"This page is rendered server-side by cargo-leptos on first load, then hydrated client-side for interactivity — view-source shows the real content immediately, no JavaScript required."</p>
-            <button onClick={<{count}> >> count + 1}>
-                "Clicks: "
-                <{count}>
-            </button>
+            <h1>'Kittine + SSR'</h1>
+            <p>'This page is rendered server-side by cargo-leptos on first load, then hydrated client-side for interactivity — view-source shows the real content immediately, no JavaScript required.'</p>
+            <button onClick={<{count}> >> count + 1}>'Clicks: ' <{count}></button>
         </div>
     )
 }

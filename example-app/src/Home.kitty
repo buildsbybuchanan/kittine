@@ -23,8 +23,8 @@ func Home() {
 
     if><{username}> >> 'Admin'
         craft<'Welcome Admin'>
-    orif><{username}> >> "User"
-        craft<"Welcome User">
+    orif><{username}> >> 'User'
+        craft<'Welcome User'>
     else>
         craft<'no output'>
 
@@ -52,16 +52,16 @@ func Home() {
         <div>
             <Nav active='Counter'/>
             <button onClick={<{count}> >> count + 1}>
-                "Clicks: "
+                'Clicks: '
                 <{count}>
-                " (doubled: "
+                ' (doubled: '
                 { doubled(count) }
-                ")"
+                ')'
             </button>
             <p>
-                "Username: "
+                'Username: '
                 <{username}>
-                <button onClick={<{username}> >> 'Guest'}>"Reset to Guest"</button>
+                <button onClick={<{username}> >> 'Guest'}>'Reset to Guest'</button>
             </p>
             <ul>
                 spin<{n}> in [1, 2, 3] }{

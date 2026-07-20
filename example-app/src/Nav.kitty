@@ -1,8 +1,5 @@
 func Nav(#w active) {
     return (
-        <nav>
-            "Section: "
-            { active }
-        </nav>
+        <nav>'Section: ' { active }</nav>
     )
 }

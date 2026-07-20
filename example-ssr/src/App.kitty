@@ -5,8 +5,8 @@ func App() {
     return (
         <Router>
             <nav>
-                <A href='/'>"Home"</A>
-                <A href='/about'>"About"</A>
+                <A href='/'>'Home'</A>
+                <A href='/about'>'About'</A>
             </nav>
             <main>
                 <Routes fallback={About}>

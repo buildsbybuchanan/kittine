@@ -42,13 +42,13 @@ func Shapes() {
 
     return (
         <div>
-            <p>"Origin x: " { origin.x }</p>
-            <p>"Origin y: " { origin.y }</p>
-            <p>"Shape: " <{description}></p>
-            <p>"NumHolder: " { numHolder.value }</p>
-            <p>"WordHolder: " { wordHolder.value }</p>
-            <p>"Origin describes itself as: " { origin.describe() }</p>
-            <p>"NamedHolder wraps a: " { namedHolder.value.describe() }</p>
+            <p>'Origin x: ' { origin.x }</p>
+            <p>'Origin y: ' { origin.y }</p>
+            <p>'Shape: ' <{description}></p>
+            <p>'NumHolder: ' { numHolder.value }</p>
+            <p>'WordHolder: ' { wordHolder.value }</p>
+            <p>'Origin describes itself as: ' { origin.describe() }</p>
+            <p>'NamedHolder wraps a: ' { namedHolder.value.describe() }</p>
         </div>
     )
 }

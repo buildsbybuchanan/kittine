@@ -1,7 +1,7 @@
 func About() {
     return (
         <div>
-            <h1>"About"</h1>
+            <h1>'About'</h1>
             <p>"This page is compiled from About.kitty and reached through leptos_router, exactly like example-app's CSR-only version — routing needs no SSR-specific changes at all."</p>
         </div>
     )

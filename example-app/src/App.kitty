@@ -7,9 +7,9 @@ func App() {
     return (
         <Router>
             <nav>
-                <A href='/'>"Home"</A>
-                <A href='/about'>"About"</A>
-                <A href='/user/42'>"User 42"</A>
+                <A href='/'>'Home'</A>
+                <A href='/about'>'About'</A>
+                <A href='/user/42'>'User 42'</A>
             </nav>
             <main>
                 <Routes fallback={NotFound}>

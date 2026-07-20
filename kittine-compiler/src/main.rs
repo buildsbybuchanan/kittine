@@ -1,7 +1,9 @@
 mod ast;
 mod codegen;
+mod fmt;
 mod infer;
 mod lexer;
+mod lint;
 mod parser;
 #[cfg(test)]
 mod tests;
@@ -32,6 +34,33 @@ enum Command {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Reformat .kitty source into a canonical style.
+    ///
+    /// Every reformat is self-verified: the output is reparsed and its AST
+    /// compared against the original before anything is written (see
+    /// `fmt::format_and_verify`), so a formatter bug fails loudly instead of
+    /// silently corrupting a file. A file containing `//` comments is
+    /// skipped by default -- the lexer discards them before parsing, so
+    /// there's nothing here to preserve them -- pass `--force` to reformat
+    /// it anyway and accept losing them.
+    Fmt {
+        /// A .kitty file, or a directory to format every .kitty file under.
+        path: PathBuf,
+        /// Check formatting without writing; exits non-zero if anything
+        /// would change.
+        #[arg(long)]
+        check: bool,
+        /// Reformat files containing `//` comments too, losing them.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Lint .kitty source for genuine issues: unused imports/private
+    /// items/params/`hold` bindings, and duplicate field/variant/method/
+    /// param names that would fail once generated to Rust.
+    Lint {
+        /// A .kitty file, or a directory to lint every .kitty file under.
+        path: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -51,6 +80,167 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Command::Fmt { path, check, force } => cmd_fmt(&path, check, force),
+        Command::Lint { path } => cmd_lint(&path),
+    }
+}
+
+/// Recursively collects every `.kitty` file under `path` (or just `path`
+/// itself, if it's a file), skipping `target`/`node_modules`/dotfile
+/// directories.
+fn collect_kitty_files(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut out = Vec::new();
+    if path.is_file() {
+        out.push(path.to_path_buf());
+        return Ok(out);
+    }
+    walk_dir(path, &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("failed to read '{}': {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("failed to read '{}': {e}", dir.display()))?;
+        let p = entry.path();
+        if p.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name == "target" || name == "node_modules" || name.starts_with('.') {
+                continue;
+            }
+            walk_dir(&p, out)?;
+        } else if p.extension().is_some_and(|e| e == "kitty") {
+            out.push(p);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_fmt(path: &Path, check: bool, force: bool) -> ExitCode {
+    let files = match collect_kitty_files(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("kittine-compiler: error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if files.is_empty() {
+        eprintln!("kittine-compiler: no .kitty files found at '{}'", path.display());
+        return ExitCode::FAILURE;
+    }
+
+    let mut any_changed = false;
+    let mut any_error = false;
+    for f in &files {
+        let source = match std::fs::read_to_string(f) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("kittine-compiler: error: failed to read '{}': {e}", f.display());
+                any_error = true;
+                continue;
+            }
+        };
+        if fmt::has_line_comments(&source) && !force {
+            eprintln!(
+                "kittine-compiler: skipping '{}': contains '//' comments, which fmt \
+                 cannot preserve (the lexer discards them before parsing) -- pass \
+                 --force to format anyway and lose them",
+                f.display()
+            );
+            any_error = true;
+            continue;
+        }
+        let formatted = match fmt::format_and_verify(&source) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("kittine-compiler: error formatting '{}': {e}", f.display());
+                any_error = true;
+                continue;
+            }
+        };
+        if formatted == source {
+            continue;
+        }
+        any_changed = true;
+        if check {
+            println!("kittine-compiler: '{}' is not formatted", f.display());
+        } else if let Err(e) = std::fs::write(f, &formatted) {
+            eprintln!("kittine-compiler: error: failed to write '{}': {e}", f.display());
+            any_error = true;
+        } else {
+            println!("kittine-compiler: formatted '{}'", f.display());
+        }
+    }
+
+    if any_error {
+        ExitCode::FAILURE
+    } else if check && any_changed {
+        ExitCode::FAILURE
+    } else {
+        if !any_changed {
+            println!("kittine-compiler: {} file(s) already formatted", files.len());
+        }
+        ExitCode::SUCCESS
+    }
+}
+
+fn cmd_lint(path: &Path) -> ExitCode {
+    let files = match collect_kitty_files(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("kittine-compiler: error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if files.is_empty() {
+        eprintln!("kittine-compiler: no .kitty files found at '{}'", path.display());
+        return ExitCode::FAILURE;
+    }
+
+    let mut total_warnings = 0usize;
+    let mut any_error = false;
+    for f in &files {
+        let source = match std::fs::read_to_string(f) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("kittine-compiler: error: failed to read '{}': {e}", f.display());
+                any_error = true;
+                continue;
+            }
+        };
+        let tokens = match lexer::tokenize(&source) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("kittine-compiler: error: {}: {e}", f.display());
+                any_error = true;
+                continue;
+            }
+        };
+        let program = match parser::parse(tokens) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("kittine-compiler: error: {}: {e}", f.display());
+                any_error = true;
+                continue;
+            }
+        };
+        for w in lint::check(&program) {
+            println!("kittine-compiler: {}: {w}", f.display());
+            total_warnings += 1;
+        }
+    }
+
+    if any_error {
+        ExitCode::FAILURE
+    } else if total_warnings > 0 {
+        println!("kittine-compiler: {total_warnings} warning(s)");
+        ExitCode::FAILURE
+    } else {
+        println!("kittine-compiler: no lint warnings across {} file(s)", files.len());
+        ExitCode::SUCCESS
     }
 }
 

@@ -1787,3 +1787,14 @@ These are intentional scope boundaries of the current prototype, not bugs:
   of the `&&`/`||` (`isAdult(age) && ..`) doesn't parse as a condition —
   only the general expression grammar (`purr` returns, `craft<...>`, JSX
   `{ expr }`) allows arbitrary expressions on either side of `&&`/`||`.
+- **`kittine-compiler fmt`/`lint` diagnostics carry no source position.**
+  `ast::Stmt`/`ast::Expr` keep no line/column at all once parsed, so a
+  `lint` warning names the construct ("unused parameter 'x' in purr
+  'f'"), not a location — and `fmt` cannot preserve `//` comments (the
+  lexer discards them before the parser ever sees them), so it refuses to
+  reformat a file containing one unless `--force` is passed, accepting
+  they'll be lost. `lint`'s unused-import/-item checks are a whole-scope
+  name-occurrence walk, not a reachability analysis — conservative by
+  design (a `private purr` that only calls itself, with no other caller,
+  won't be flagged), biased toward missing real dead code over ever
+  flagging live code as dead.
