@@ -159,11 +159,18 @@ fn compile_recursive(
         // `.rs` file actually written below (via `with_extension("rs")`
         // on this exact resolved path), not a nonexistent
         // `<name>.rs` next to the importer. A relative-file import
-        // (`'./util.kitty'`) round-trips through this unchanged, since
-        // `base_dir.join(import.path)` stripped of `base_dir` is just
-        // `import.path` again.
-        if let Ok(rel) = import_path.strip_prefix(base_dir) {
-            import.path = rel.to_string_lossy().replace('\\', "/");
+        // (`'./util.kitty'`) is left completely untouched -- rewriting it
+        // too would still resolve to the same file (`base_dir.join(..)`
+        // stripped of `base_dir` is just the same path again), but
+        // `Path`'s own normalization drops a leading `./` along the way,
+        // which would cosmetically change `#[path]` output for every
+        // existing relative import for no functional reason.
+        let is_package_import =
+            !import.path.contains('/') && !import.path.ends_with(".kitty");
+        if is_package_import {
+            if let Ok(rel) = import_path.strip_prefix(base_dir) {
+                import.path = rel.to_string_lossy().replace('\\', "/");
+            }
         }
         compile_recursive(&import_path, None, compiled, stack, signatures)?;
     }
