@@ -26,11 +26,14 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 - [Routing](#routing)
   - [Dynamic route segments](#dynamic-route-segments)
   - [Programmatic navigation](#programmatic-navigation)
+- [Path-qualified expressions](#path-qualified-expressions)
+- [Reference operator (`&`)](#reference-operator)
 - [Variables and state (`<{ }>` / `>>`)](#variables-and-state)
   - [Plain local bindings (`hold`)](#plain-local-bindings-hold)
 - [Strings](#strings)
 - [Booleans (`yes>` / `no>`)](#booleans)
 - [Arrays (`[ ]`)](#arrays)
+- [Stashes (`stash{ }`, maps)](#stashes)
 - [Type tags (`#n` / `#w` / `#f`)](#type-tags)
 - [Type inference](#type-inference)
 - [Litters (`litter`, structs)](#litters)
@@ -38,7 +41,7 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 - [Pattern matching (`pounce>`)](#pattern-matching)
 - [Generics](#generics)
 - [Claws (`claw`, `bare`, traits)](#claws)
-- [Printing (`craft<...>`)](#printing-craft)
+- [Printing (`craft<...>` / `warn<...>` / `error<...>`)](#printing-craft--warn--error)
 - [Control flow (`if>` / `orif>` / `else>`)](#control-flow)
 - [Loops (`spin` / `}{`)](#loops)
 - [Expressions and operators](#expressions-and-operators)
@@ -666,6 +669,26 @@ Kittine tracks no meaning for any segment — it renders the path verbatim
 checker validate it, same trust model as an unknown function call or a
 method call.
 
+## Reference operator
+
+```kitty
+serde_json::to_string(&origin).unwrap_or_default()
+```
+
+`&expr` renders as a real Rust reference (`&<expr>`) — needed to call into
+any real Rust/crate API that takes one, which is common (`serde_json::
+to_string(&value)`, and much of the wider Rust ecosystem beyond it).
+Every Kittine value is otherwise always owned; this exists purely as an
+interop escape hatch, same trust model as [path-qualified
+expressions](#path-qualified-expressions) and [method
+calls](#method-calls) — Rust's own type checker validates the result, not
+Kittine. `&` binds like unary `-`
+(`parse_unary`), and referencing a non-`Copy` scope-tracked value (a
+`Word`/array/`stash`/`litter` prop, `spin` item, or `hold` binding) still
+gets the usual pre-clone treatment first (`&p.clone()`, not a dangling
+reference to something already moved elsewhere), same as reading that
+value any other way.
+
 ## Variables and state
 
 ```kitty
@@ -800,6 +823,70 @@ can be declared as signal state exactly like any other value.
 Because a `Vec` has no `Display` implementation, `craft<[..]>` formats
 arrays with Rust's `{:?}` (`Debug`) formatter instead of `{}`.
 
+## Stashes
+
+```kitty
+<{prices}> >> #n{} stash{ milk: 2, eggs: 3, bread: 4 }
+craft<prices.get('milk').cloned().unwrap_or_default()>
+```
+
+A `stash{ key: expr, key: expr, .. }` literal is Kittine's collection type
+"beyond arrays" — a `String`-keyed map. It lowers to
+`std::collections::HashMap::from([("key".to_string(), expr), ..])`. Keys
+are written like struct-literal field names (a plain identifier, not a
+quoted string) — the same `Name { field: expr, .. }` grammar `litter`
+construction already uses, just with the reserved name `stash` instead of
+a real `litter` name (so `stash{ .. }` gets the exact same parsing,
+`kittine-compiler fmt` round-tripping, and duplicate-key-shaped lint
+checks a real struct literal already has, for free).
+
+A `stash`-typed prop, `purr` param, or return type needs an explicit tag —
+`#n{}`/`#w{}`/`#f{}` (a `Num`/`Word`/`Flag`-valued, always `String`-keyed
+map) — mirroring an array's own `#n[]`/`#w[]`/`#f[]`: type inference
+doesn't reach into a `stash`'s value type any more than it reaches into an
+array's element type (see [Type inference](#type-inference)).
+
+```kitty
+purr buildPrices() #n{} {
+    return (stash{ milk: 2, eggs: 3 })
+}
+```
+
+**Reading and mutating a `stash`** goes through the same two mechanisms
+every other Kittine value does — there's no dedicated `stash`-only syntax
+for either:
+
+- **Reading a value** is a plain method-call chain on the map, exactly
+  like calling any other Rust API Kittine doesn't have first-class syntax
+  for (see [Method calls](#method-calls)): `prices.get('milk')` returns
+  Rust's own `Option<&f64>`, chained further with ordinary `HashMap`/
+  `Option` methods — `.cloned().unwrap_or_default()` is the idiomatic
+  "give me an owned value, or a zero/empty default if the key's missing"
+  pattern. Avoid `.unwrap_or(<some literal>)` with a bare whole number for
+  a `Num{}`-valued `stash`: a method-call argument gets no forced-`f64`
+  coercion the way an arithmetic operand does (see [Method
+  calls](#method-calls)), so `unwrap_or(0)` fails to compile
+  (`expected f64, found integer`) — `unwrap_or_default()` (no argument at
+  all) sidesteps this entirely, and is usually what "no value ⇒ zero" was
+  asking for anyway.
+- **Mutating** replaces the whole map at once, the same declare-or-replace
+  signal semantics every other Kittine value already has: `<{prices}> >>
+  stash{ .. }` (or `>> stashVariable`) is the only way to change a
+  `stash` signal's *tracked* value. Calling a mutating `HashMap` method
+  like `.insert(..)` on a `.get()`-read value works as plain Rust, but
+  (like reading any signal into a local) doesn't write back through the
+  signal and won't be seen by anything reactive.
+
+**What's intentionally out of scope for now** (not bugs, just not built
+yet): a `stash` value type can only be one of the three scalars
+(`Num`/`Word`/`Flag`) — no map-of-array or map-of-`litter`, matching
+arrays' own scalar-only element type. Keys are always `String` (no
+`Num`-keyed map). There's no `spin` support for iterating a `stash`'s
+entries in a view (`spin` assumes a plain `IntoIterator<Item = T>`;
+`HashMap`'s own iterator yields `(&K, &V)` pairs, and Kittine has no
+tuple-index (`.0`/`.1`) field-access syntax to destructure that inside a
+`spin` body yet) — read individual keys with `.get(..)` instead.
+
 ## Type tags
 
 ```kitty
@@ -821,20 +908,23 @@ array form for each:
 | `#w` | string literals |
 | `#f` | boolean literals |
 | `#n[]` / `#w[]` / `#f[]` | array literals of the matching element type |
+| `#n{}` / `#w{}` / `#f{}` | [`stash`](#stashes) literals of the matching value type |
 
 ```kitty
 <{scores}> >> #n[] [10, 20, 30]
+<{prices}> >> #n{} stash{ milk: 2 }
 ```
 
 When the tagged value is a literal, the compiler checks it against the tag
 at compile time and rejects a mismatch (`#n 'oops'` is a parse error; for
 an array tag, every literal *element* is checked too — `#n[] ['a', 'b']`
-is also a parse error). When the tagged value is a variable read or a
-computed expression (its static type isn't known at parse time), the
-annotation is trusted rather than checked. Either way, the tag itself is
-erased during code generation — Rust's own type inference already gives
-the underlying value the right type, so `#n 0` and a bare `0` generate
-identical Rust.
+is also a parse error). A `stash` tag is the one exception, checked no
+more strictly than a variable read is — see [Stashes](#stashes). When the
+tagged value is a variable read or a computed expression (its static type
+isn't known at parse time), the annotation is trusted rather than
+checked. Either way, the tag itself is erased during code generation —
+Rust's own type inference already gives the underlying value the right
+type, so `#n 0` and a bare `0` generate identical Rust.
 
 Type tags are optional on a value (`<{count}> >> 0` and `<{count}> >> #n
 0` compile identically) — they exist for readability and for catching
@@ -927,15 +1017,31 @@ hold p >> Point { x: 3, y: 4 }
 craft<p.x>
 ```
 
+Every `litter` (and [`breed`](#breeds)) also derives `serde::Serialize`/
+`serde::Deserialize`, so a value round-trips through JSON — or any other
+serde-backed format (YAML, CSV, ...) — via a plain [path-qualified
+call](#path-qualified-expressions), no dedicated Kittine syntax needed:
+
+```kitty
+craft<serde_json::to_string(&p).unwrap_or_default()>
+```
+
+This is unconditional (the same as the `Clone, Debug` derive already is)
+— a project with even one `litter`/`breed` now needs `serde` (with the
+`derive` feature enabled) as a real Cargo dependency, whether or not it
+actually serializes anything.
+
 ### Compilation
 
-`litter` becomes a plain Rust `struct`, `#[derive(Clone, Debug)]` so a
-litter-typed value can be read from more than one reactive closure the
-same way a `Word` prop already can — a litter is never `Copy`. A struct
-literal becomes the same shape verbatim, with each field value getting
-the same coercion its declared type would give a `purr` argument (a
-`Word` field's bare string literal becomes an owned `String`, a `Num`
-field's bare number becomes an unambiguous `f64`):
+`litter` becomes a plain Rust `struct`, `#[derive(Clone, Debug,
+serde::Serialize, serde::Deserialize)]` so a litter-typed value can be
+read from more than one reactive closure the same way a `Word` prop
+already can — a litter is never `Copy` — and round-trips through JSON (or
+another serde format) with no extra ceremony. A struct literal becomes
+the same shape verbatim, with each field value getting the same coercion
+its declared type would give a `purr` argument (a `Word` field's bare
+string literal becomes an owned `String`, a `Num` field's bare number
+becomes an unambiguous `f64`):
 
 ```kitty
 litter Point {
@@ -944,7 +1050,7 @@ litter Point {
 }
 ```
 ```rust
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -989,10 +1095,10 @@ hold idle >> Idle
 
 ### Compilation
 
-`breed` becomes a plain Rust `enum`, same `Clone, Debug` derive as
-`litter`. A variant construction becomes a fully-qualified Rust variant
-constructor, with the same payload coercion a `litter` field or `purr`
-argument gets:
+`breed` becomes a plain Rust `enum`, same `Clone, Debug,
+serde::Serialize, serde::Deserialize` derive as `litter`. A variant
+construction becomes a fully-qualified Rust variant constructor, with the
+same payload coercion a `litter` field or `purr` argument gets:
 
 ```kitty
 breed Shape {
@@ -1001,7 +1107,7 @@ breed Shape {
 }
 ```
 ```rust
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Shape {
     Circle(f64),
     Idle,
@@ -1129,12 +1235,12 @@ litter NamedHolder<#t: Named> {
 }
 ```
 ```rust
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Holder<T> {
     pub value: T,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NamedHolder<T: Named> {
     pub value: T,
 }
@@ -1216,19 +1322,29 @@ impl Named for Point {
 }
 ```
 
-## Printing (`craft<...>`)
+## Printing (`craft<...>` / `warn<...>` / `error<...>`)
 
 ```kitty
 craft<'hello world'>
+warn<'careful'>
+error<'oh no'>
 ```
 
-`craft<expr>` logs `expr` to the browser console. String literals are
-inlined directly; arrays are formatted with `{:?}`; everything else is
-formatted with Rust's `{}` formatter:
+`craft<expr>` logs `expr` to the browser console. `warn<expr>` and
+`error<expr>` are the same statement at a different severity — three
+levels of the exact same thing, each mapping to Leptos's own
+`leptos::logging::log!`/`warn!`/`error!` macro (`warn<...>` prints to
+`console.warn`, `error<...>` to `console.error`, browser-devtools-visible
+distinctions `craft<...>` alone can't make). String literals are inlined
+directly; arrays/`litter`/`breed`/[`stash`](#stashes) values are
+formatted with `{:?}`; everything else is formatted with Rust's `{}`
+formatter:
 
 | Kittine | Generated Rust |
 |---|---|
 | `craft<'hello'>` | `leptos::logging::log!("hello");` |
+| `warn<'careful'>` | `leptos::logging::warn!("careful");` |
+| `error<'oh no'>` | `leptos::logging::error!("oh no");` |
 | `craft<<{count}>>` | `leptos::logging::log!("{}", count.get());` |
 | `craft<[1, 2, 3]>` | `leptos::logging::log!("{:?}", vec![1, 2, 3]);` |
 
@@ -1564,10 +1680,11 @@ function     := "purr" IDENT param_list type_tag_name?
                 "{" stmt* return_stmt? "}"
 param_list   := "(" (param ("," param)*)? ")"
 param        := type_tag_name? IDENT | "children"
-type_tag_name:= "#" ("n" | "w" | "f") ("[" "]")?
+type_tag_name:= "#" ("n" | "w" | "f") (("[" "]") | ("{" "}"))?
 // An omitted type_tag_name on a param/return type is filled in by
 // inference after parsing -- see "Type inference". Array tags ("[]")
-// are the one case inference doesn't cover, so they're always explicit.
+// and stash/map tags ("{}") are the cases inference doesn't cover, so
+// they're always explicit.
 return_stmt  := "return" "(" jsx_node | expr ")"
 
 litter       := "litter" IDENT type_param? "{" litter_field ("," litter_field)* ","? "}"
@@ -1593,7 +1710,8 @@ wear         := "bare" IDENT "for" IDENT "{" function* "}"
 
 stmt         := var_stmt | craft_stmt | if_stmt | spin_stmt | pounce_stmt | expr_stmt
 var_stmt     := "<{" IDENT "}>" ">>" expr
-craft_stmt   := "craft<" craft_expr ">"
+craft_stmt   := ("craft<" | "warn<" | "error<") craft_expr ">"
+// three levels of the same statement -- see "Printing"
 if_stmt      := "if>" condition INDENT_BLOCK
                 ("orif>" condition INDENT_BLOCK)*
                 ("else>" INDENT_BLOCK)?
@@ -1621,7 +1739,8 @@ craft_and    := craft_equality ("&&" craft_equality)*
 craft_equality := additive ((">>" | "<" | "<=" | ">=" | "!=") additive)?  // no bare ">"; see Expressions and operators
 additive     := term (("+" | "-") term)*
 term         := unary (("*" | "/") unary)*
-unary        := "-" unary | postfix
+unary        := "-" unary | "&" unary | postfix
+// "&" is a real Rust reference (Expr::Ref) -- see "Reference operator"
 postfix      := primary ( ("." IDENT arg_list?) | arg_list )*
 // ".IDENT" with an arg_list is a method call; with none, a litter field
 // read (Expr::FieldAccess) -- see "Litters". A bare arg_list calls the
@@ -1642,6 +1761,10 @@ call         := IDENT "(" (expr ("," expr)*)? ")"
 // "Compilation model").
 struct_init  := IDENT "{" (struct_field ("," struct_field)* ","?)? "}"
 struct_field := IDENT ":" expr
+// IDENT == "stash" is the one reserved exception: same grammar, but a
+// String-keyed map literal (Expr::StructInit lowered to a HashMap), not
+// a real litter -- "stash" is never itself a declared litter name. See
+// "Stashes".
 tuple        := "(" expr "," expr ("," expr)* ","? ")"  // a lone "(" expr ")" is just grouping
 
 jsx_node     := jsx_element | STRING | "<{" IDENT "}>" | "{" expr "}"
@@ -1674,9 +1797,10 @@ followed by one `mod` + `use` pair per `import`, and then one item per
 `func`/`purr`/`litter`/`breed`/`claw`/`bare` in the source file, in
 source order: a `func` becomes `#[component] pub fn Name(..) -> impl
 IntoView { ... }`; a `purr` becomes a plain `pub fn name(..) ->
-ReturnType { ... }`; a `litter` becomes a `#[derive(Clone, Debug)] pub
-struct Name { ... }`; a `breed` becomes a `#[derive(Clone, Debug)] pub
-enum Name { ... }`; a `claw` becomes a `pub trait Name { ... }`; a `bare
+ReturnType { ... }`; a `litter` becomes a `#[derive(Clone, Debug,
+serde::Serialize, serde::Deserialize)] pub struct Name { ... }`; a `breed`
+becomes the same derive on a `pub enum Name { ... }`; a `claw` becomes a
+`pub trait Name { ... }`; a `bare
 Claw for Target { .. }` becomes an `impl Claw for Target { ... }` (see
 [Litters](#litters), [Breeds](#breeds), [Claws](#claws)). The
 `leptos_router` and
@@ -1827,3 +1951,16 @@ These are intentional scope boundaries of the current prototype, not bugs:
   design (a `private purr` that only calls itself, with no other caller,
   won't be flagged), biased toward missing real dead code over ever
   flagging live code as dead.
+- **`craft<...>` only knows to use `{:?}` (`Debug`) instead of `{}`
+  (`Display`) for an array/`litter`/`breed`/`stash` *literal* written
+  directly inside the `craft<...>`.** `craft<[1, 2, 3]>` and
+  `craft<stash{ a: 1 }>` both work; `craft<myArraySignal>` or
+  `craft<myStash>` (a bare identifier *naming* an array/`litter`/`breed`/
+  [`stash`](#stashes)-typed signal or prop, rather than a literal) still
+  renders with `{}`, which fails to compile (`E0277`, "doesn't implement
+  `Display`") since none of those types implement it. Kittine doesn't
+  track a bare identifier's type at `craft<...>` codegen time to know
+  which format specifier it needs — write `craft<[..]>`/
+  `craft<Litter{..}>`/`craft<stash{..}>` directly, or convert the value to
+  a `Word` first (e.g. a debug-formatting `purr` helper), to work around
+  this until a real fix lands.

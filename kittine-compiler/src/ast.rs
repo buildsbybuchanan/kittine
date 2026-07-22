@@ -170,8 +170,12 @@ pub enum Stmt {
     /// (`set_x.update(..)`) based on whether `name` has already been
     /// declared in the current component.
     VarAssign { name: String, value: Expr },
-    /// `craft<expr>` — a console/log statement.
-    Craft { value: Expr },
+    /// `craft<expr>` / `warn<expr>` / `error<expr>` — a console/log
+    /// statement at one of three levels. `level` is always exactly
+    /// `"log"`/`"warn"`/`"error"` (which Leptos macro `codegen::gen_stmt`
+    /// picks — `leptos::logging::log!`/`warn!`/`error!`), set by which
+    /// keyword the parser actually saw.
+    Craft { value: Expr, level: String },
     /// `if> cond { .. } orif> cond { .. } else> { .. }`
     If {
         branches: Vec<(Expr, Vec<Stmt>)>,
@@ -306,6 +310,14 @@ pub enum Expr {
         name: String,
         fields: Vec<(String, Expr)>,
     },
+    /// `&expr` — an explicit Rust reference, needed to call into real Rust
+    /// APIs that take one (e.g. `serde_json::to_string(&value)`) — Kittine
+    /// itself has no reference *types* anywhere else (every value is
+    /// always owned), so this exists purely as an interop escape hatch,
+    /// the same trust model `MethodCall`/`CallResult`/`Path` already have:
+    /// Rust's own type checker is the source of truth on whether the
+    /// resulting call is valid.
+    Ref(Box<Expr>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

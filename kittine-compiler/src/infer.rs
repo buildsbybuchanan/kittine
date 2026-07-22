@@ -151,7 +151,7 @@ fn ident_type(expr: &Expr, param_types: &HashMap<String, String>) -> Option<Stri
 fn walk_stmt(stmt: &Stmt, name: &str) -> Option<&'static str> {
     match stmt {
         Stmt::VarAssign { value, .. } => walk_expr(value, name, false),
-        Stmt::Craft { value } => walk_expr(value, name, false),
+        Stmt::Craft { value, .. } => walk_expr(value, name, false),
         Stmt::If {
             branches,
             else_body,

@@ -273,6 +273,9 @@ fn rust_type(ty: &str) -> String {
         "Num[]" => "Vec<f64>".to_string(),
         "Word[]" => "Vec<String>".to_string(),
         "Flag[]" => "Vec<bool>".to_string(),
+        "Num{}" => "std::collections::HashMap<String, f64>".to_string(),
+        "Word{}" => "std::collections::HashMap<String, String>".to_string(),
+        "Flag{}" => "std::collections::HashMap<String, bool>".to_string(),
         "T" => "T".to_string(),
         other => other.to_string(),
     }
@@ -428,10 +431,20 @@ fn generics_suffix(type_param: &Option<TypeParam>) -> String {
 /// `litter Name type_param? { field type, .. }` becomes a plain Rust
 /// `struct` — `#[derive(Clone, Debug)]` so a `litter`-typed value can be
 /// read from more than one reactive closure the same way a `Word` prop
-/// already can (see `is_non_copy_param_type`).
+/// already can (see `is_non_copy_param_type`), plus `serde::Serialize,
+/// serde::Deserialize` (fully path-qualified, so no `use serde::..` is
+/// needed in the generated file) so a `litter` value can round-trip
+/// through `serde_json::to_string`/`from_str` (or any other serde-backed
+/// format — YAML, CSV, ... — the same derive covers all of them) via a
+/// plain [path-qualified call](../LANGUAGE.md#path-qualified-expressions),
+/// no dedicated Kittine syntax needed. This is unconditional, the same as
+/// `Clone, Debug` already are — a project with even one `litter`/`breed`
+/// now needs `serde` (with the `derive` feature) as a real Cargo
+/// dependency, whether or not it actually serializes anything; see
+/// LANGUAGE.md § Litters.
 fn gen_litter(litter: &Litter) -> String {
     let mut out = String::new();
-    out.push_str("#[derive(Clone, Debug)]\n");
+    out.push_str("#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]\n");
     let generics = generics_suffix(&litter.type_param);
     out.push_str(&format!(
         "{}struct {}{generics} {{\n",
@@ -450,10 +463,11 @@ fn gen_litter(litter: &Litter) -> String {
 }
 
 /// `breed Name type_param? { Variant (type)?, .. }` becomes a plain Rust
-/// `enum` — same `Clone, Debug` derive reasoning as `gen_litter`.
+/// `enum` — same `Clone, Debug, serde::Serialize, serde::Deserialize`
+/// derive reasoning as `gen_litter`.
 fn gen_breed(breed: &Breed) -> String {
     let mut out = String::new();
-    out.push_str("#[derive(Clone, Debug)]\n");
+    out.push_str("#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]\n");
     let generics = generics_suffix(&breed.type_param);
     out.push_str(&format!(
         "{}enum {}{generics} {{\n",
@@ -550,15 +564,17 @@ fn gen_stmt(stmt: &Stmt, scope: &mut Scope, out: &mut String, indent: usize) {
                 scope.declared.insert(name.clone());
             }
         }
-        Stmt::Craft { value } => {
+        Stmt::Craft { value, level } => {
             let code = match value {
-                Expr::Str(s) => format!("leptos::logging::log!(\"{}\");", escape_str(s)),
+                Expr::Str(s) => {
+                    format!("leptos::logging::{level}!(\"{}\");", escape_str(s))
+                }
                 other if is_array_like(other) => format!(
-                    "leptos::logging::log!(\"{{:?}}\", {});",
+                    "leptos::logging::{level}!(\"{{:?}}\", {});",
                     expr_to_rust(other, scope)
                 ),
                 other => format!(
-                    "leptos::logging::log!(\"{{}}\", {});",
+                    "leptos::logging::{level}!(\"{{}}\", {});",
                     expr_to_rust(other, scope)
                 ),
             };
@@ -771,6 +787,7 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
             &|e| substitute_self(e, name, scope),
             scope,
         ),
+        Expr::Ref(inner) => format!("&{}", substitute_self(inner, name, scope)),
     }
 }
 
@@ -894,12 +911,24 @@ fn render_call_or_variant(
 /// [`render_generic_field_value`] — Rust infers the concrete type
 /// parameter from the value itself, the same way it infers any other
 /// generic constructor call, with no explicit instantiation needed.
+///
+/// `name == "stash"` is the one reserved exception, handled first and
+/// entirely separately (see [`render_stash_literal`]): a `stash{ .. }`
+/// literal reuses this exact same `Name { field: expr, .. }` grammar (so
+/// parsing/`fmt`/the duplicate-field lint all come for free), but lowers
+/// to a `HashMap`, not a struct — `stash` is never a real registered
+/// `litter`, so `scope.signatures.litters.get("stash")` would always be
+/// `None` anyway even without this early return; the early return just
+/// makes that intentional instead of accidental.
 fn render_struct_init(
     name: &str,
     fields: &[(String, Expr)],
     render: &dyn Fn(&Expr) -> String,
     scope: &Scope,
 ) -> String {
+    if name == "stash" {
+        return render_stash_literal(fields, render);
+    }
     let field_types = scope.signatures.litters.get(name);
     let rendered: Vec<String> = fields
         .iter()
@@ -918,6 +947,29 @@ fn render_struct_init(
         })
         .collect();
     format!("{name} {{ {} }}", rendered.join(", "))
+}
+
+/// Renders `stash{ key: expr, .. }` (see `ast::Expr::StructInit`'s
+/// `render_struct_init` caller) to a `std::collections::HashMap` literal —
+/// a "stash" is always `String`-keyed, the key coming from the field name
+/// itself (already a plain identifier — `parse_struct_init_field` requires
+/// one, so no `escape_str` is needed the way an arbitrary string value
+/// would). Values get the same literal-owning treatment
+/// `render_generic_field_value` already gives any other struct-literal
+/// field with no declared type to guide it (a bare number -> unambiguous
+/// `f64`, a bare string -> owned `String`), which is exactly what a
+/// `Num{}`/`Word{}`/`Flag{}`-typed map needs too.
+fn render_stash_literal(fields: &[(String, Expr)], render: &dyn Fn(&Expr) -> String) -> String {
+    let rendered: Vec<String> = fields
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "(\"{key}\".to_string(), {})",
+                render_generic_field_value(value, render)
+            )
+        })
+        .collect();
+    format!("std::collections::HashMap::from([{}])", rendered.join(", "))
 }
 
 /// Renders a struct-literal field value with no declared (or generic `T`)
@@ -975,12 +1027,17 @@ fn render_array(items: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
     format!("vec![{}]", rendered.join(", "))
 }
 
-/// `true` if `expr` (after stripping a `#t` tag) is an array literal —
-/// used to decide whether `craft<...>` should format with `{:?}` (arrays
-/// have no `Display` impl) instead of `{}`.
+/// `true` if `expr` (after stripping a `#t` tag) is an array or
+/// struct/`stash` literal — used to decide whether `craft<...>` should
+/// format with `{:?}` (arrays, generated `litter`/`breed` types, and
+/// `HashMap` all have no `Display` impl, only `Debug`) instead of `{}`.
+/// Only covers the *literal* shape, same scope limit for a struct/`stash`
+/// as for an array: a bare identifier read from an array/struct/`stash`-
+/// typed signal or prop still isn't covered (a real, pre-existing,
+/// documented gap — see LANGUAGE.md § Known limitations).
 fn is_array_like(expr: &Expr) -> bool {
     match expr {
-        Expr::Array(_) => true,
+        Expr::Array(_) | Expr::StructInit { .. } => true,
         Expr::Typed { value, .. } => is_array_like(value),
         _ => false,
     }
@@ -1118,6 +1175,7 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
         Expr::StructInit { name, fields } => {
             render_struct_init(name, fields, &|e| expr_to_rust(e, scope), scope)
         }
+        Expr::Ref(inner) => format!("&{}", expr_to_rust(inner, scope)),
     }
 }
 
@@ -1241,6 +1299,7 @@ fn expr_references_event(expr: &Expr) -> bool {
         }
         Expr::FieldAccess { receiver, .. } => expr_references_event(receiver),
         Expr::StructInit { fields, .. } => fields.iter().any(|(_, v)| expr_references_event(v)),
+        Expr::Ref(inner) => expr_references_event(inner),
     }
 }
 
@@ -1314,6 +1373,7 @@ fn non_copy_tracked_names(expr: &Expr, scope: &Scope, out: &mut Vec<String>) {
                 non_copy_tracked_names(value, scope, out);
             }
         }
+        Expr::Ref(inner) => non_copy_tracked_names(inner, scope, out),
     }
 }
 

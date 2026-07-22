@@ -199,7 +199,9 @@ Claws](LANGUAGE.md#claws).
 ### Type tags
 
 ```
-type_tag_name := ("#n" | "#w" | "#f") ("[" "]")?
+type_tag_name := ("#n" | "#w" | "#f") (("[" "]") | ("{" "}"))?
+               // "[]" is an array of that scalar type; "{}" is a `stash`
+               // (a String-keyed map) of it -- see LANGUAGE.md § Stashes
 type_tag      := type_tag_name unary
                // wraps a *value*, e.g. `#n 0` -- distinct from
                // type_tag_name alone, which annotates a signature
@@ -214,7 +216,9 @@ stmt        := var_stmt | craft_stmt | if_stmt | spin_stmt
 
 var_stmt    := "<{" IDENT "}>" ">>" expr
 hold_stmt   := "hold" IDENT ">>" expr
-craft_stmt  := "craft<" craft_expr ">"
+craft_stmt  := ("craft<" | "warn<" | "error<") craft_expr ">"
+            // three levels of the same statement -- see LANGUAGE.md
+            // § Printing
 expr_stmt   := expr
 
 if_stmt     := "if>" condition INDENT_BLOCK
@@ -251,7 +255,9 @@ logic_and       := equality ("&&" equality)*
 equality        := additive (cmp_op additive)?
 additive        := term (("+" | "-") term)*
 term            := unary (("*" | "/") unary)*
-unary           := "-" unary | postfix
+unary           := "-" unary | "&" unary | postfix
+                 // "&" is a real Rust reference (Expr::Ref), an interop
+                 // escape hatch -- see LANGUAGE.md § Reference operator
 postfix         := primary postfix_suffix*
 postfix_suffix  := "." IDENT arg_list        // method call
                  | "." IDENT                 // field read (litter)
@@ -272,6 +278,10 @@ call            := IDENT arg_list
                // whole-import-graph Signatures map, not by syntax
 struct_init    := IDENT "{" (struct_field ("," struct_field)* ","?)? "}"
 struct_field   := IDENT ":" expr
+               // IDENT == "stash" is a reserved exception: same grammar,
+               // but lowers to a HashMap literal, not a struct -- "stash"
+               // is never itself a declared litter name. See
+               // LANGUAGE.md § Stashes
 path           := IDENT ("::" IDENT)+
                // Type::method, Type::CONST, multi-segment paths
 tuple_or_group := "(" expr ("," expr)* ","? ")"

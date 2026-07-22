@@ -34,6 +34,7 @@ func Shapes() {
     <{numHolder}> >> Holder { value: 42 }
     <{wordHolder}> >> Holder { value: 'hello' }
     <{namedHolder}> >> NamedHolder { value: origin }
+    <{originJson}> >> serde_json::to_string(&origin).unwrap_or_default()
 
     pounce> <{shape}>
         Circle(r) >> <{description}> >> 'circle'
@@ -49,6 +50,7 @@ func Shapes() {
             <p>'WordHolder: ' { wordHolder.value }</p>
             <p>'Origin describes itself as: ' { origin.describe() }</p>
             <p>'NamedHolder wraps a: ' { namedHolder.value.describe() }</p>
+            <p>'Origin as JSON: ' <{originJson}></p>
         </div>
     )
 }

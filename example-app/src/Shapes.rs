@@ -7,18 +7,18 @@ use leptos_router::*;
 use leptos_router::hooks::*;
 use leptos_meta::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Holder<T> {
     pub value: T,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Shape {
     Circle(f64),
     Square(f64),
@@ -35,7 +35,7 @@ impl Named for Point {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NamedHolder<T: Named> {
     pub value: T,
 }
@@ -48,6 +48,7 @@ pub fn Shapes() -> impl IntoView {
     let (numHolder, set_numHolder) = signal(Holder { value: 42f64 });
     let (wordHolder, set_wordHolder) = signal(Holder { value: "hello".to_string() });
     let (namedHolder, set_namedHolder) = signal(NamedHolder { value: origin.get() });
+    let (originJson, set_originJson) = signal(serde_json::to_string(&origin.get()).unwrap_or_default());
     match shape.get() {
         Shape::Circle(r) => {
             set_description.update(|n| *n = "circle".to_string());
@@ -88,6 +89,10 @@ pub fn Shapes() -> impl IntoView {
             <p>
                 "NamedHolder wraps a: "
                 {move || namedHolder.get().value.describe()}
+            </p>
+            <p>
+                "Origin as JSON: "
+                {move || originJson.get()}
             </p>
         </div>
     }

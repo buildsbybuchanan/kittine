@@ -20,6 +20,11 @@ func Home() {
     <{ready}> >> yes>
     <{age}> >> 25
     <{sections}> >> #w[] ['Home', 'About', 'Contact']
+    <{prices}> >> #n{} stash { milk: 2, eggs: 3, bread: 4 }
+    craft<prices.get('milk').cloned().unwrap_or_default()>
+    craft<stash { a: 1, b: 2 }>
+    warn<'demonstrating warn< -- a real leptos::logging::warn! call'>
+    error<'demonstrating error< -- a real leptos::logging::error! call'>
 
     if><{username}> >> 'Admin'
         craft<'Welcome Admin'>
@@ -73,6 +78,7 @@ func Home() {
                 <p>"This card's children came from the composing view."</p>
             </Card>
             <NavList items={sections}/>
+            <p>'Milk costs: ' { prices.get('milk').cloned().unwrap_or_default() }</p>
             <Shapes/>
         </div>
     )

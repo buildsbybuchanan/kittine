@@ -118,6 +118,72 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `example-app`'s `Home.kitty` gained a real text `<input>` that types
   directly into the `username` signal, replacing what was previously only
   a fixed-value "Reset to Guest" button.
+- **Phase 2 (standard library) begins: collections beyond arrays, JSON
+  serialization, a real reference operator, and logging levels.**
+  - **`stash{ key: expr, .. }`** ("collections beyond arrays" from [Full
+    vision § Phase 2](#phase-2--standard-library)) is a real `String`-keyed
+    map, lowering to `std::collections::HashMap::from([..])`. Reuses the
+    exact same grammar `litter` construction already has (`Name { field:
+    expr, .. }`, just with the reserved name `stash`), so parsing/`fmt`
+    round-tripping/lint all came for free. Typed like an array
+    (`#n{}`/`#w{}`/`#f{}` — a `Num`/`Word`/`Flag`-valued map, mirroring
+    `#n[]`/`#w[]`/`#f[]`), scalar-values-only for now, same scope limit as
+    arrays. See [LANGUAGE.md § Stashes](LANGUAGE.md#stashes).
+  - **Every `litter`/`breed` now derives `serde::Serialize`/
+    `serde::Deserialize`** unconditionally (same as the existing `Clone,
+    Debug`), so a value round-trips through JSON — or any other
+    serde-backed format (YAML, CSV, ...) — via a plain path-qualified
+    call, no dedicated syntax needed. This is what "JSON/XML/YAML/CSV
+    (de)serialization" from Phase 2 actually needed at the language
+    level; XML specifically is weaker-fit for serde's derive model and
+    isn't demonstrated yet. A project with even one `litter`/`breed` now
+    needs `serde` (`features = ["derive"]`) as a real Cargo dependency.
+    See [LANGUAGE.md § Litters](LANGUAGE.md#litters).
+  - **A new `&expr` reference operator** — Kittine had no way to spell a
+    Rust reference at all before this, which silently blocked calling
+    *any* real Rust/crate function that takes one (`serde_json::to_string(
+    &value)` being the immediate case, but this is a general interop gap,
+    not a JSON-specific one — most of the wider Rust ecosystem takes
+    references somewhere). `&` binds like unary `-`; referencing a
+    non-`Copy` scope-tracked value still gets the usual pre-clone
+    treatment first. See [LANGUAGE.md § Reference
+    operator](LANGUAGE.md#reference-operator).
+  - **`warn<expr>`/`error<expr>`** join `craft<expr>` as two more levels
+    of the same statement, mapping to `leptos::logging::warn!`/`error!`
+    instead of `log!` — real severity levels a browser's devtools console
+    distinguishes, which `craft<...>` alone couldn't produce. See
+    [LANGUAGE.md § Printing](LANGUAGE.md#printing-craft--warn--error).
+  - Verified with 10 new compiler tests (150 total, up from 140) and a
+    real `cargo check` against Leptos 0.7 for every piece —
+    `example-app`'s `Home.kitty` gained a `stash`-typed `prices` signal
+    displayed reactively plus real `warn</error<` calls, and `Shapes.kitty`
+    gained a `serde_json::to_string(&origin)` call serializing its
+    existing `Point` litter to JSON and displaying the result. A real
+    parser ambiguity was found and fixed along the way, not just assumed
+    away: a return-type's `#n{}` map suffix and a `purr`'s own following
+    body brace are both bare `{`/`}` pairs back to back
+    (`purr f() #n{} { .. }`) — `Parser::parse_signature_type` now needs a
+    3-token lookahead specifically in return-type position (a real 2nd
+    brace pair must follow) to tell them apart; verified with a dedicated
+    regression test plus a real compile of the previously-broken shape.
+  - **Left deliberately undemonstrated, not blocked at the language
+    level** (already callable via existing path-qualified-call/method-call
+    interop, `&` where a function needs a reference — just not exercised
+    with a real dependency + example in this round, to keep this round's
+    Cargo-dependency surface area from growing further than the `serde`
+    addition already above): environment/config access
+    (`std::env::var(..)`, server-side only), file I/O (`std::fs::..`,
+    also server-side only — `example-app` is CSR/WASM, which has no
+    filesystem), and encryption/hashing primitives (any hashing crate,
+    called the same way `serde_json` now is).
+  - **Still genuinely blocked, not just undemonstrated** — an HTTP client
+    and Leptos `Resource`-based data fetching both need real `async`/
+    `await` support and lambda/closure-argument syntax, neither of which
+    exist in Kittine yet; see the dynamic-WASM-module-loading gap logged
+    below, a related but distinct blocker. Validation and
+    string/date/number formatting utilities beyond what `MethodCall`
+    interop already reaches are still open, lower-priority Phase 2 items.
+  Landed 2026-07-22.
 - **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -525,11 +591,21 @@ open Phase 1 item, because it's a narrow, well-scoped, already-documented
 gap rather than an open-ended one — closing it is a natural next
 increment, not a blocker to calling the rest of this phase done.
 
-### Phase 2 — Standard library
+### Phase 2 — Standard library — **in progress**
 
-File I/O, JSON/XML/YAML/CSV (de)serialization, HTTP client, string/date/
-number formatting utilities, collections beyond arrays (maps), validation,
-logging, environment/config access, encryption/hashing primitives.
+~~Collections beyond arrays~~ (`stash{ .. }`, a real `String`-keyed map),
+~~JSON (de)serialization~~ (every `litter`/`breed` derives
+`serde::Serialize`/`Deserialize` — YAML/CSV covered by the same derive,
+just undemonstrated; XML is a weaker fit for serde's derive model), and
+~~logging~~ (`warn<...>`/`error<...>` join `craft<...>`) are done — see
+[Status](#status-what-works-today) for the full description. File I/O and
+environment/config access are callable today via existing path-qualified-
+call interop (server-side only — no filesystem/env access from CSR/WASM)
+but have no real example wired up yet. Still fully open: an HTTP client
+(genuinely blocked — needs `async`/`await` and lambda/closure-argument
+syntax, neither of which exist yet), string/date/number formatting
+utilities beyond what already-existing `MethodCall` interop reaches, and
+validation.
 
 ### Phase 3 — Backend & data
 

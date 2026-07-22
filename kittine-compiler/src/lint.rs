@@ -57,7 +57,8 @@ pub fn check(program: &Program) -> Vec<String> {
 fn is_builtin_ty(ty: &str) -> bool {
     matches!(
         ty,
-        "Num" | "Word" | "Flag" | "Num[]" | "Word[]" | "Flag[]" | "T" | "Children" | ""
+        "Num" | "Word" | "Flag" | "Num[]" | "Word[]" | "Flag[]" | "Num{}" | "Word{}" | "Flag{}"
+            | "T" | "Children" | ""
     )
 }
 
@@ -137,7 +138,7 @@ fn collect_names_stmt(s: &Stmt, set: &mut HashSet<String>) {
     match s {
         // The declared name itself is a write/binding target, not a
         // "usage" of anything -- only its value expression is scanned.
-        Stmt::VarAssign { value, .. } | Stmt::Hold { value, .. } | Stmt::Craft { value } => {
+        Stmt::VarAssign { value, .. } | Stmt::Hold { value, .. } | Stmt::Craft { value, .. } => {
             collect_names_expr(value, set);
         }
         Stmt::Expr(e) => collect_names_expr(e, set),
@@ -224,6 +225,7 @@ fn collect_names_expr(e: &Expr, set: &mut HashSet<String>) {
                 collect_names_expr(v, set);
             }
         }
+        Expr::Ref(inner) => collect_names_expr(inner, set),
     }
 }
 

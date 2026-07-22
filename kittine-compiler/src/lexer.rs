@@ -18,6 +18,8 @@ pub enum TokenKind {
     KeywordOrif,    // orif>
     KeywordElse,    // else>
     KeywordCraft,   // craft<
+    KeywordWarn,    // warn<
+    KeywordError,   // error<
     KeywordPounce,  // pounce> subject  Variant(binding)? >> .. else> ..
 
     // Type-tag sigils: #n (Num), #w (Word), #f (Flag), each optionally
@@ -50,6 +52,7 @@ pub enum TokenKind {
     // Logical operators (combine comparisons in a condition or expression)
     AmpAmp,   // &&
     PipePipe, // ||
+    Amp,      // & (a real Rust reference -- see ast::Expr::Ref)
 
     // Keywords
     KeywordFunc,
@@ -103,6 +106,8 @@ impl fmt::Display for TokenKind {
             TokenKind::KeywordOrif => write!(f, "orif>"),
             TokenKind::KeywordElse => write!(f, "else>"),
             TokenKind::KeywordCraft => write!(f, "craft<"),
+            TokenKind::KeywordWarn => write!(f, "warn<"),
+            TokenKind::KeywordError => write!(f, "error<"),
             TokenKind::KeywordPounce => write!(f, "pounce>"),
             TokenKind::TypeNum => write!(f, "#n"),
             TokenKind::TypeWord => write!(f, "#w"),
@@ -116,6 +121,7 @@ impl fmt::Display for TokenKind {
             TokenKind::GtEq => write!(f, ">="),
             TokenKind::BangEq => write!(f, "!="),
             TokenKind::AmpAmp => write!(f, "&&"),
+            TokenKind::Amp => write!(f, "&"),
             TokenKind::PipePipe => write!(f, "||"),
             TokenKind::KeywordFunc => write!(f, "func"),
             TokenKind::KeywordReturn => write!(f, "return"),
@@ -401,6 +407,15 @@ impl Lexer {
                 });
                 continue;
             }
+            if self.starts_with("&") {
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::Amp,
+                    line,
+                    col,
+                });
+                continue;
+            }
             if self.starts_with("||") {
                 self.advance();
                 self.advance();
@@ -485,6 +500,14 @@ impl Lexer {
                     "craft" if self.peek() == Some('<') => {
                         self.advance();
                         TokenKind::KeywordCraft
+                    }
+                    "warn" if self.peek() == Some('<') => {
+                        self.advance();
+                        TokenKind::KeywordWarn
+                    }
+                    "error" if self.peek() == Some('<') => {
+                        self.advance();
+                        TokenKind::KeywordError
                     }
                     "yes" if self.peek() == Some('>') => {
                         self.advance();

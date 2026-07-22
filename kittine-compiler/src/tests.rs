@@ -376,6 +376,105 @@ func App() {
 }
 
 #[test]
+fn warn_and_error_are_separate_logging_levels() {
+    let out = compile(
+        r#"
+func App() {
+    warn<'careful'>
+    error<'oh no'>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"leptos::logging::warn!("careful");"#));
+    assert!(out.contains(r#"leptos::logging::error!("oh no");"#));
+    // `craft`/`warn`/`error` never blend together into the wrong macro.
+    assert!(!out.contains(r#"leptos::logging::log!("careful");"#));
+}
+
+#[test]
+fn stash_literal_lowers_to_hashmap() {
+    let out = compile(
+        r#"
+func App() {
+    <{prices}> >> #n{} stash{ milk: 2, eggs: 3 }
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(
+        r#"let (prices, set_prices) = signal(std::collections::HashMap::from([("milk".to_string(), 2f64), ("eggs".to_string(), 3f64)]));"#
+    ));
+}
+
+#[test]
+fn word_valued_stash_owns_its_strings() {
+    let out = compile(
+        r#"
+func App() {
+    <{labels}> >> #w{} stash{ home: 'Home', about: 'About' }
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(
+        r#"std::collections::HashMap::from([("home".to_string(), "Home".to_string()), ("about".to_string(), "About".to_string())]))"#
+    ));
+}
+
+#[test]
+fn stash_typed_prop_and_return() {
+    let out = compile(
+        r#"
+purr total(#n{} prices) #n {
+    return (0)
+}
+func App(#n{} prices) {
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("pub fn total(prices: std::collections::HashMap<String, f64>) -> f64"));
+    assert!(out.contains(
+        "pub fn App(prices: std::collections::HashMap<String, f64>) -> impl IntoView"
+    ));
+}
+
+#[test]
+fn stash_typed_return_with_body_after_map_suffix() {
+    // Regression guard: `#n{}` as a *return* type is immediately followed
+    // by the function's own body `{ .. }` -- two back-to-back brace pairs
+    // that must not collapse into one (see `Parser::parse_signature_type`'s
+    // `in_return_position` handling).
+    let out = compile(
+        r#"
+purr buildPrices() #n{} {
+    return (stash{ milk: 2, eggs: 3 })
+}
+"#,
+    );
+    assert!(out.contains("pub fn buildPrices() -> std::collections::HashMap<String, f64> {"));
+    assert!(out.contains(
+        r#"std::collections::HashMap::from([("milk".to_string(), 2f64), ("eggs".to_string(), 3f64)])"#
+    ));
+}
+
+#[test]
+fn craft_stash_uses_debug_format() {
+    let out = compile(
+        r#"
+func App() {
+    craft<stash{ a: 1 }>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(
+        out.contains(r#"leptos::logging::log!("{:?}", std::collections::HashMap::from([("a".to_string(), 1f64)]));"#)
+    );
+}
+
+#[test]
 fn type_tag_erases_to_bare_value() {
     let out = compile(
         r#"
@@ -1255,6 +1354,42 @@ func App() {
 }
 
 #[test]
+fn reference_operator_renders_as_ampersand() {
+    let out = compile(
+        r#"
+purr toJson(#n n) #w {
+    return (serde_json::to_string(&n).unwrap_or_default())
+}
+"#,
+    );
+    // `n` is a `Num` param -- `Copy`, so no `.clone()` needed at the
+    // reference site, unlike the `Word`/litter case below.
+    assert!(out.contains("serde_json::to_string(&n).unwrap_or_default()"));
+}
+
+#[test]
+fn reference_operator_works_on_a_litter_value() {
+    let out = compile(
+        r#"
+litter Point {
+    x #n,
+    y #n
+}
+
+func Home() {
+    hold p >> Point { x: 1, y: 2 }
+    hold json >> serde_json::to_string(&p).unwrap_or_default()
+    return ( <p>{ json }</p> )
+}
+"#,
+    );
+    // `p` is `hold`-bound (non-`Copy`), so the reference target itself
+    // still gets the usual pre-clone treatment -- `&p.clone()`, not a
+    // dangling reference to something already moved elsewhere.
+    assert!(out.contains("serde_json::to_string(&p.clone()).unwrap_or_default()"));
+}
+
+#[test]
 fn path_qualified_expression_supports_more_than_two_segments() {
     let out = compile(
         r#"
@@ -1844,6 +1979,11 @@ func Home() {
     // `is_non_copy_param_type`), so a field read clones first, same as
     // any other `hold`/`spin`-tracked non-`Copy` value.
     assert!(out.contains("sum(p.clone().x, p.clone().y)"));
+    // A litter derives Serialize/Deserialize unconditionally (same as
+    // Clone/Debug), so it round-trips through serde_json (or any other
+    // serde-backed format) via a plain path-qualified call -- no
+    // dedicated Kittine syntax needed.
+    assert!(out.contains("#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]"));
 }
 
 /// A `Word`-typed litter field initialized from a bare string literal gets
@@ -1894,6 +2034,7 @@ func Home() {
     assert!(out.contains("Idle,"));
     assert!(out.contains("let a = Shape::Circle(5f64);"));
     assert!(out.contains("let b = Shape::Idle;"));
+    assert!(out.contains("#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]"));
 }
 
 /// `pounce> subject` `Variant(binding)? >> ..` `else> ..` lowers to a real

@@ -75,6 +75,13 @@ impl Parser {
         &self.tokens[idx].kind
     }
 
+    /// Looks `offset` tokens ahead of the current one without consuming
+    /// anything (`offset == 1` is the same token `peek_next` returns).
+    fn peek_at(&self, offset: usize) -> &TokenKind {
+        let idx = (self.pos + offset).min(self.tokens.len() - 1);
+        &self.tokens[idx].kind
+    }
+
     fn err(&self, message: impl Into<String>) -> ParseError {
         let tok = self.peek();
         ParseError {
@@ -183,8 +190,26 @@ impl Parser {
     /// (`[expr, ..]`) rather than inventing a new bracket convention. No
     /// closing delimiter is needed (unlike the retired `<<Type>>` form) —
     /// the sigil itself carries the type, so the tag is at most 4
-    /// characters (`#w[]`) even for an array.
-    fn parse_signature_type(&mut self) -> PResult<String> {
+    /// characters (`#w[]`) even for an array. A trailing `{}` instead means
+    /// a `stash` (a `String`-keyed map of that value type — see
+    /// `codegen::rust_type`), returning `"Word{}"` etc. — same reasoning as
+    /// `[]`, just borrowing `stash{ .. }`'s own literal brackets instead of
+    /// inventing a third bracket convention.
+    ///
+    /// `in_return_position` guards against a real ambiguity a param/value-
+    /// tag position doesn't have: `purr f() #n { return (0) }` — is that
+    /// empty-looking `{ return (0) }`'s *opening* `{` the map suffix
+    /// (leaving nothing for the actual function body), or the function
+    /// body itself (leaving `ty` as plain `"Num"`)? When true, an empty
+    /// `{}` is only ever treated as the map suffix if a **third** brace
+    /// immediately follows — i.e. there's a genuine, separate function
+    /// body left over afterward (`#n{} { .. }`). A bare `#n {}` (no
+    /// third brace) is therefore always read as return type `"Num"` PLUS
+    /// an empty function body — which is what it would already have been
+    /// before `stash` existed, and still correctly fails afterward with
+    /// "must end with a 'return ( expr )'" instead of a confusing
+    /// swallowed-brace parse error.
+    fn parse_signature_type(&mut self, in_return_position: bool) -> PResult<String> {
         let mut ty = match self.peek().kind {
             TokenKind::TypeNum => "Num".to_string(),
             TokenKind::TypeWord => "Word".to_string(),
@@ -201,6 +226,13 @@ impl Parser {
             self.advance();
             self.expect(TokenKind::RBracket)?;
             ty.push_str("[]");
+        } else if matches!(self.peek().kind, TokenKind::LBrace)
+            && matches!(self.peek_next(), TokenKind::RBrace)
+            && (!in_return_position || matches!(self.peek_at(2), TokenKind::LBrace))
+        {
+            self.advance();
+            self.advance();
+            ty.push_str("{}");
         }
         Ok(ty)
     }
@@ -236,7 +268,7 @@ impl Parser {
             });
         }
         let ty = if self.peek_is_type_sigil() {
-            self.parse_signature_type()?
+            self.parse_signature_type(false)?
         } else {
             String::new()
         };
@@ -268,7 +300,7 @@ impl Parser {
         let name = self.expect_ident()?;
         let params = self.parse_param_list()?;
         let return_type = if self.peek_is_type_sigil() {
-            self.parse_signature_type()?
+            self.parse_signature_type(true)?
         } else {
             String::new()
         };
@@ -382,7 +414,7 @@ impl Parser {
     fn parse_field_type(&mut self) -> PResult<String> {
         match self.peek().kind.clone() {
             TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag => {
-                self.parse_signature_type()
+                self.parse_signature_type(false)
             }
             TokenKind::TypeGeneric => {
                 self.advance();
@@ -564,7 +596,9 @@ impl Parser {
     fn parse_stmt(&mut self) -> PResult<Stmt> {
         match self.peek().kind {
             TokenKind::LeftVarBracket => self.parse_var_assign_stmt(),
-            TokenKind::KeywordCraft => self.parse_craft_stmt(),
+            TokenKind::KeywordCraft => self.parse_craft_stmt(TokenKind::KeywordCraft, "log"),
+            TokenKind::KeywordWarn => self.parse_craft_stmt(TokenKind::KeywordWarn, "warn"),
+            TokenKind::KeywordError => self.parse_craft_stmt(TokenKind::KeywordError, "error"),
             TokenKind::KeywordIf => self.parse_if_stmt(),
             TokenKind::KeywordSpin => self.parse_spin_stmt(),
             TokenKind::KeywordHold => self.parse_hold_stmt(),
@@ -707,8 +741,12 @@ impl Parser {
         }
     }
 
-    fn parse_craft_stmt(&mut self) -> PResult<Stmt> {
-        self.expect(TokenKind::KeywordCraft)?;
+    /// Shared by `craft<expr>`/`warn<expr>`/`error<expr>` — three levels
+    /// of the same underlying statement (see `ast::Stmt::Craft`), told
+    /// apart only by which keyword token was actually seen (`keyword`) and
+    /// which Leptos `logging` macro that maps to (`level`).
+    fn parse_craft_stmt(&mut self, keyword: TokenKind, level: &str) -> PResult<Stmt> {
+        self.expect(keyword)?;
         // Not `parse_expr()`: a bare `>` comparison at the top level here
         // would be indistinguishable from `craft<...>`'s own closing `>`.
         // Wrap a `>` comparison in parens (`craft<(age > 18)>`) to use one —
@@ -716,7 +754,10 @@ impl Parser {
         // the comparison is inside them.
         let value = self.parse_or_no_trailing_gt()?;
         self.expect(TokenKind::Gt)?;
-        Ok(Stmt::Craft { value })
+        Ok(Stmt::Craft {
+            value,
+            level: level.to_string(),
+        })
     }
 
     /// Like [`Parser::parse_or`], but built on
@@ -993,6 +1034,11 @@ impl Parser {
                 right: Box::new(inner),
             });
         }
+        if matches!(self.peek().kind, TokenKind::Amp) {
+            self.advance();
+            let inner = self.parse_unary()?;
+            return Ok(Expr::Ref(Box::new(inner)));
+        }
         self.parse_postfix()
     }
 
@@ -1188,7 +1234,7 @@ impl Parser {
     /// the retired `<<Type>>` form there's no closing bracket to look for.
     fn parse_type_tag(&mut self) -> PResult<Expr> {
         let start = self.peek().clone();
-        let ty = self.parse_signature_type()?;
+        let ty = self.parse_signature_type(false)?;
         let value = self.parse_unary()?;
 
         let matches_ty = match (ty.as_str(), &value) {
@@ -1203,8 +1249,8 @@ impl Parser {
         };
         if !matches_ty {
             let sigil = match ty.as_str() {
-                "Num" | "Num[]" => "#n",
-                "Word" | "Word[]" => "#w",
+                "Num" | "Num[]" | "Num{}" => "#n",
+                "Word" | "Word[]" | "Word{}" => "#w",
                 _ => "#f",
             };
             return Err(ParseError {

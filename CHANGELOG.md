@@ -8,6 +8,50 @@ grouped by date until the first tagged release.
 
 ## [Unreleased] - 2026-07-22
 
+### Added (Phase 2 begins: `stash` maps, JSON via `serde`, a reference operator, log levels)
+
+- **`stash{ key: expr, .. }`** — a real `String`-keyed map, Kittine's
+  "collections beyond arrays." Lowers to `std::collections::HashMap::
+  from([..])`, reusing the exact same `Name { field: expr, .. }` grammar
+  a `litter` construction already has (parsing/`fmt`/lint all come free).
+  Typed with `#n{}`/`#w{}`/`#f{}` on a prop/param/return, mirroring
+  arrays' own `#n[]`/`#w[]`/`#f[]` — scalar values only for now, same
+  scope limit arrays already have. A real parser ambiguity was found and
+  fixed along the way: a `purr`'s return-type `#n{}` map suffix and its
+  own following body `{ .. }` are both bare brace pairs back to back,
+  which `Parser::parse_signature_type` now disambiguates with a 3-token
+  lookahead (return-type position only requires a genuine 2nd brace pair
+  to follow before treating `{}` as the map suffix). See [LANGUAGE.md §
+  Stashes](docs/LANGUAGE.md#stashes).
+- **Every `litter`/`breed` now derives `serde::Serialize`/
+  `serde::Deserialize`** unconditionally, alongside the existing `Clone,
+  Debug` — a value round-trips through `serde_json` (or any other
+  serde-backed format) via a plain path-qualified call, no dedicated
+  syntax needed. A project with even one `litter`/`breed` now needs
+  `serde` (`features = ["derive"]`) as a real Cargo dependency. See
+  [LANGUAGE.md § Litters](docs/LANGUAGE.md#litters).
+- **A new `&expr` reference operator** — Kittine had no way to spell a
+  Rust reference at all before this, silently blocking any real Rust/
+  crate function that takes one (starting with `serde_json::to_string(
+  &value)` above, but general — most of the wider Rust ecosystem takes
+  references somewhere). Binds like unary `-`; a non-`Copy` scope-tracked
+  reference target still gets the usual pre-clone treatment first. See
+  [LANGUAGE.md § Reference operator](docs/LANGUAGE.md#reference-operator).
+- **`warn<expr>`/`error<expr>`** join `craft<expr>` as two more levels of
+  the same statement (`leptos::logging::warn!`/`error!` instead of
+  `log!`) — real console-severity levels `craft<...>` alone couldn't
+  produce. See [LANGUAGE.md § Printing](docs/LANGUAGE.md#printing-craft--warn--error).
+
+Verified with 10 new compiler tests (150 total) and a real `cargo check`
+against Leptos 0.7 for every piece — `example-app`'s `Home.kitty` gained
+a `stash`-typed `prices` signal plus real `warn</error<` calls, and
+`Shapes.kitty` gained a `serde_json::to_string(&origin)` call serializing
+its existing `Point` litter to JSON. See [ROADMAP.md § Status](docs/ROADMAP.md#status-what-works-today)
+for what's left open in Phase 2 (an HTTP client needs `async`/`await` and
+lambda syntax, neither built yet; file I/O/env access are interop-
+reachable today but undemonstrated; validation and deeper string/date/
+number formatting are still open).
+
 ### Added (reading an `on<Event>` handler's event value)
 
 - **The reserved `event` identifier**, usable anywhere inside an

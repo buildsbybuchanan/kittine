@@ -36,6 +36,11 @@ pub fn Home() -> impl IntoView {
     let (ready, set_ready) = signal(true);
     let (age, set_age) = signal(25f64);
     let (sections, set_sections) = signal(vec!["Home".to_string(), "About".to_string(), "Contact".to_string()]);
+    let (prices, set_prices) = signal(std::collections::HashMap::from([("milk".to_string(), 2f64), ("eggs".to_string(), 3f64), ("bread".to_string(), 4f64)]));
+    leptos::logging::log!("{}", prices.get().get("milk").cloned().unwrap_or_default());
+    leptos::logging::log!("{:?}", std::collections::HashMap::from([("a".to_string(), 1f64), ("b".to_string(), 2f64)]));
+    leptos::logging::warn!("demonstrating warn< -- a real leptos::logging::warn! call");
+    leptos::logging::error!("demonstrating error< -- a real leptos::logging::error! call");
     if username.get() == "Admin" {
         leptos::logging::log!("Welcome Admin");
     } else if username.get() == "User" {
@@ -92,6 +97,10 @@ pub fn Home() -> impl IntoView {
                 </p>
             </Card>
             <NavList items=sections.get()/>
+            <p>
+                "Milk costs: "
+                {move || prices.get().get("milk").cloned().unwrap_or_default()}
+            </p>
             <Shapes/>
         </div>
     }

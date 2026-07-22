@@ -145,6 +145,10 @@ fn print_expr(e: &Expr, min_prec: u8) -> String {
                 format!("{name} {{ {body} }}")
             }
         }
+        Expr::Ref(inner) => {
+            let printed = format!("&{}", print_expr(inner, P_UNARY));
+            wrap_if(printed, P_UNARY, min_prec)
+        }
     }
 }
 
@@ -223,6 +227,9 @@ fn sig_type_str(ty: &str) -> String {
         "Num[]" => "#n[]".to_string(),
         "Word[]" => "#w[]".to_string(),
         "Flag[]" => "#f[]".to_string(),
+        "Num{}" => "#n{}".to_string(),
+        "Word{}" => "#w{}".to_string(),
+        "Flag{}" => "#f{}".to_string(),
         other => other.to_string(),
     }
 }
@@ -298,13 +305,18 @@ fn print_stmt(s: &Stmt, level: usize) -> Vec<String> {
         Stmt::VarAssign { name, value } => {
             vec![format!("{}<{{{name}}}> >> {}", ind(level), print_expr(value, P_ADD))]
         }
-        Stmt::Craft { value } => {
+        Stmt::Craft { value, level: log_level } => {
             let inner = if contains_bare_gt(value) {
                 format!("({})", print_expr(value, P_TOP))
             } else {
                 print_expr(value, P_TOP)
             };
-            vec![format!("{}craft<{inner}>", ind(level))]
+            let keyword = match log_level.as_str() {
+                "warn" => "warn",
+                "error" => "error",
+                _ => "craft",
+            };
+            vec![format!("{}{keyword}<{inner}>", ind(level))]
         }
         Stmt::Hold { name, value } => {
             vec![format!("{}hold {name} >> {}", ind(level), print_expr(value, P_TOP))]
@@ -765,6 +777,15 @@ mod tests {
     }
 
     #[test]
+    fn warn_and_error_round_trip() {
+        let src = "func F() {\n    warn<'careful'>\n    error<'oh no'>\n}\n";
+        let out = fmt_ok(src);
+        assert!(out.contains("warn<'careful'>"), "got: {out}");
+        assert!(out.contains("error<'oh no'>"), "got: {out}");
+        assert_idempotent(src);
+    }
+
+    #[test]
     fn preserves_operator_precedence() {
         let src = "purr f() #n { return ((a + b) * c) }";
         let out = fmt_ok(src);
@@ -795,6 +816,14 @@ mod tests {
         let src = "purr f() #n { return (-5) }";
         let out = fmt_ok(src);
         assert!(out.contains("-5"));
+        assert_idempotent(src);
+    }
+
+    #[test]
+    fn reference_operator_round_trips() {
+        let src = "purr f(#n n) #w { return (serde_json::to_string(&n).unwrap_or_default()) }";
+        let out = fmt_ok(src);
+        assert!(out.contains("&n"));
         assert_idempotent(src);
     }
 
