@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
+## [Unreleased] - 2026-07-22
+
+### Added (reading an `on<Event>` handler's event value)
+
+- **The reserved `event` identifier**, usable anywhere inside an
+  `on<Event>` handler's own expression (`onInput`, `onChange`, ...), now
+  reads the fired event's string value — `onInput={<{query}> >> event}`
+  lowers to `on:input=move |ev| set_query.update(|n| *n =
+  event_target_value(&ev))`. Only handlers that actually reference `event`
+  get the `move |ev| ...` closure; every other handler keeps the cheaper
+  `move |_| ...` it always had. Scoped narrowly via a new
+  `Scope::event_bound` flag threaded only through an `on<Event>`
+  attribute's own render call — not a blanket reserved word, so a real
+  signal/param/`hold` binding named `event` elsewhere in a program is
+  unaffected. Closes the one open item from the previous release's `Next
+  up` section. See [LANGUAGE.md § The view
+  syntax](docs/LANGUAGE.md#the-view-syntax). Verified with 2 new compiler
+  tests (140 total) and a real `cargo check` against Leptos 0.7 —
+  `example-app`'s `Home.kitty` gained a real text `<input>` that types
+  directly into the `username` signal.
+
+### Also discovered (logged, not yet fixed)
+
+- **No array-of-`litter`/`breed` types** — array-typed props/returns stay
+  scalar-only (`#n[]`/`#w[]`/`#f[]`). Found while checking whether the new
+  `event` support could turn `kittine-website`'s `/docs/language`
+  topic-filter pills into a real free-text search over the doc cards; it
+  can't yet, since a filterable card list needs to be real struct data in
+  an array, which Kittine's type system doesn't represent. See
+  [ROADMAP.md § Next up](docs/ROADMAP.md#next-up).
+
 ## [Unreleased] - 2026-07-21
 
 ### Added (a real package manager + a WASM playground export)

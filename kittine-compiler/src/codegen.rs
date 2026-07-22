@@ -115,6 +115,14 @@ struct Scope<'a> {
     /// since it's the same program-wide map regardless of which
     /// component/function is being lowered right now.
     signatures: &'a Signatures,
+    /// `true` only while rendering an `on<Event>` handler expression that
+    /// actually reads the reserved `event` identifier (see
+    /// `expr_references_event`) — makes a bare `Expr::Ident("event")`
+    /// inside that one expression tree render as `event_target_value(&ev)`
+    /// instead of an ordinary variable read. Scoped this narrowly (not a
+    /// blanket reserved word) so a real signal/param/`hold` binding named
+    /// `event` elsewhere in the program keeps rendering normally.
+    event_bound: bool,
 }
 
 impl<'a> Scope<'a> {
@@ -128,6 +136,7 @@ impl<'a> Scope<'a> {
             spin_items: HashSet::new(),
             hold_items: HashSet::new(),
             signatures,
+            event_bound: false,
         }
     }
 
@@ -136,6 +145,14 @@ impl<'a> Scope<'a> {
     fn with_spin_item(&self, item: &str) -> Self {
         let mut scope = self.clone();
         scope.spin_items.insert(item.to_string());
+        scope
+    }
+
+    /// A copy of this scope with the reserved `event` identifier bound to
+    /// the current `on<Event>` handler's event object — see `event_bound`.
+    fn with_event_bound(&self) -> Self {
+        let mut scope = self.clone();
+        scope.event_bound = true;
         scope
     }
 }
@@ -822,6 +839,9 @@ fn is_bare_string_literal(expr: &Expr) -> bool {
 /// `Ident` that happens to share a variant's name" and an actual
 /// zero-payload variant reference.
 fn render_ident(name: &str, scope: &Scope) -> String {
+    if scope.event_bound && name == "event" {
+        return "event_target_value(&ev)".to_string();
+    }
     match scope.signatures.variants.get(name) {
         Some(v) if v.payload.is_none() => format!("{}::{name}", v.breed),
         _ => render_var_read(name, scope),
@@ -1195,6 +1215,35 @@ fn is_children_call(expr: &Expr) -> bool {
     matches!(expr, Expr::Call { name, args } if name == "children" && args.is_empty())
 }
 
+/// `true` if `expr` reads the reserved `event` identifier anywhere in its
+/// tree — used only for an `on<Event>` handler's own expression, to decide
+/// whether that handler's closure needs to actually bind the event
+/// (`|ev|`, with `event` rendering as `event_target_value(&ev)` — see
+/// `Scope::event_bound`) instead of discarding it (`|_|`, the default for
+/// every handler that doesn't need the event's value, e.g. `onClick={<{count}>
+/// >> count + 1}`).
+fn expr_references_event(expr: &Expr) -> bool {
+    match expr {
+        Expr::Ident(n) => n == "event",
+        Expr::VarRead(_) | Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Path(_) => false,
+        Expr::Binary { left, right, .. } => {
+            expr_references_event(left) || expr_references_event(right)
+        }
+        Expr::InlineAssign { value, .. } => expr_references_event(value),
+        Expr::Array(items) | Expr::Tuple(items) => items.iter().any(expr_references_event),
+        Expr::Typed { value, .. } => expr_references_event(value),
+        Expr::Call { args, .. } => args.iter().any(expr_references_event),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_references_event(receiver) || args.iter().any(expr_references_event)
+        }
+        Expr::CallResult { callee, args } => {
+            expr_references_event(callee) || args.iter().any(expr_references_event)
+        }
+        Expr::FieldAccess { receiver, .. } => expr_references_event(receiver),
+        Expr::StructInit { fields, .. } => fields.iter().any(|(_, v)| expr_references_event(v)),
+    }
+}
+
 fn jsx_attr_leptos_name(name: &str) -> (String, bool) {
     let bytes = name.as_bytes();
     if name.len() > 2 && &name[0..2] == "on" && bytes[2].is_ascii_uppercase() {
@@ -1314,12 +1363,20 @@ fn jsx_attr_value(value: &JsxAttrValue, is_event: bool, is_component: bool, scop
         }
         JsxAttrValue::Str(s) => format!("\"{}\"", escape_str(s)),
         JsxAttrValue::Expr(Expr::InlineAssign { name, value }) => {
-            let body = format!("{}", mutation_expr(name, value, scope));
-            wrap_reactive_closure("|_|", value, &body, scope)
+            let needs_event = is_event && expr_references_event(value);
+            let event_scope = scope.with_event_bound();
+            let render_scope = if needs_event { &event_scope } else { scope };
+            let body = mutation_expr(name, value, render_scope);
+            let closure_params = if needs_event { "|ev|" } else { "|_|" };
+            wrap_reactive_closure(closure_params, value, &body, scope)
         }
         JsxAttrValue::Expr(expr) if is_event => {
-            let body = expr_to_rust(expr, scope);
-            wrap_reactive_closure("|_|", expr, &body, scope)
+            let needs_event = expr_references_event(expr);
+            let event_scope = scope.with_event_bound();
+            let render_scope = if needs_event { &event_scope } else { scope };
+            let body = expr_to_rust(expr, render_scope);
+            let closure_params = if needs_event { "|ev|" } else { "|_|" };
+            wrap_reactive_closure(closure_params, expr, &body, scope)
         }
         // Component props are plain typed values, not reactive DOM
         // attributes — pass them through bare rather than wrapping in a

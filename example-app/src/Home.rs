@@ -77,6 +77,7 @@ pub fn Home() -> impl IntoView {
                 <button on:click=move |_| set_username.update(|n| *n = "Guest".to_string())>
                     "Reset to Guest"
                 </button>
+                <input placeholder="Type a username" on:input=move |ev| set_username.update(|n| *n = event_target_value(&ev))/>
             </p>
             <ul>
                 <For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>

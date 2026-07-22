@@ -101,6 +101,23 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `leptos_router`, ready for a page to use once Leptos's own
   `provide_meta_context()` wiring is documented — no `.kitty` file
   exercises it yet.
+- **Reading an `on<Event>` handler's event value.** The reserved
+  identifier `event`, used anywhere inside an `on<Event>` handler's own
+  expression, now reads the fired event's string value
+  (`event_target_value(&ev)`) — `onInput={<{query}> >> event}` mutates
+  `query` to whatever the user actually typed, instead of only a fixed
+  literal. The handler's closure binds `ev` (`move |ev| ...`) only when
+  the expression actually references `event`; every other handler still
+  gets the cheaper `move |_| ...` it always did. Scoped narrowly (a
+  `Scope::event_bound` flag threaded only through an `on<Event>`
+  attribute's own render call), not a blanket reserved word — a real
+  signal/param/`hold` binding named `event` anywhere else in a program
+  keeps rendering normally. See [LANGUAGE.md § The view
+  syntax](LANGUAGE.md#the-view-syntax). Verified with 2 new compiler
+  tests (140 total) and a real `cargo check` against Leptos 0.7 —
+  `example-app`'s `Home.kitty` gained a real text `<input>` that types
+  directly into the `username` signal, replacing what was previously only
+  a fixed-value "Reset to Guest" button.
 - **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -244,22 +261,37 @@ vision](#full-vision-phased-honest) are where these get addressed.
 
 ## Next up
 
-- **No way to read an `on<Event>` handler's event value.** Discovered
-  building a topic-filter search box for `kittine-website`'s `/docs/language`
-  page: every event handler attribute (`onClick`, `onInput`, ...) lowers to
-  a Leptos `move |_| <mutation>` closure — the event object itself is
-  always discarded (see [LANGUAGE.md § The view
-  syntax](LANGUAGE.md#the-view-syntax)). `onClick={<{name}> >> value}`
-  never needed the event anyway (`value` is a fixed expression), but a
-  text `<input>`'s `onInput` has nothing else to mutate a signal *to* —
-  real free-text search needs `event_target_value(&ev)`, which requires
-  the handler closure to actually bind `ev` instead of `_`. Worked around
-  for now with a reactive `data-filter` attribute + CSS (topic pills, not
-  free text) — the same pattern the code-comparison toggle tabs already
-  use — but that only works when the set of choices is fixed ahead of
-  time, not for arbitrary typed text. A real fix needs a way to name and
-  bind the event argument in an `on<Event>` handler's expression position,
-  then read a string out of it (`event_target_value`-equivalent).
+- **No array-of-`litter`/`breed` types.** Array-typed props/returns
+  (`#n[]`/`#w[]`/`#f[]`) are scalar-only — there's no way to type a prop
+  or `purr` return as "an array of structs." Discovered while looking at
+  whether `kittine-website`'s `/docs/language` topic-filter search box
+  (currently static hardcoded JSX cards + a CSS `data-filter` pill toggle)
+  could become a real free-text search now that `event` (see the `Done`
+  item just below) makes reading typed input possible — it can't yet,
+  because a *filterable* list of doc-entry cards needs to be real data
+  (`litter DocEntry { title #w, category #w, body #w }`) held in a
+  `#DocEntry[]`-shaped array and rendered with `spin`, which Kittine's
+  type system doesn't support. Two sub-gaps, not one: the array-element
+  type itself (`litter`s in an array), and a way to *filter* an array
+  reactively at all (no `.filter()`-equivalent — Kittine has no lambda/
+  closure-argument syntax for a filter predicate, and no imperative
+  push-into-a-new-`Vec` pattern documented either). Closing this unblocks
+  a real fix for the search box, not just the narrower `event`-reading gap
+  below.
+
+Done: ~~No way to read an `on<Event>` handler's event value~~ (the
+reserved `event` identifier inside an `on<Event>` handler's own expression
+now reads `event_target_value(&ev)`, and the handler's closure binds `ev`
+instead of discarding it as `_` — see [Status § the new
+bullet](#status-what-works-today) for the full description) — landed
+2026-07-22. **Not yet applied to `kittine-website`'s `/docs/language`
+topic-filter search box**, the original motivating case: that page's
+cards are static hardcoded JSX, and turning them into a real free-text
+search needs the cards to be *data* (an array of struct-like entries)
+filtered reactively — Kittine's array types are scalar-only today
+(`#n[]`/`#w[]`/`#f[]`, no array-of-`litter`), so there's nowhere to put a
+`Vec<DocEntry>` prop/return yet. Logged as a new, distinct gap below
+rather than force a half-built version onto the production docs page.
 
 Done: ~~A formatter and linter~~ (`kittine-compiler fmt`/`lint`, closing
 that specific Phase 5 item — see [Status § Tooling](#status-what-works-today)

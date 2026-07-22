@@ -187,6 +187,38 @@ func App() {
 }
 
 #[test]
+fn jsx_input_event_value_binding() {
+    let out = compile(
+        r#"
+func Search() {
+    <{query}> >> ''
+    return (
+        <input onInput={<{query}> >> event}/>
+    )
+}
+"#,
+    );
+    assert!(out.contains("on:input=move |ev| set_query.update(|n| *n = event_target_value(&ev))"));
+}
+
+#[test]
+fn jsx_event_value_binding_in_larger_expression() {
+    let out = compile(
+        r#"
+func Search() {
+    <{query}> >> ''
+    return (
+        <input onInput={<{query}> >> event + '!'}/>
+    )
+}
+"#,
+    );
+    assert!(out.contains(
+        "on:input=move |ev| set_query.update(|n| *n = format!(\"{}{}\", event_target_value(&ev), \"!\"))"
+    ));
+}
+
+#[test]
 fn self_closing_jsx_element() {
     let out = compile(
         r#"

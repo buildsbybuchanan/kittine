@@ -1519,7 +1519,14 @@ rendered output. The JSX-like tree supports:
   `onInput`, `onSubmit`, ...) becomes a Leptos `on:<event>=` binding, and
   its value is wrapped in a `move |_| ...` closure. A `<{name}> >> value`
   expression used as an event handler's value performs the mutation when
-  the event fires.
+  the event fires. The reserved identifier `event`, used anywhere inside
+  that same handler expression, reads the fired event's string value
+  (`event_target_value`) — the closure binds it as `move |ev| ...` instead
+  of discarding it, so a text `<input>`'s `onInput={<{query}> >> event}`
+  can mutate a signal to whatever the user actually typed, not just a
+  fixed literal. `event` is only special inside an `on<Event>` handler's
+  own expression; a signal/param/`hold` binding named `event` anywhere
+  else in the program is unaffected.
 - **Other attributes**: rendered as-is; string literals stay strings,
   `{expr}` attribute values are wrapped in a `move || ...` closure so they
   stay reactive.
@@ -1535,6 +1542,10 @@ rendered output. The JSX-like tree supports:
 - `<{name}>` as a child becomes `{move || name.get()}`.
 - `{expr}` as a child becomes `{move || <expr>}`.
 - `onClick={...}` becomes `on:click=move |_| <mutation>`.
+- `onInput={<{query}> >> event}` becomes `on:input=move |ev|
+  set_query.update(|n| *n = event_target_value(&ev))` — `event` anywhere in
+  the handler expression becomes `event_target_value(&ev)`, and the
+  closure binds `ev` instead of discarding it as `_`.
 - Any other `attr={expr}` becomes `attr=move || <expr>`.
 
 ## Full grammar summary

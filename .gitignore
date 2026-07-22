@@ -5,3 +5,5 @@ pkg/
 *.log
 .DS_Store
 *.vsix
+.vercel
+.env*

@@ -62,6 +62,7 @@ func Home() {
                 'Username: '
                 <{username}>
                 <button onClick={<{username}> >> 'Guest'}>'Reset to Guest'</button>
+                <input placeholder='Type a username' onInput={<{username}> >> event}/>
             </p>
             <ul>
                 spin<{n}> in [1, 2, 3] }{
