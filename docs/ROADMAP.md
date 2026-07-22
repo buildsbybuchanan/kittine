@@ -261,6 +261,22 @@ vision](#full-vision-phased-honest) are where these get addressed.
 
 ## Next up
 
+- **No way to load or call into a separately-built WebAssembly module at
+  runtime.** Discovered re-checking `kittine-website`'s `/playground` page
+  after landing `event`-value reading (see the `Done` item just below):
+  the page's compile button still needs hand-written JavaScript, and the
+  reason isn't the event-reading gap anymore — it's that `playground.js`
+  does a dynamic `import("/playground/kittine_compiler.js")` of
+  `kittine-compiler`'s own `wasm-bindgen` output, then calls the exported
+  `compile_kitty_single_file` function and catches whatever JS exception
+  it throws on a parse error. None of that has a Kittine equivalent: no
+  dynamic-import syntax, no way to call an arbitrary already-loaded JS
+  function reference (only a same-file `purr`/an imported Kittine item/a
+  known Rust path via `Type::method()`), and no `try`/`catch`-equivalent
+  for a thrown JS exception (`pounce>` matches a Kittine `breed`, not a
+  JS `Error`). A real fix needs some kind of JS-interop story, not just a
+  parser tweak — likely its own scoped design, not a quick follow-on to
+  `event`.
 - **No array-of-`litter`/`breed` types.** Array-typed props/returns
   (`#n[]`/`#w[]`/`#f[]`) are scalar-only — there's no way to type a prop
   or `purr` return as "an array of structs." Discovered while looking at
