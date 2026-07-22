@@ -2,7 +2,7 @@
   "name": "kittine-lang",
   "displayName": "Kittine",
   "description": "Syntax highlighting and language support for the Kittine (.kitty) language — compiles to Leptos 0.7 / WebAssembly.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "buildsbybuchanan",
   "author": "Sivario Buchanan",
   "license": "MIT",
@@ -22,9 +22,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/siv-the-programmer/kittine.git",
+    "url": "https://github.com/buildsbybuchanan/kittine.git",
     "directory": "vscode-kittine"
   },
+  "bugs": {
+    "url": "https://github.com/buildsbybuchanan/kittine/issues"
+  },
+  "homepage": "https://kittine.com",
   "contributes": {
     "languages": [
       {

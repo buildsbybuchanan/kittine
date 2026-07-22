@@ -8,6 +8,7 @@
     { "include": "#craft" },
     { "include": "#type-tags" },
     { "include": "#booleans" },
+    { "include": "#reserved-event" },
     { "include": "#control-keywords" },
     { "include": "#loop-keywords" },
     { "include": "#import-keywords" },
@@ -66,11 +67,19 @@
         }
       ]
     },
+    "reserved-event": {
+      "patterns": [
+        {
+          "name": "variable.language.event.kitty",
+          "match": "\\bevent\\b"
+        }
+      ]
+    },
     "type-tags": {
       "patterns": [
         {
           "name": "meta.type-tag.kitty",
-          "match": "(#)([nwf])(\\[\\])?",
+          "match": "(#)([nwf])(\\[\\]|\\{\\})?",
           "captures": {
             "1": { "name": "punctuation.definition.type-tag.begin.kitty" },
             "2": { "name": "storage.type.kitty" },
@@ -107,11 +116,15 @@
       "patterns": [
         {
           "name": "meta.craft.kitty",
-          "match": "\\b(craft)(<)",
+          "match": "\\b(craft|warn|error)(<)",
           "captures": {
             "1": { "name": "keyword.other.craft.kitty support.function.kitty" },
             "2": { "name": "punctuation.definition.craft.begin.kitty" }
           }
+        },
+        {
+          "name": "keyword.other.stash.kitty support.function.kitty",
+          "match": "\\bstash\\b(?=\\s*\\{)"
         }
       ]
     },
@@ -178,6 +191,10 @@
         {
           "name": "keyword.operator.logical.kitty",
           "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.reference.kitty",
+          "match": "&"
         },
         {
           "name": "keyword.operator.assignment.kitty",

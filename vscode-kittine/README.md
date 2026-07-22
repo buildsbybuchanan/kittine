@@ -26,7 +26,10 @@ parent [`kittine`](..) project.
   | `<{name}> >> value` | Combined declare **and** mutate (no separate `let`/`set`) | `keyword.operator.assignment` for `>>` |
   | `if>` / `orif>` / `else>` | Control flow (`orif>` = "or if", i.e. `else if`) | `keyword.control.conditional` |
   | `<{name}> >> value` *inside* `if>`/`orif>` | Equality test, not assignment — same tokens, different scope by position | `keyword.control.conditional` |
-  | `craft<...>` | Console logging | `keyword.other.craft` |
+  | `craft<...>` / `warn<...>` / `error<...>` | Console logging, three severity levels | `keyword.other.craft` |
+  | `stash{ key: expr, .. }` | A `String`-keyed map literal (collections beyond arrays) | `keyword.other.stash`, `support.function` |
+  | `&expr` | A real Rust reference, for calling APIs that need one | `keyword.operator.reference` |
+  | `event` (inside an `on<Event>` handler) | The fired event's value (e.g. a text input's typed content) | `variable.language` |
   | `'...'` / `"..."` | Fully interchangeable single- and double-quoted strings | `string.quoted.single` / `string.quoted.double` |
   | `yes>` / `no>` | Boolean literals | `constant.language.boolean` |
   | `[a, b, c]` | Array literal | `punctuation.definition.array` |

@@ -637,8 +637,24 @@ dependencies aren't followed yet), a production Tree-sitter grammar; a
 minimal-but-real Language Server Protocol
 implementation (diagnostics, hover, go-to-definition, rename) — `lint`'s
 CLI diagnostics are a real step toward this but aren't an LSP, since they
-carry no source position and don't run inside an editor; VS Code
-Marketplace publication; a REPL and debugger.
+carry no source position and don't run inside an editor; a REPL and
+debugger. **VS Code Marketplace publication — prepped, not yet actually
+published**: `vscode-kittine/package.json` had a real bug fixed (its
+`repository.url` pointed at a personal fork that no longer matches
+`origin`, `siv-the-programmer/kittine`, instead of the real public repo,
+`buildsbybuchanan/kittine` — would have broken the Marketplace listing's
+repo link and `vsce`'s automatic relative-link rewriting in the README),
+the grammar (`syntaxes/kittine.tmLanguage.json`) was updated for every
+construct that's landed since the last extension version (`stash{...}`,
+`warn<...>`/`error<...>`, the `&` reference operator, the reserved
+`event` identifier), version bumped to 0.5.0, and a real `.vsix` was
+packaged with `vsce package` (clean, no warnings) — confirmed via `vsce
+show buildsbybuchanan.kittine-lang` that no version has ever actually been
+published under this name yet. What's left needs the user, not more
+compiler/tooling work: a Visual Studio Marketplace publisher account for
+`buildsbybuchanan` and an Azure DevOps Personal Access Token (Marketplace:
+Manage scope) to actually run `vsce publish` — neither is something an
+agent can create on someone's behalf.
 
 **Explicitly not pursuing right now: GitHub Linguist submission.**
 Checked Linguist's actual current contribution requirements directly
