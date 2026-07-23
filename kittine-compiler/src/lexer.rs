@@ -53,6 +53,7 @@ pub enum TokenKind {
     AmpAmp,   // &&
     PipePipe, // ||
     Amp,      // & (a real Rust reference -- see ast::Expr::Ref)
+    Pipe,     // | (a closure literal's param-list delimiter -- see ast::Expr::Closure)
 
     // Keywords
     KeywordFunc,
@@ -123,6 +124,7 @@ impl fmt::Display for TokenKind {
             TokenKind::AmpAmp => write!(f, "&&"),
             TokenKind::Amp => write!(f, "&"),
             TokenKind::PipePipe => write!(f, "||"),
+            TokenKind::Pipe => write!(f, "|"),
             TokenKind::KeywordFunc => write!(f, "func"),
             TokenKind::KeywordReturn => write!(f, "return"),
             TokenKind::KeywordSpin => write!(f, "spin"),
@@ -421,6 +423,15 @@ impl Lexer {
                 self.advance();
                 tokens.push(Token {
                     kind: TokenKind::PipePipe,
+                    line,
+                    col,
+                });
+                continue;
+            }
+            if self.starts_with("|") {
+                self.advance();
+                tokens.push(Token {
+                    kind: TokenKind::Pipe,
                     line,
                     col,
                 });

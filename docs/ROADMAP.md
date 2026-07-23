@@ -25,7 +25,10 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   `spin` loops (both imperative-statement and reactive-list-in-view forms),
   function calls, arithmetic/string-concat expressions, comparisons
   (`>>`/`<`/`<=`/`>`/`>=`/`!=`, usable generally, not just in conditions),
-  arrays (including array-typed props/returns — `#n[]`/`#w[]`/`#f[]`),
+  arrays (including array-typed props/returns — scalar `#n[]`/`#w[]`/
+  `#f[]` *and now a `litter`/`breed` array*, e.g. `DocEntry[]` — see
+  [LANGUAGE.md § A litter/breed name as a prop or purr param/return
+  type](LANGUAGE.md#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type)),
   booleans, type tags (`#n`/`#w`/`#f`, a two-character sigil form —
   see [LANGUAGE.md § Type tags](LANGUAGE.md#type-tags)) that are now
   **optional** on a prop or `purr` param/return type, inferred from body
@@ -35,20 +38,26 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
   calls (`receiver.method(arg, ..)`, chains work), calling the result of
   an expression (`callee(arg, ..)` where `callee` isn't a bare name),
   tuple literals (`(expr, expr, ..)`), path-qualified expressions
-  (`Type::method()`, `Type::CONST`, multi-segment paths).
+  (`Type::method()`, `Type::CONST`, multi-segment paths), and closure
+  literals (`|param, ..| expr`, lowering verbatim to a Rust closure — the
+  missing filter/map-predicate mechanism a real iterator method needs, see
+  [LANGUAGE.md § Closures](LANGUAGE.md#closures)).
 - **User-declared data types**: `litter Name { field type, .. }` (a
   struct — `Name { field: expr, .. }` constructs it, `.field` reads a
   field), `breed Name { Variant(type)?, .. }` (a closed set of variants —
   an enum — `Circle(5)`/bare `Idle` construct one), `pounce> subject`
-  pattern-matching a `breed` value (statement-only for now), and minimal
-  generics groundwork (at most one type parameter per `litter`/`breed`,
-  e.g. `litter Holder<#t> { value #t }`, inferred at each construction
-  site with no explicit instantiation) — and now a real **trait system**:
-  `claw Name { method(params) type, .. }` declares one, `bare Claw for
-  Target { purr method(..) .. }` implements it (Rust's `impl Claw for
-  Target`), and the generic type parameter above can be bounded by one
-  (`litter NamedHolder<#t: Named> { value #t }`, a real Rust trait bound
-  Rust's own compiler enforces). See [LANGUAGE.md §
+  pattern-matching a `breed` value — both as a **statement** (branch and
+  act) and, now, as an **expression** (branch and *compute*, e.g. `return
+  (pounce> result Ok(v) >> v Err(e) >> 0)`, unwrapping a `Result`-shaped
+  value and returning it in one step, the way Rust's own `match`/`?`
+  can) — and minimal generics groundwork (at most one type parameter per
+  `litter`/`breed`, e.g. `litter Holder<#t> { value #t }`, inferred at
+  each construction site with no explicit instantiation) — and a real
+  **trait system**: `claw Name { method(params) type, .. }` declares one,
+  `bare Claw for Target { purr method(..) .. }` implements it (Rust's
+  `impl Claw for Target`), and the generic type parameter above can be
+  bounded by one (`litter NamedHolder<#t: Named> { value #t }`, a real
+  Rust trait bound Rust's own compiler enforces). See [LANGUAGE.md §
   Litters](LANGUAGE.md#litters), [§ Breeds](LANGUAGE.md#breeds), [§
   Pattern matching](LANGUAGE.md#pattern-matching), [§
   Generics](LANGUAGE.md#generics), [§ Claws](LANGUAGE.md#claws).
@@ -283,7 +292,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (97+ tests, every feature round-tripped against actual
+tested compiler (162+ tests, every feature round-tripped against actual
 Leptos under both CSR/hydrate and SSR configurations, routing (including
 dynamic segments) driven end-to-end in a real browser) with a language
 core solid enough for a genuine multi-page site, CSR or server-rendered.
@@ -295,12 +304,18 @@ still missing:
    on them both work today (see [LANGUAGE.md §
    Breeds](LANGUAGE.md#breeds), [§ Pattern
    matching](LANGUAGE.md#pattern-matching)) — a `.kitty` author *can*
-   model and react to failure now. What's still missing: `pounce>` is
-   statement-only, so a function can't unwrap a `Result` and `return` the
-   unwrapped value in one expression the way Rust's own `match`/`?` can;
-   and an *un*-modeled runtime panic (an actual Rust `panic!`, not a
+   model and react to failure now, **and can unwrap a `Result` and
+   `return` the unwrapped value in one expression** — `pounce>` works as
+   an expression now, not just a statement (see [LANGUAGE.md § `pounce>`
+   as an expression](LANGUAGE.md#pounce-as-an-expression)) — closing the
+   specific gap this item used to name. What's still missing: an
+   *un*-modeled runtime panic (an actual Rust `panic!`, not a
    `breed`-modeled failure) is still a hard crash reported only in the
-   browser devtools console.
+   browser devtools console; and a `pounce>` expression's bare-string-
+   literal-arm coercion (needed so a `match`'s arms all agree on a type)
+   only covers a `purr`'s own `return (...)` value today, not a `hold`/
+   signal value — see [LANGUAGE.md § Known
+   limitations](LANGUAGE.md#known-limitations).
 2. **No way for a Kittine *program* to have its own tests.** The compiler
    is well-tested; a person writing `.kitty` files has no test runner
    surfaced to them at all.
@@ -343,23 +358,54 @@ vision](#full-vision-phased-honest) are where these get addressed.
   JS `Error`). A real fix needs some kind of JS-interop story, not just a
   parser tweak — likely its own scoped design, not a quick follow-on to
   `event`.
-- **No array-of-`litter`/`breed` types.** Array-typed props/returns
-  (`#n[]`/`#w[]`/`#f[]`) are scalar-only — there's no way to type a prop
-  or `purr` return as "an array of structs." Discovered while looking at
-  whether `kittine-website`'s `/docs/language` topic-filter search box
-  (currently static hardcoded JSX cards + a CSS `data-filter` pill toggle)
-  could become a real free-text search now that `event` (see the `Done`
-  item just below) makes reading typed input possible — it can't yet,
-  because a *filterable* list of doc-entry cards needs to be real data
-  (`litter DocEntry { title #w, category #w, body #w }`) held in a
-  `#DocEntry[]`-shaped array and rendered with `spin`, which Kittine's
-  type system doesn't support. Two sub-gaps, not one: the array-element
-  type itself (`litter`s in an array), and a way to *filter* an array
-  reactively at all (no `.filter()`-equivalent — Kittine has no lambda/
-  closure-argument syntax for a filter predicate, and no imperative
-  push-into-a-new-`Vec` pattern documented either). Closing this unblocks
-  a real fix for the search box, not just the narrower `event`-reading gap
-  below.
+Done: ~~No array-of-`litter`/`breed` types~~ and ~~no lambda/closure-
+argument syntax for a filter predicate~~ (array-typed props/returns are no
+longer scalar-only — a bare `litter`/`breed` name, optionally
+`[]`-suffixed, is now a real `func`/`purr` param/return type, e.g.
+`purr matching(DocEntry[] entries, query) DocEntry[] { .. }`; and a
+closure literal, `|param, ..| expr`, lowers verbatim to a Rust closure —
+`.filter(|e| e.title.contains(&query))` now parses and generates real,
+correct Rust. See [LANGUAGE.md § A litter/breed name as a prop or purr
+param/return type](LANGUAGE.md#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type),
+[§ Closures](LANGUAGE.md#closures). Two real bugs surfaced and fixed along
+the way, found by actually wiring both features into `example-app`'s real
+`Shapes.kitty`, not assumed: a `spin`'s default reactive-list key
+(`format!("{item}")`) required `Display`, which a generated `litter`/
+`breed` never derives (only `Debug`) — switched to `format!("{item:?}")`
+universally, working for every element type at the cost of a quoted key
+string (harmless — a `<For>` key only needs to be unique and stable, never
+user-visible); and a `pounce>`-as-expression (see the entry below) mixing
+a computed arm with a bare string-literal arm in a `Word`-returning
+`purr` produced a real `match`-arm type mismatch (`E0308`), fixed by
+extending the existing bare-literal-owning coercion to look inside a
+`pounce>` return value's arms, not just the return value itself. 12 new
+compiler tests (162 total); verified with a real `cargo check` and
+`npm run build` against Leptos. **Not yet applied to `kittine-website`'s
+`/docs/language` topic-filter search box**, the original motivating
+case — tracked separately below, since that's a website change, not a
+language one.
+- **`kittine-website`'s `/docs/language` topic-filter search box is still
+  static hardcoded JSX**, not the real data-backed free-text search the
+  two language features above were built to unblock. The language-side
+  gap is closed; wiring it into the actual production docs page is a
+  distinct, tracked follow-on.
+
+Done: ~~`pounce>` is statement-only~~ (it now also works as an
+**expression** — `pounce> subject Variant(binding)? >> expr .. else>
+expr`, reachable anywhere an expression is expected — a `purr`'s `return
+(...)`, a `hold` binding's value, a call argument, not just the start of
+a statement. Closes the specific, long-tracked gap in Kittine's error-
+handling story: a function can now unwrap a `breed Result { Ok(#t),
+Err(#w) }`-shaped value and `return` the payload in one step, the way
+Rust's own `match`/`?` can — see [LANGUAGE.md § `pounce>` as an
+expression](LANGUAGE.md#pounce-as-an-expression). Same column-indented
+arm grammar as the statement form; the formatter's self-verifying
+round-trip check needed a real fix too, since the printer has no way to
+know what column its caller will place a `pounce>` at — solved by always
+printing it starting on a fresh line at column 1, which the column-
+sensitive grammar tolerates regardless of where it's nested) — landed
+2026-07-23, alongside the array-of-`litter`/closures entry above (same
+round of work).
 
 Done: ~~No way to read an `on<Event>` handler's event value~~ (the
 reserved `event` identifier inside an `on<Event>` handler's own expression

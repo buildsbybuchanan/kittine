@@ -267,13 +267,26 @@ impl Parser {
                 name,
             });
         }
-        let ty = if self.peek_is_type_sigil() {
-            self.parse_signature_type(false)?
-        } else {
-            String::new()
-        };
+        if self.peek_is_type_sigil() {
+            let ty = self.parse_signature_type(false)?;
+            let name = self.expect_ident()?;
+            return Ok(Param { ty, name });
+        }
+        // A bare capitalized identifier followed by another identifier
+        // (optionally with `[]` in between) is a custom `litter`/`breed`
+        // type naming this param, not the param's own (to-be-inferred)
+        // name — see `peek_starts_custom_type`.
+        if self.peek_starts_custom_type() {
+            let type_name = self.expect_ident()?;
+            let ty = self.parse_array_suffix(type_name)?;
+            let name = self.expect_ident()?;
+            return Ok(Param { ty, name });
+        }
         let name = self.expect_ident()?;
-        Ok(Param { ty, name })
+        Ok(Param {
+            ty: String::new(),
+            name,
+        })
     }
 
     /// Parses `(#t name, #t name, ..)`.
@@ -301,6 +314,13 @@ impl Parser {
         let params = self.parse_param_list()?;
         let return_type = if self.peek_is_type_sigil() {
             self.parse_signature_type(true)?
+        } else if let TokenKind::Ident(name) = self.peek().kind.clone() {
+            // Unambiguous here (unlike a param): nothing but a return type
+            // or the body's opening `{` can appear in this position, so a
+            // bare identifier is always a custom `litter`/`breed` return
+            // type, optionally `[]`-suffixed — see `peek_starts_custom_type`.
+            self.advance();
+            self.parse_array_suffix(name)?
         } else {
             String::new()
         };
@@ -410,7 +430,8 @@ impl Parser {
     /// Parses a `litter`/`breed` field or variant payload's type: a scalar
     /// tag (`#n`/`#w`/`#f`, with an optional `[]`), the `#t` generic
     /// placeholder, or a bare capitalized identifier naming another
-    /// `litter`/`breed`.
+    /// `litter`/`breed` (also optionally `[]`-suffixed — an array of that
+    /// custom type, same convention as a scalar array).
     fn parse_field_type(&mut self) -> PResult<String> {
         match self.peek().kind.clone() {
             TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag => {
@@ -422,12 +443,46 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 self.advance();
-                Ok(name)
+                self.parse_array_suffix(name)
             }
             other => Err(self.err(format!(
                 "expected a field type (#n, #w, #f, #t, or a litter/breed name), found '{other}'"
             ))),
         }
+    }
+
+    /// Consumes an optional trailing `[]` onto an already-parsed base type
+    /// name, appending it the same way [`Parser::parse_signature_type`]
+    /// does for a scalar tag — shared so a custom `litter`/`breed` name
+    /// gets the identical "array of T" convention as `#n[]`/`#w[]`/`#f[]`.
+    fn parse_array_suffix(&mut self, mut ty: String) -> PResult<String> {
+        if matches!(self.peek().kind, TokenKind::LBracket) {
+            self.advance();
+            self.expect(TokenKind::RBracket)?;
+            ty.push_str("[]");
+        }
+        Ok(ty)
+    }
+
+    /// `true` if a custom `litter`/`breed` type name starts here in a
+    /// type-first position (a `func`/`purr` param or return type) — the
+    /// current token is an `Ident` that isn't itself the param name, told
+    /// apart by lookahead: `DocEntry entry` (a type followed by a name) vs.
+    /// a plain untyped param `entry` (the `Ident` itself is the name, with
+    /// no `Ident`/`[` following). Mirrors the type-first param order
+    /// `ast::Param` already documents, just extended past the three scalar
+    /// sigils to a bare custom-type identifier.
+    fn peek_starts_custom_type(&self) -> bool {
+        if !matches!(self.peek().kind, TokenKind::Ident(_)) {
+            return false;
+        }
+        let mut offset = 1;
+        if matches!(self.peek_at(offset), TokenKind::LBracket)
+            && matches!(self.peek_at(offset + 1), TokenKind::RBracket)
+        {
+            offset += 2;
+        }
+        matches!(self.peek_at(offset), TokenKind::Ident(_))
     }
 
     /// Parses `litter Name ("<" "#t" ">")? "{" field ("," field)* ","? "}"`.
@@ -672,6 +727,73 @@ impl Parser {
 
         Ok(Stmt::Pounce {
             subject,
+            arms,
+            catch_all,
+        })
+    }
+
+    /// Parses `pounce> subject` `(Variant(binding)? ">>" expr)+`
+    /// `(else> expr)?` — the expression-position sibling of
+    /// [`Parser::parse_pounce_stmt`] (see `ast::Expr::Pounce`), reachable
+    /// from [`Parser::parse_primary`] rather than [`Parser::parse_stmt`], so
+    /// it can appear anywhere an expression is expected: `return (pounce>
+    /// ..)`, `hold x >> pounce> ..`, a call argument, etc. Reuses the exact
+    /// same column-based arm grammar — the only difference from the
+    /// statement form is each arm's body is `self.parse_expr()` (a value),
+    /// not `self.parse_stmt()` (an action).
+    fn parse_pounce_expr(&mut self) -> PResult<Expr> {
+        let pounce_tok = self.expect(TokenKind::KeywordPounce)?;
+        let pounce_col = pounce_tok.col;
+        let subject = self.parse_expr()?;
+
+        let arms_col = self.peek().col;
+        if arms_col <= pounce_col {
+            return Err(self.err(
+                "'pounce>' needs at least one indented 'Variant >> ..' arm below it",
+            ));
+        }
+
+        let mut arms = Vec::new();
+        let mut catch_all = None;
+        loop {
+            let tok = self.peek().clone();
+            if tok.col != arms_col {
+                break;
+            }
+            match tok.kind {
+                TokenKind::KeywordElse => {
+                    self.advance();
+                    catch_all = Some(Box::new(self.parse_expr()?));
+                    break;
+                }
+                TokenKind::Ident(variant) => {
+                    self.advance();
+                    let binding = if matches!(self.peek().kind, TokenKind::LParen) {
+                        self.advance();
+                        let b = self.expect_ident()?;
+                        self.expect(TokenKind::RParen)?;
+                        Some(b)
+                    } else {
+                        None
+                    };
+                    self.expect(TokenKind::OpAssign)?;
+                    let body = Box::new(self.parse_expr()?);
+                    arms.push(PounceExprArm {
+                        variant,
+                        binding,
+                        body,
+                    });
+                }
+                _ => break,
+            }
+        }
+
+        if arms.is_empty() {
+            return Err(self.err("'pounce>' needs at least one 'Variant >> ..' arm"));
+        }
+
+        Ok(Expr::Pounce {
+            subject: Box::new(subject),
             arms,
             catch_all,
         })
@@ -1165,8 +1287,41 @@ impl Parser {
             TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag => {
                 self.parse_type_tag()
             }
+            TokenKind::KeywordPounce => self.parse_pounce_expr(),
+            TokenKind::Pipe | TokenKind::PipePipe => self.parse_closure(),
             other => Err(self.err(format!("unexpected token '{other}' in expression"))),
         }
+    }
+
+    /// Parses `|param, ..| expr` (see `ast::Expr::Closure`) — or the
+    /// zero-param form, which shares the lexer's `||` token
+    /// (`TokenKind::PipePipe`) with the logical-or operator. No ambiguity
+    /// in practice: `||` only ever reaches here (a *primary*, prefix
+    /// position) when it can't have been consumed as the infix operator
+    /// `parse_or` already handles, since a binary operator is never the
+    /// first token of a primary expression.
+    fn parse_closure(&mut self) -> PResult<Expr> {
+        let params = if matches!(self.peek().kind, TokenKind::PipePipe) {
+            self.advance();
+            Vec::new()
+        } else {
+            self.expect(TokenKind::Pipe)?;
+            let mut params = Vec::new();
+            if !matches!(self.peek().kind, TokenKind::Pipe) {
+                params.push(self.expect_ident()?);
+                while matches!(self.peek().kind, TokenKind::Comma) {
+                    self.advance();
+                    params.push(self.expect_ident()?);
+                }
+            }
+            self.expect(TokenKind::Pipe)?;
+            params
+        };
+        let body = self.parse_expr()?;
+        Ok(Expr::Closure {
+            params,
+            body: Box::new(body),
+        })
     }
 
     /// Parses `(arg, arg, ..)` following an already-consumed function name,

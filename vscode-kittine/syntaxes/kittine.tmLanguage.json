@@ -135,15 +135,23 @@
           "match": "\\b(if|orif|else)(>)"
         },
         {
+          "name": "keyword.control.conditional.kitty",
+          "match": "\\bpounce(>)"
+        },
+        {
           "name": "keyword.control.flow.kitty",
           "match": "\\breturn\\b"
+        },
+        {
+          "name": "keyword.other.hold.kitty",
+          "match": "\\bhold\\b"
         }
       ]
     },
     "declaration-keywords": {
       "patterns": [
         {
-          "match": "\\b(private)\\s+(func|purr)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(private)\\s+(func|purr|litter|breed|claw)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.kitty" },
             "2": { "name": "storage.type.function.kitty" },
@@ -151,10 +159,19 @@
           }
         },
         {
-          "match": "\\b(func|purr)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(func|purr|litter|breed|claw)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.type.function.kitty" },
             "2": { "name": "entity.name.function.kitty" }
+          }
+        },
+        {
+          "match": "\\b(bare)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.kitty" },
+            "2": { "name": "entity.name.type.kitty" },
+            "3": { "name": "keyword.control.kitty" },
+            "4": { "name": "entity.name.type.kitty" }
           }
         }
       ]
@@ -195,6 +212,10 @@
         {
           "name": "keyword.operator.reference.kitty",
           "match": "&"
+        },
+        {
+          "name": "punctuation.definition.closure.kitty",
+          "match": "\\|"
         },
         {
           "name": "keyword.operator.assignment.kitty",

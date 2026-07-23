@@ -83,7 +83,7 @@ KEYWORD_BARE    := "bare"
 KEYWORD_FOR     := "for"
 
 // Operators and punctuation
-"<{"  ">>"  "<"  ">"  "/>"  "</"  "<="  ">="  "!="  "&&"  "||"
+"<{"  ">>"  "<"  ">"  "/>"  "</"  "<="  ">="  "!="  "&&"  "||"  "|"
 "("  ")"  "{"  "}"  "["  "]"  ","  "."  ":"  "::"  "="
 "+"  "-"  "*"  "/"  "!"
 ```
@@ -105,7 +105,11 @@ constructs — everything else is fully delimited by explicit punctuation
   `pounce>`, one level further indented — their shared column is
   whatever column the very first arm actually starts at, which must be
   greater than `pounce>`'s own column. Unlike `if>`'s branches, each arm's
-  body is exactly one statement, not an indented block.
+  body is exactly one statement, not an indented block. The same rule
+  applies verbatim to `pounce>` used as an expression (see `pounce_expr`
+  under [Expressions](#expressions) below, and [LANGUAGE.md § `pounce>` as
+  an expression](LANGUAGE.md#pounce-as-an-expression)) — the only
+  difference is each arm's body is `expr`, not `stmt`.
 
 ## Syntactic grammar
 
@@ -130,13 +134,27 @@ re-checked by Kittine).
 
 ```
 component   := "func" IDENT param_list "{" stmt* return_view? "}"
-function    := "purr" IDENT param_list type_tag_name?
+function    := "purr" IDENT param_list return_type?
                "{" stmt* return_expr "}"
 return_view := "return" "(" jsx_node ")"
 return_expr := "return" "(" expr ")"
+return_type := type_tag_name | custom_type
+             // a scalar tag, or a bare litter/breed name (optionally
+             // "[]"-suffixed) -- unambiguous here (nothing but a return
+             // type or the body's opening "{" can appear in this
+             // position), unlike `param` below
 
 param_list  := "(" (param ("," param)*)? ")"
-param       := type_tag_name? IDENT | "children"
+param       := (type_tag_name | custom_type) IDENT | IDENT | "children"
+             // `custom_type IDENT` (`DocEntry entry`) is told apart from
+             // a lone untyped `IDENT` (`entry`, to be inferred) by
+             // lookahead: a capitalized identifier immediately followed
+             // by another identifier (with an optional "[" "]" in
+             // between) names a type; one with nothing following is
+             // just the param's own name
+custom_type := IDENT ("[" "]")?
+             // a litter/breed name, optionally an array of it -- same
+             // "[]" convention type_tag_name uses for a scalar array
 ```
 
 A `component`'s `return_view` is optional (an omitted one compiles to
@@ -144,11 +162,13 @@ A `component`'s `return_view` is optional (an omitted one compiles to
 is a reserved param name with no type tag of its own — see [LANGUAGE.md §
 Children](LANGUAGE.md#children).
 
-A `param`'s `type_tag_name` (and a `function`'s own trailing one) is
-optional — an omitted one is filled in after parsing by the type-inference
-pass (`src/infer.rs`; see [LANGUAGE.md § Type
-inference](LANGUAGE.md#type-inference)), which never runs on `litter`
-fields or `breed` variant payloads (those are always explicit).
+A `param`'s type (and a `function`'s own `return_type`) is optional when
+it's a scalar (`type_tag_name`) — an omitted one is filled in after
+parsing by the type-inference pass (`src/infer.rs`; see [LANGUAGE.md §
+Type inference](LANGUAGE.md#type-inference)), which never runs on
+`litter` fields, `breed` variant payloads, or a `custom_type` (those are
+always explicit) — see [LANGUAGE.md § A litter/breed name as a prop or
+purr param/return type](LANGUAGE.md#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type).
 
 ### Litters and breeds
 
@@ -164,9 +184,11 @@ type_param   := "<" TYPE_GENERIC (":" IDENT)? ">"
                // claw bound (Rust's own trait system checks it once
                // generated, not re-verified here) -- see
                // LANGUAGE.md § Generics
-field_type   := type_tag_name | TYPE_GENERIC | IDENT
+field_type   := type_tag_name | TYPE_GENERIC | custom_type
                // a scalar/array tag, this litter/breed's own generic
-               // parameter, or another litter/breed's name
+               // parameter, or another litter/breed's name (see
+               // custom_type under "Components and functions" above --
+               // same "[]" convention for an array of it)
 ```
 
 A `breed` variant carries at most one payload value (`Circle(#n)`) or none
@@ -266,7 +288,7 @@ arg_list        := "(" (expr ("," expr)*)? ")"
 
 primary := NUMBER | STRING | BOOL | array_literal | type_tag
          | call | struct_init | path | tuple_or_group
-         | var_bracket_expr
+         | var_bracket_expr | pounce_expr | closure_expr
          | IDENT   // a name -- a variable, a purr call target (with
                    // arg_list via postfix), a breed unit variant, or a
                    // litter/breed name (with arg_list/"{" via postfix)
@@ -291,6 +313,24 @@ var_bracket_expr := "<{" IDENT "}>" (">>" expr)?
                // a bare "<{name}>" is a signal read; with ">>" it's an
                // inline assign (a mutation used as an expression value,
                // e.g. inside a JSX event handler)
+
+pounce_expr := "pounce>" expr pounce_expr_arm+ pounce_expr_else?
+               // the value-producing sibling of `pounce_stmt` -- reached
+               // from `primary`, not `stmt`, so it can appear anywhere an
+               // expression is expected (a return_expr, a hold_stmt's
+               // value, an arg_list element, ...), not just at the start
+               // of a statement. Same column-indentation rule as
+               // pounce_stmt (see Indentation rules) -- the only grammar
+               // difference is each arm's body is `expr`, not `stmt`
+pounce_expr_arm  := IDENT ("(" IDENT ")")? ">>" expr
+pounce_expr_else := "else>" expr
+
+closure_expr := ("|" (IDENT ("," IDENT)*)? "|" | "||") expr
+               // a closure literal -- lowers verbatim to a Rust closure.
+               // The zero-param form shares the lexer's "||" token with
+               // the logical-or operator; unambiguous in practice, since
+               // "||" only reaches here (a primary/prefix position),
+               // never the infix position `logic_or` consumes it in
 ```
 
 `craft<...>`'s argument uses the same precedence chain, with one
@@ -322,8 +362,6 @@ vision](ROADMAP.md#full-vision-phased-honest) for the full list, and
 [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations) for the
 precise day-to-day boundary:
 
-- Pattern matching (`pounce>`) as a value-producing *expression* — today
-  it's statement-only.
 - Multiple type parameters or generic `purr`/`func` — today a
   `litter`/`breed` may have at most one type parameter (optionally
   bounded by one `claw`), and only `litter`/`breed` can be generic at

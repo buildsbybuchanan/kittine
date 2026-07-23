@@ -27,6 +27,31 @@ litter NamedHolder<#t: Named> {
     value #t
 }
 
+/// `pounce>` used as an expression (not a statement — contrast with
+/// `Shapes()`'s own imperative `pounce> <{shape}> .. <{description}> >>
+/// ..` below): each arm computes the label directly, so the whole match
+/// becomes this `purr`'s `return (..)` value in one step. `shape` needs an
+/// explicit `Shape` type tag — type inference only ever looks at how a
+/// param is used *within its own function body* (see
+/// `kittine-compiler`'s `infer.rs`), and using a name as a `pounce>`
+/// subject gives no inferable clue about which `breed` it is, unlike an
+/// arithmetic/comparison use pinning down `Num`/`Flag`.
+purr shapeLabel(Shape shape) #w {
+    return (
+        pounce> shape
+            Circle(r) >> ('circle r=' + r)
+            Square(s) >> ('square s=' + s)
+            else> 'idle'
+    )
+}
+
+/// Array-of-`litter` params/returns (`Point[]`) plus a closure literal
+/// (`|p| ..`) as a `.filter()` predicate — the missing piece that makes an
+/// array of structs actually usable, not just declarable.
+purr farPoints(Point[] points) Point[] {
+    return (points.iter().filter(|p| p.x > 2).cloned().collect())
+}
+
 func Shapes() {
     <{origin}> >> Point { x: 3, y: 4 }
     <{shape}> >> Circle(5)
@@ -35,6 +60,8 @@ func Shapes() {
     <{wordHolder}> >> Holder { value: 'hello' }
     <{namedHolder}> >> NamedHolder { value: origin }
     <{originJson}> >> serde_json::to_string(&origin).unwrap_or_default()
+    <{shapeLbl}> >> shapeLabel(<{shape}>)
+    <{closePoints}> >> farPoints([origin, Point { x: 1, y: 1 }])
 
     pounce> <{shape}>
         Circle(r) >> <{description}> >> 'circle'
@@ -51,6 +78,8 @@ func Shapes() {
             <p>'Origin describes itself as: ' { origin.describe() }</p>
             <p>'NamedHolder wraps a: ' { namedHolder.value.describe() }</p>
             <p>'Origin as JSON: ' <{originJson}></p>
+            <p>'Shape label (pounce as expression): ' <{shapeLbl}></p>
+            <p>'Points with x > 2: ' { closePoints.len() }</p>
         </div>
     )
 }

@@ -224,6 +224,18 @@ pub struct PounceArm {
     pub body: Vec<Stmt>,
 }
 
+/// One arm of an [`Expr::Pounce`]: `Variant(binding)? >> expr` — the
+/// expression-position sibling of [`PounceArm`], whose body is a single
+/// value-producing `Expr` (a Rust `match` arm's `=> expr`) instead of a
+/// statement, since an expression-position `pounce>` computes a value
+/// rather than taking an action.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PounceExprArm {
+    pub variant: String,
+    pub binding: Option<String>,
+    pub body: Box<Expr>,
+}
+
 /// An expression in Kittine source.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -318,6 +330,31 @@ pub enum Expr {
     /// Rust's own type checker is the source of truth on whether the
     /// resulting call is valid.
     Ref(Box<Expr>),
+    /// `pounce> subject` `(Variant(binding)? ">>" expr)+` `(else> expr)?` —
+    /// the expression-position sibling of [`Stmt::Pounce`] (see
+    /// [`PounceExprArm`]): computes a value by pattern-matching `subject`
+    /// against each arm's variant, lowering to a Rust `match` used as an
+    /// expression (e.g. `Ok(v) => v, Err(e) => 0.0`) instead of an
+    /// imperative branch. Reuses the exact same column-based arm grammar as
+    /// the statement form (see `parser::Parser::parse_pounce_expr`) — the
+    /// only difference is each arm's body is a value, not a statement.
+    Pounce {
+        subject: Box<Expr>,
+        arms: Vec<PounceExprArm>,
+        catch_all: Option<Box<Expr>>,
+    },
+    /// `|param, ..| expr` — a closure literal, lowering verbatim to a Rust
+    /// closure (`|param, ..| expr`). Exists purely as an interop/higher-
+    /// order-function escape hatch for real Rust iterator methods
+    /// (`.filter(|x| ..)`, `.map(|x| ..)`) that Kittine has no dedicated
+    /// syntax of its own for — same trust model as `Expr::MethodCall`:
+    /// Kittine doesn't track param types (they're inferred by Rust from
+    /// how the closure is used), and the body is an arbitrary expression
+    /// evaluated in a scope where each `param` is bound.
+    Closure {
+        params: Vec<String>,
+        body: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

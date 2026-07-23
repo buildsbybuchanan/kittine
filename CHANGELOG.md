@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
+## [Unreleased] - 2026-07-23
+
+### Added (array-of-`litter`/`breed` types, closures, `pounce>` as an expression)
+
+- **A `litter`/`breed` name (optionally `[]`-suffixed) is now a real
+  `func`/`purr` param/return type**, not just a [litter field's
+  type](docs/LANGUAGE.md#litters) — closing the "no array-of-`litter`/
+  `breed` types" gap logged 2026-07-22. `DocEntry[] entries` mirrors
+  `#n[]`/`#w[]`/`#f[]`'s own array convention (`Vec<DocEntry>` once
+  generated); `DocEntry entry` is the scalar form. A param position tells
+  a custom type apart from an untyped param name by lookahead (a
+  capitalized identifier immediately followed by another identifier names
+  a type). See [LANGUAGE.md § A litter/breed name as a prop or purr
+  param/return type](docs/LANGUAGE.md#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type).
+- **`|param, ..| expr` closure literals**, lowering verbatim to a real
+  Rust closure — the missing filter/map-predicate mechanism a real
+  iterator method (`.filter()`, `.map()`) needs, closing that half of the
+  same gap. The zero-param form (`|| expr`) shares the lexer's `||` token
+  with logical-or, unambiguous since it only reaches a primary (prefix)
+  position. A closure param reads bare inside its own body (never
+  `.clone()`d), a new `Scope::closure_params` tracked separately from
+  `hold_items`/`spin_items` specifically so it doesn't pick up their
+  clone-on-read treatment. See [LANGUAGE.md §
+  Closures](docs/LANGUAGE.md#closures).
+- **`pounce>` now also works as an expression**, not just a statement —
+  `pounce> subject Variant(binding)? >> expr .. else> expr`, reachable
+  anywhere an expression is expected (a `purr`'s `return (...)`, a `hold`
+  binding's value, a call argument), closing the long-tracked "can't
+  unwrap a `Result` and return the value in one expression" gap in
+  Kittine's error-handling story (see [Production
+  readiness](docs/ROADMAP.md#production-readiness)). Same column-indented
+  arm grammar as the statement form. The formatter's self-verifying
+  round-trip check needed a real fix: the printer can't know what column
+  its caller will place a `pounce>` at, solved by always printing it
+  starting on a fresh line at column 1, which the column-sensitive
+  grammar tolerates regardless of nesting. See [LANGUAGE.md § `pounce>` as
+  an expression](docs/LANGUAGE.md#pounce-as-an-expression).
+
+Two real bugs found and fixed while wiring both features into
+`example-app`'s real `Shapes.kitty`, not assumed: a `spin`'s default
+reactive-list key (`format!("{item}")`) required `Display`, which a
+generated `litter`/`breed` never derives (only `Debug` — `#[derive(..)]`
+can't produce `Display` for an arbitrary struct at all) — switched the
+default to `format!("{item:?}")` universally (harmless: a `<For>` key only
+needs to be unique and stable, never user-visible); and a `pounce>`
+expression mixing a computed arm with a bare string-literal arm in a
+`Word`-returning `purr` produced a real `match`-arm type mismatch
+(`E0308`) — fixed by extending the existing bare-literal-owning coercion
+to look inside a `pounce>` return value's arms. `kittine-compiler fmt`/
+`lint` and the `vscode-kittine` TextMate grammar were updated alongside
+the parser/codegen changes (missing `litter`/`breed`/`claw`/`bare`/`hold`/
+`pounce>` keyword highlighting was also added to the grammar while there
+— a pre-existing gap from Phase 1, not new).
+
+Verified with 12 new compiler tests (162 total) and a real `cargo check`
++ `npm run build` against Leptos 0.7. `example-app`'s `Shapes.kitty`
+gained a `shapeLabel` `purr` (pounce-as-expression) and a `farPoints`
+`purr` (array-of-litter param/return plus a closure `.filter()`).
+
 ## [Unreleased] - 2026-07-22
 
 ### Added (Phase 2 begins: `stash` maps, JSON via `serde`, a reference operator, log levels)

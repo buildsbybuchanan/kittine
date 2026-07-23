@@ -1031,6 +1031,40 @@ This is unconditional (the same as the `Clone, Debug` derive already is)
 `derive` feature enabled) as a real Cargo dependency, whether or not it
 actually serializes anything.
 
+### A `litter`/`breed` name as a prop or `purr` param/return type
+
+A `litter` or `breed`'s own name — optionally `[]`-suffixed for an array
+of it — is a real `func`/`purr` param or return type too, not just a
+[field's type](#litters): the same bare-name convention a litter field
+already uses, just in the type-first position a scalar tag (`#n`/`#w`/
+`#f`) takes:
+
+```kitty
+litter DocEntry {
+    title #w,
+    category #w
+}
+
+purr firstCategory(DocEntry[] entries) #w {
+    return (entries.first().map(|e| e.category.clone()).unwrap_or_default())
+}
+
+func DocCard(DocEntry entry) {
+    return ( <p>{ entry.title }</p> )
+}
+```
+
+`DocEntry[] entries` mirrors `#n[]`/`#w[]`/`#f[]`'s array convention —
+`entries` is a real `Vec<DocEntry>` once generated (see
+[Compilation](#compilation) below) — and `DocEntry entry` is the scalar
+(non-array) form, needed to accept or return a single struct value. A
+param position tells the two apart from an ordinary untyped param by
+lookahead: `DocEntry entry` (a capitalized identifier followed by another
+identifier) names a type, while a lone `entries` with nothing following it
+is just an untyped param name, [inferred](#type-inference) as usual.
+Unlike a scalar tag, there's no inference fallback for a custom type here
+— it always has to be written out.
+
 ### Compilation
 
 `litter` becomes a plain Rust `struct`, `#[derive(Clone, Debug,
@@ -1062,6 +1096,58 @@ Point { x: 3, y: 4 }
 ```rust
 Point { x: 3f64, y: 4f64 }
 ```
+
+An array-of-`litter`/`breed` param/return (`DocEntry[]`) becomes a real
+`Vec<T>` the exact same way a scalar array does (`#n[]` -> `Vec<f64>`),
+just with the element type spelled out instead of one of the three
+scalars:
+
+```kitty
+purr passthrough(DocEntry[] entries) DocEntry[] {
+    return (entries)
+}
+```
+```rust
+pub fn passthrough(entries: Vec<DocEntry>) -> Vec<DocEntry> {
+    entries
+}
+```
+
+## Closures
+
+```kitty
+entries.iter().filter(|e| e.category >> query).cloned().collect()
+```
+
+`|param, ..| expr` is a closure literal — it lowers verbatim to a Rust
+closure (`|param, ..| expr`), the missing piece that makes a real Rust
+iterator method (`.filter()`, `.map()`, ...) usable as a [method
+call](#method-calls) with an actual predicate/transform, not just a bare
+argument. The zero-param form (`|| expr`) works too, sharing the lexer's
+`||` token with the logical-or operator — never actually ambiguous, since
+`||` only reaches a closure literal in a *primary* (prefix) position,
+never the infix position the real `||` operator is parsed in.
+
+A param is untyped — Rust infers it from how the closure is actually used
+(e.g. `Vec<T>::filter`'s `&T`) — and the body is a single expression, the
+same "one expression, no block" shape every other Kittine construct that
+computes rather than acts already has (a `purr`'s `return (expr)`, a
+[`pounce>` arm](#pattern-matching)).
+
+### Compilation
+
+```kitty
+|e| e.title.contains(&query)
+```
+```rust
+|e| e.title.contains(&query.clone())
+```
+
+A closure param reads bare (never `.clone()`d/`.get()`d) inside its own
+body — it's a fresh value handed to that one invocation, not a name
+captured from an enclosing reactive closure that might run more than
+once — while a name from the *enclosing* scope (`query` above) still gets
+whatever treatment its own binding kind already calls for.
 
 ## Breeds
 
@@ -1150,12 +1236,40 @@ pounce> shape          // col 1
     else> ..             // col 5 -- also an arm, not a sibling of pounce>
 ```
 
-**`pounce>` is statement-only.** There's no way yet to use its result as
-a *value* — it can't appear inside a `purr`'s `return ( ... )` to compute
-one thing or another depending on which variant matched. It's for
-branching on which variant a value is and taking action (logging,
-mutating a signal), not computing a value from the branch — see [Known
-limitations](#known-limitations).
+### `pounce>` as an expression
+
+```kitty
+purr describe(shape) #w {
+    return (
+        pounce> shape
+            Circle(r) >> ('circle r=' + r)
+            Square(s) >> ('square s=' + s)
+            else> 'idle'
+    )
+}
+```
+
+`pounce>` also works as an **expression** — computing a value instead of
+running a statement — anywhere an expression is expected (a `purr`'s
+`return (...)`, a [`hold`](#plain-local-bindings-hold) binding's value, a
+call argument, ...), not just at the start of a statement. The grammar is
+identical to the statement form above — same column-indented arms, same
+`Variant(binding)? >> ..` shape — except each arm's `..` is a single
+*expression* (a value), not a statement, matching Rust's own `match`
+arm (`Pattern => expr`) instead of `Pattern => { stmt }`. This closes the
+specific gap the statement form left in Kittine's error-handling story: a
+function can now unwrap a `breed Result { Ok(#t), Err(#w) }`-shaped value
+and `return` the unwrapped payload in one step, the way Rust's own `match`
+(or `?`) can — no need to declare a signal, branch imperatively into it,
+and read it back out.
+
+Whether a given `pounce>` is the statement or the expression form is
+decided entirely by *where* the parser encounters it: at the start of a
+statement, it's always the statement form (branch and act); anywhere else,
+it's the expression form (branch and compute). There's no ambiguity
+between the two — a bare `pounce>` can never appear where an expression is
+expected only by coincidence, since the statement form is never itself a
+valid expression.
 
 ### Compilation
 
@@ -1179,6 +1293,38 @@ match shape.get() {
     }
 }
 ```
+
+The expression form lowers the same way, just with each arm's `stmt`
+replaced by an `expr`, used directly as the surrounding `return (...)`/
+`hold`'s value:
+
+```kitty
+purr describe(shape) #w {
+    return (
+        pounce> shape
+            Circle(r) >> ('circle r=' + r)
+            else> 'idle'
+    )
+}
+```
+```rust
+pub fn describe(shape: Shape) -> String {
+    match shape.clone() {
+        Shape::Circle(r) => format!("{}{}", "circle r=", r),
+        _ => "idle".to_string(),
+    }
+}
+```
+
+A `Word`-returning `purr` gets one extra piece of care here: a bare
+string-literal arm (`else> 'idle'` above) is coerced to an owned `String`
+(`.to_string()`), the same coercion an ordinary bare-literal `return
+('idle')` already gets — without it, a `match` mixing a computed
+`String` arm with an un-coerced `&'static str` arm fails to compile
+(`E0308`, arms must all produce the same type). This coercion only
+applies to a `pounce>` used directly as a `purr`'s own return value today
+— the same coercion for a `pounce>` used as a `hold`/signal value is a
+known gap, see [Known limitations](#known-limitations).
 
 ## Generics
 
@@ -1443,18 +1589,25 @@ imperative `for` loop, it becomes a reactive Leptos
 diffs by key) whenever the underlying signal changes:
 
 ```rust
-<For each=move || items.get() key=|item| format!("{item}") let:item>
+<For each=move || items.get() key=|item| format!("{item:?}") let:item>
     <li>
         {{ let item = item.clone(); move || item.clone() }}
     </li>
 </For>
 ```
 
-The key defaults to `format!("{item}")` — every array element type
-(`Num`/`Word`/`Flag`) implements `Display`, so this works uniformly without
-needing a separate "what's the identity of this item" concept. An
-optional `key(expr)` clause right before the `}{` fence overrides it —
-`item` is in scope while evaluating `expr`, same as in the body:
+The key defaults to `format!("{item:?}")` — `Debug` formatting, not
+`Display` (`{item}`): every array element type implements `Debug`
+(`Num`/`Word`/`Flag`, and now a [`litter`/`breed`
+array](#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type) too, since
+`gen_litter`/`gen_breed` only ever derive `Debug`, never `Display`, which
+isn't something `#[derive(..)]` can produce for an arbitrary struct
+anyway), so this default works uniformly across every element type
+Kittine can produce, at the cost of a quoted `"like this"`/`5.0`-shaped
+key string instead of a bare one — harmless, since a `<For>` key only
+needs to be unique and stable, never user-visible. An optional `key(expr)`
+clause right before the `}{` fence overrides it — `item` is in scope while
+evaluating `expr`, same as in the body:
 
 ```kitty
 spin<{item}> in items key(item.to_uppercase()) }{
@@ -1676,15 +1829,22 @@ item         := "private"? (component | function | litter | breed | claw)
               | wear                        // never "private" -- see "Claws"
 import       := "import" "{" IDENT ("," IDENT)* "}" "from" STRING
 component    := "func" IDENT param_list "{" stmt* return_stmt? "}"
-function     := "purr" IDENT param_list type_tag_name?
+function     := "purr" IDENT param_list return_type?
                 "{" stmt* return_stmt? "}"
 param_list   := "(" (param ("," param)*)? ")"
-param        := type_tag_name? IDENT | "children"
+param        := (type_tag_name | custom_type) IDENT | IDENT | "children"
+return_type  := type_tag_name | custom_type
+custom_type  := IDENT ("[" "]")?                // a litter/breed name,
+                                                 // optionally an array of
+                                                 // it -- see "A litter/
+                                                 // breed name as a prop
+                                                 // or purr param/return
+                                                 // type"
 type_tag_name:= "#" ("n" | "w" | "f") (("[" "]") | ("{" "}"))?
 // An omitted type_tag_name on a param/return type is filled in by
 // inference after parsing -- see "Type inference". Array tags ("[]")
 // and stash/map tags ("{}") are the cases inference doesn't cover, so
-// they're always explicit.
+// they're always explicit -- so is a custom_type, scalar or array.
 return_stmt  := "return" "(" jsx_node | expr ")"
 
 litter       := "litter" IDENT type_param? "{" litter_field ("," litter_field)* ","? "}"
@@ -1694,9 +1854,11 @@ variant      := IDENT ("(" field_type ")")?
 type_param   := "<" "#t" (":" IDENT)? ">"      // at most one, optionally
                                                 // bounded by a claw -- see
                                                 // "Generics"
-field_type   := type_tag_name | "#t" | IDENT   // scalar/array, the litter's
-                                                // own generic param, or a
-                                                // custom litter/breed name
+field_type   := type_tag_name | "#t" | custom_type   // scalar/array, the
+                                                // litter's own generic
+                                                // param, or a custom
+                                                // litter/breed name
+                                                // (optionally an array)
 
 claw         := "claw" IDENT "{" claw_method ("," claw_method)* ","? "}"
 claw_method  := IDENT "(" (claw_param ("," claw_param)*)? ")" field_type
@@ -1729,6 +1891,23 @@ pounce_arm   := IDENT ("(" IDENT ")")? ">>" stmt
 pounce_else  := "else>" stmt
 expr_stmt    := expr
 
+pounce_expr  := "pounce>" expr pounce_expr_arm+ pounce_expr_else?
+                // pounce_stmt's value-producing sibling -- reachable from
+                // `primary` below, so it can appear anywhere an
+                // expression is expected (a return_stmt's expr, a
+                // hold_stmt's value, ...), not just at the start of a
+                // statement. Same column-indentation as pounce_stmt --
+                // see "Pattern matching" § pounce> as an expression.
+pounce_expr_arm  := IDENT ("(" IDENT ")")? ">>" expr
+pounce_expr_else := "else>" expr
+
+closure_expr := ("|" (IDENT ("," IDENT)*)? "|" | "||") expr
+                // a closure literal -- lowers verbatim to a Rust closure;
+                // see "Closures". The zero-param form shares the lexer's
+                // "||" token with logic_or's own "||" -- unambiguous,
+                // since it only reaches `primary` (never `logic_or`'s
+                // infix position) there.
+
 expr         := logic_or
 logic_or     := logic_and ("||" logic_and)*
 logic_and    := equality ("&&" equality)*
@@ -1747,7 +1926,7 @@ postfix      := primary ( ("." IDENT arg_list?) | arg_list )*
 // result of an expression.
 arg_list     := "(" (expr ("," expr)*)? ")"
 primary      := NUMBER | STRING | BOOL | ARRAY | TYPE_TAG | CALL
-              | STRUCT_INIT | IDENT
+              | STRUCT_INIT | IDENT | pounce_expr | closure_expr
               | "<{" IDENT "}>" (">>" expr)?  // >> here is inline mutation, not comparison
               | "(" expr ")" | tuple
 
@@ -1847,17 +2026,27 @@ These are intentional scope boundaries of the current prototype, not bugs:
 - **Type inference is local to one function/component and scalars-only.**
   See [Type inference](#type-inference) — it doesn't propagate a type
   through a call to another `purr`, and array-typed
-  props/params/returns still need an explicit `#n[]`/`#w[]`/`#f[]` tag.
-- **`pounce>` is statement-only — it can't compute a value.** See [Pattern
-  matching](#pattern-matching): there's no way yet to use a `pounce>`'s
-  result directly inside a `purr`'s `return ( ... )` (or any other
-  expression position) to *compute* one thing or another depending on
-  which `breed` variant matched — only to *act* differently (log, mutate
-  a signal). This is the specific remaining gap in Kittine's error-
-  handling story: a `breed Result { Ok(#t), Err(#w) }`-shaped type and
-  branching on it both work today, but a function can't yet unwrap one
-  and return the unwrapped value in the same expression the way Rust's
-  own `match` (or `?`) can.
+  props/params/returns (scalar or [custom-type](#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type))
+  still need an explicit tag written out. Using a name only as a
+  [`pounce>`](#pattern-matching) subject gives inference no clue either —
+  a name only ever pattern-matched against a `breed`'s variants, never
+  used arithmetically/in a comparison, still falls back to `Word`, which
+  then fails to compile against the pattern's real `breed` type
+  (`E0308`) — found wiring `pounce>`-as-expression into a real
+  `example-app` function; give the param an explicit `breed` name tag
+  ([see above](#a-litterbreed-name-as-a-prop-or-purr-paramreturn-type))
+  instead of leaving it untyped.
+- **A `pounce>` expression's bare-string-literal-arm coercion only covers
+  a `purr`'s own `return (...)` value.** See [`pounce>` as an
+  expression](#pounce-as-an-expression): a `Word`-returning `purr` whose
+  `pounce>` mixes a computed arm (e.g. `format!(..)`) with a bare literal
+  arm (`else> 'idle'`) gets the literal coerced to an owned `String` so
+  the generated `match`'s arms agree on a type. The same mixed-arm shape
+  used as a [`hold`](#plain-local-bindings-hold) binding or `<{name}> >>
+  ..` signal value instead doesn't get this coercion yet (neither has a
+  declared type for codegen to coerce *toward* the way a `purr`'s
+  `return_type` does) — avoid a bare string-literal arm there, or wrap it
+  in an explicit `#w` tag, until this is closed.
 - **Generics are groundwork, not a full system.** See
   [Generics](#generics): a `litter`/`breed` may have at most one type
   parameter (optionally bounded by a [`claw`](#claws)), but still no
@@ -1934,6 +2123,14 @@ These are intentional scope boundaries of the current prototype, not bugs:
   than from top-level `craft<...>` statements.
 - **Numbers are always `f64`.** There is no integer/float distinction in
   the type system, matching JavaScript-style numeric semantics.
+- **A [closure](#closures)'s body is a single expression, and its params
+  are always untyped.** `|param, ..| expr` has no block-body form (no
+  `{ stmt* expr }`) and no way to write an explicit param type — matching
+  every other value-computing construct's "one expression" shape (a
+  `purr` return, a `pounce>` arm), but narrower than a real Rust closure,
+  which allows both. Rust infers each param's type from how the closure
+  is actually used (e.g. `Vec<T>::filter`'s `&T`), so this is rarely a
+  practical limit for the interop use case closures exist for.
 - **An `if>`/`orif>` condition atom combined with `&&`/`||` still needs to
   start with `<{name}>`.** `<{age}> >= 18 && <{status}> >> 'active'` works;
   combining with a bare function call or computed expression as one side

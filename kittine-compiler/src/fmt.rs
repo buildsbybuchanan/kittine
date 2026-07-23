@@ -149,7 +149,51 @@ fn print_expr(e: &Expr, min_prec: u8) -> String {
             let printed = format!("&{}", print_expr(inner, P_UNARY));
             wrap_if(printed, P_UNARY, min_prec)
         }
+        Expr::Pounce {
+            subject,
+            arms,
+            catch_all,
+        } => print_pounce_expr(subject, arms, catch_all),
+        Expr::Closure { params, body } => {
+            format!("|{}| {}", params.join(", "), print_expr(body, P_TOP))
+        }
     }
+}
+
+/// Prints an expression-position `pounce>` (see `ast::Expr::Pounce`) —
+/// unlike every other `print_expr` arm, this one can't stay a single
+/// mid-line string: `pounce>`'s own grammar is column-sensitive (see
+/// `parser::Parser::parse_pounce_expr`), and `print_expr` has no way to
+/// know what column its *caller* will actually place it at (a `return (`
+/// prefix, a nested call argument, ...). The fix that sidesteps needing
+/// that information at all: always emit a leading `\n` first, so `pounce>`
+/// itself deterministically starts a fresh line at column 1 regardless of
+/// what precedes it, then indent every arm to a fixed column (`ind(1)`)
+/// that's always `> 1` — satisfying `parse_pounce_expr`'s off-side check no
+/// matter where this text ends up embedded, including nested inside
+/// another `pounce>` arm (independent parses, so a coincidentally-equal
+/// column between an outer and inner arm is harmless — each loop only ever
+/// compares against its own remembered `arms_col`).
+fn print_pounce_expr(
+    subject: &Expr,
+    arms: &[PounceExprArm],
+    catch_all: &Option<Box<Expr>>,
+) -> String {
+    let mut lines = vec![format!("pounce> {}", print_expr(subject, P_TOP))];
+    for arm in arms {
+        let mut header = arm.variant.clone();
+        if let Some(b) = &arm.binding {
+            header.push('(');
+            header.push_str(b);
+            header.push(')');
+        }
+        header.push_str(" >> ");
+        lines.push(format!("{}{header}{}", ind(1), print_expr(&arm.body, P_TOP)));
+    }
+    if let Some(ca) = catch_all {
+        lines.push(format!("{}else> {}", ind(1), print_expr(ca, P_TOP)));
+    }
+    format!("\n{}", lines.join("\n"))
 }
 
 fn wrap_if(inner: String, my_prec: u8, min_prec: u8) -> String {
@@ -898,5 +942,45 @@ mod tests {
     fn does_not_false_positive_on_slashes_in_strings() {
         assert!(!has_line_comments("purr f() #w { return ('http://example.com') }"));
         assert!(!has_line_comments("purr f() #w { return (\"a // not a comment\") }"));
+    }
+
+    /// An expression-position `pounce>` (see `ast::Expr::Pounce`) round-
+    /// trips even though its own grammar is column-sensitive and the
+    /// printer has no idea what column `return (` will place it at — see
+    /// `print_pounce_expr`'s doc comment for how that's made safe.
+    #[test]
+    fn pounce_expression_in_return_round_trips() {
+        let src = "breed Outcome {\n    Ok(#n),\n    Err(#w)\n}\n\npurr classify(o) #n {\n    return (\n        pounce> o\n            Ok(v) >> v\n            Err(e) >> 0\n    )\n}\n";
+        assert_idempotent(src);
+    }
+
+    /// Same as above, but nested inside a `hold` binding instead of a
+    /// `return` — a different caller context, same safety argument.
+    #[test]
+    fn pounce_expression_in_hold_round_trips() {
+        let src = "func F() {\n    hold shape >> Outcome::Ok(5)\n    hold value >>\n        pounce> shape\n            Ok(v) >> v\n            Err(e) >> 0\n\n    return ( <p>\"hi\"</p> )\n}\n";
+        assert_idempotent(src);
+    }
+
+    /// A closure literal (see `ast::Expr::Closure`), both the `|param| ..`
+    /// and zero-param `|| ..` forms, round-trips through a method-call
+    /// argument position.
+    #[test]
+    fn closure_literal_round_trips() {
+        let src = "purr f(entries) #n {\n    return (entries.iter().filter(|e| e.ready).count())\n}\n";
+        assert_idempotent(src);
+        let src2 = "purr g(entries) #n {\n    return (entries.iter().filter(|| yes>).count())\n}\n";
+        assert_idempotent(src2);
+    }
+
+    /// A bare custom-type param/return (see `parser::Parser::parse_param`'s
+    /// `peek_starts_custom_type` lookahead) and its `[]`-suffixed array
+    /// form both round-trip.
+    #[test]
+    fn custom_type_param_and_array_round_trip() {
+        let src = "litter Point {\n    x #n,\n    y #n\n}\n\npurr identity(Point p) Point {\n    return (p)\n}\n";
+        assert_idempotent(src);
+        let src2 = "litter Point {\n    x #n,\n    y #n\n}\n\npurr firstOf(Point[] points) Point[] {\n    return (points)\n}\n";
+        assert_idempotent(src2);
     }
 }

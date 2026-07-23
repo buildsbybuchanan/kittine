@@ -1075,7 +1075,7 @@ func List() {
 }
 "#,
     );
-    assert!(out.contains(r#"<For each=move || items.get() key=|n| format!("{n}") let:n>"#));
+    assert!(out.contains(r#"<For each=move || items.get() key=|n| format!("{n:?}") let:n>"#));
     assert!(out.contains("</For>"));
     // Pre-cloned into its own local before the closure, then `.clone()`d
     // again inside -- see `wrap_reactive_closure`.
@@ -1127,7 +1127,7 @@ func List() {
 }
 "#,
     );
-    assert!(out.contains(r#"key=|n| format!("{n}") let:n"#));
+    assert!(out.contains(r#"key=|n| format!("{n:?}") let:n"#));
     assert!(out.contains("{move || key.get()}"));
 }
 
@@ -1146,7 +1146,7 @@ func List() {
 }
 "#,
     );
-    assert!(out.contains(r#"<For each=move || vec![1, 2, 3] key=|n| format!("{n}") let:n>"#));
+    assert!(out.contains(r#"<For each=move || vec![1, 2, 3] key=|n| format!("{n:?}") let:n>"#));
 }
 
 #[test]
@@ -2253,4 +2253,228 @@ litter Holder<#t> {
     );
     assert!(out.contains("struct Holder<T> {"));
     assert!(!out.contains("Holder<T:"));
+}
+
+// ---- pounce> as an expression -------------------------------------------
+
+/// `pounce>` used as a `purr`'s `return (..)` value: unlike the
+/// statement form (`pounce_lowers_to_a_rust_match`), each arm computes a
+/// value instead of running a statement, lowering to a Rust `match` used
+/// directly as the function's return expression — closing the "can't
+/// unwrap a Result and return the value in one expression" gap tracked in
+/// `docs/ROADMAP.md`.
+#[test]
+fn pounce_as_expression_computes_a_return_value() {
+    let out = compile(
+        r#"
+breed Outcome {
+    Ok(#n),
+    Err(#w)
+}
+
+purr classify(o) #n {
+    return (
+        pounce> o
+            Ok(v) >> v
+            Err(e) >> 0
+    )
+}
+"#,
+    );
+    assert!(out.contains("fn classify(o: String) -> f64 {"), "got: {out}");
+    assert!(out.contains("match o.clone() {"), "got: {out}");
+    assert!(out.contains("Outcome::Ok(v) => v"), "got: {out}");
+    assert!(out.contains("Outcome::Err(e) => 0"), "got: {out}");
+    assert!(!out.contains("return"), "no bare 'return' keyword needed for a tail expression");
+}
+
+/// `pounce>` used as a `hold` binding's value — the other realistic
+/// expression-position use case (compute-once, non-reactive local).
+#[test]
+fn pounce_as_expression_in_hold_binding() {
+    let out = compile(
+        r#"
+breed Outcome {
+    Ok(#n),
+    Err(#w)
+}
+
+func Home() {
+    hold shape >> Outcome::Ok(5)
+    hold value >>
+        pounce> shape
+            Ok(v) >> v
+            Err(e) >> 0
+
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(out.contains("let value = match"), "got: {out}");
+    assert!(out.contains("Outcome::Ok(v) => v"), "got: {out}");
+}
+
+/// A `pounce>` expression with no `else>` catch-all still renders (Rust's
+/// own exhaustiveness check on the generated `match` is the source of
+/// truth for whether every variant is actually covered — same trust model
+/// the statement form already has).
+#[test]
+fn pounce_as_expression_without_catch_all() {
+    let out = compile(
+        r#"
+breed Outcome {
+    Ok(#n),
+    Err(#n)
+}
+
+purr unwrap(o) #n {
+    return (
+        pounce> o
+            Ok(v) >> v
+            Err(e) >> e
+    )
+}
+"#,
+    );
+    assert!(!out.contains("_ =>"), "no catch-all arm was written");
+    assert!(out.contains("Outcome::Ok(v) => v"));
+    assert!(out.contains("Outcome::Err(e) => e"));
+}
+
+/// A `Word`-returning `purr` whose `pounce>` expression mixes a computed
+/// arm (`format!(..)`, an owned `String`) with a bare string-literal arm
+/// (`else> 'idle'`) must coerce the literal to owned too — otherwise the
+/// generated `match`'s arms have incompatible types (`String` vs
+/// `&'static str`), a real `E0308` confirmed by actually compiling this
+/// exact pattern against rustc (found wiring `pounce>`-as-expression into
+/// `example-app`'s real `Shapes.kitty`, not a hypothetical).
+#[test]
+fn pounce_expression_word_return_coerces_bare_literal_arms() {
+    let out = compile(
+        r#"
+breed Shape {
+    Circle(#n),
+    Idle
+}
+
+purr label(Shape shape) #w {
+    return (
+        pounce> shape
+            Circle(r) >> ('circle r=' + r)
+            else> 'idle'
+    )
+}
+"#,
+    );
+    assert!(
+        out.contains(r#"_ => "idle".to_string() }"#),
+        "got: {out}"
+    );
+}
+
+// ---- array-of-litter/breed types -----------------------------------------
+
+/// A `litter` name (optionally `[]`-suffixed) is a real param/return type
+/// for `func`/`purr`, not just a `litter` field's type — closing the
+/// "array-of-litter/breed types" gap tracked in `docs/ROADMAP.md`. Params
+/// are type-first (`DocEntry[] entries`, same order as `#n`/`#w`/`#f`),
+/// matching `ast::Param`'s documented convention.
+#[test]
+fn array_of_litter_param_and_return_type() {
+    let out = compile(
+        r#"
+litter DocEntry {
+    title #w,
+    category #w
+}
+
+purr passthrough(DocEntry[] entries) DocEntry[] {
+    return (entries)
+}
+
+func List(DocEntry[] entries) {
+    return ( <p>"hi"</p> )
+}
+"#,
+    );
+    assert!(
+        out.contains("fn passthrough(entries: Vec<DocEntry>) -> Vec<DocEntry> {"),
+        "got: {out}"
+    );
+    assert!(
+        out.contains("fn List(entries: Vec<DocEntry>) -> impl IntoView {"),
+        "got: {out}"
+    );
+}
+
+/// A bare (non-array) custom type name is also a real param/return type —
+/// a natural generalization needed to accept/produce a single struct
+/// value, not just an array of them.
+#[test]
+fn scalar_litter_param_and_return_type() {
+    let out = compile(
+        r#"
+litter Point {
+    x #n,
+    y #n
+}
+
+purr identity(Point p) Point {
+    return (p)
+}
+"#,
+    );
+    assert!(
+        out.contains("fn identity(p: Point) -> Point {"),
+        "got: {out}"
+    );
+}
+
+// ---- closures --------------------------------------------------------------
+
+/// `|param, ..| expr` lowers verbatim to a Rust closure — the missing
+/// filter-predicate mechanism `docs/ROADMAP.md` tracked, needed for
+/// real-Rust iterator methods like `.filter()`/`.map()` that Kittine has
+/// no dedicated syntax of its own for.
+#[test]
+fn closure_literal_renders_as_rust_closure() {
+    let out = compile(
+        r#"
+litter DocEntry {
+    title #w
+}
+
+purr matching(DocEntry[] entries, query) DocEntry[] {
+    return (entries.iter().filter(|e| e.title.contains(&query)).cloned().collect())
+}
+"#,
+    );
+    assert!(
+        out.contains(".filter(|e| e.title.contains(&query.clone()))"),
+        "got: {out}"
+    );
+}
+
+/// A zero-param closure (`|| expr`) shares the lexer's `||` token with
+/// logical-or — regression check that a real `||` binary expression is
+/// still unaffected.
+#[test]
+fn zero_param_closure_and_logical_or_both_still_work() {
+    let out = compile(
+        r#"
+litter DocEntry {
+    title #w
+}
+
+purr always(DocEntry[] entries) DocEntry[] {
+    return (entries.iter().filter(|| yes>).cloned().collect())
+}
+
+purr either(a, b) #f {
+    return (a || b)
+}
+"#,
+    );
+    assert!(out.contains(".filter(|| true)"), "got: {out}");
+    assert!(out.contains("a || b"), "got: {out}");
 }

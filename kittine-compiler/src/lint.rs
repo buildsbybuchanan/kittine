@@ -55,16 +55,20 @@ pub fn check(program: &Program) -> Vec<String> {
 /// see `fmt::sig_type_str`/`fmt::field_type_str` for the same mapping used
 /// on the printing side.
 fn is_builtin_ty(ty: &str) -> bool {
-    matches!(
-        ty,
-        "Num" | "Word" | "Flag" | "Num[]" | "Word[]" | "Flag[]" | "Num{}" | "Word{}" | "Flag{}"
-            | "T" | "Children" | ""
-    )
+    matches!(ty, "Num" | "Word" | "Flag" | "T" | "Children" | "")
 }
 
+/// Marks `ty` as a used type name, first stripping an array (`[]`) or
+/// `stash` (`{}`) suffix so `DocEntry[]` notes `DocEntry` itself as used —
+/// not the literal `"DocEntry[]"` string, which would never match the bare
+/// `litter DocEntry` name `check_unused_private_items` looks for, a false
+/// "unused" positive on any `litter`/`breed` only ever referenced through
+/// an array-typed prop/return (see `codegen::rust_type`'s matching `[]`/
+/// `{}` recursion on the codegen side).
 fn note_ty(ty: &str, set: &mut HashSet<String>) {
-    if !is_builtin_ty(ty) {
-        set.insert(ty.to_string());
+    let base = ty.strip_suffix("[]").or_else(|| ty.strip_suffix("{}")).unwrap_or(ty);
+    if !is_builtin_ty(base) {
+        set.insert(base.to_string());
     }
 }
 
@@ -226,6 +230,21 @@ fn collect_names_expr(e: &Expr, set: &mut HashSet<String>) {
             }
         }
         Expr::Ref(inner) => collect_names_expr(inner, set),
+        Expr::Pounce {
+            subject,
+            arms,
+            catch_all,
+        } => {
+            collect_names_expr(subject, set);
+            for arm in arms {
+                set.insert(arm.variant.clone());
+                collect_names_expr(&arm.body, set);
+            }
+            if let Some(ca) = catch_all {
+                collect_names_expr(ca, set);
+            }
+        }
+        Expr::Closure { body, .. } => collect_names_expr(body, set),
     }
 }
 
@@ -622,5 +641,18 @@ mod tests {
     fn clean_file_has_no_warnings() {
         let src = "func F() {\n    <{count}> >> #n 0\n\n    return (\n        <div>{ count }</div>\n    )\n}\n";
         assert!(lint(src).is_empty());
+    }
+
+    /// A `private litter` only ever referenced through an array-typed prop
+    /// (`DocEntry[]`) must not be flagged "unused" — regression test for
+    /// `note_ty` stripping the `[]` suffix before checking, so it notes
+    /// `DocEntry` as used, not the literal string `"DocEntry[]"` (which
+    /// would never match the bare `litter DocEntry` name this check looks
+    /// for).
+    #[test]
+    fn private_litter_used_only_as_array_type_is_not_flagged() {
+        let src = "private litter DocEntry {\n    title #w\n}\n\nfunc List(DocEntry[] entries) {\n    return ( <p>\"hi\"</p> )\n}\n";
+        let w = lint(src);
+        assert!(!w.iter().any(|m| m.contains("unused private litter")), "{w:?}");
     }
 }
