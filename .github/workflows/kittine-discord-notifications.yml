@@ -34,7 +34,7 @@ concurrency:
 jobs:
   notify:
     name: Notify Discord
-    if: github.repository == 'siv-the-programmer/kittine'
+    if: github.repository == 'buildsbybuchanan/kittine'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -251,7 +251,7 @@ jobs:
                       field("Repository"; $repository; false)
                     ],
                     footer: {
-                      text: "siv-the-programmer/kittine · main"
+                      text: "buildsbybuchanan/kittine · main"
                     },
                     timestamp: (now | todateiso8601)
                   }
