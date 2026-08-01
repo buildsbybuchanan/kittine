@@ -187,11 +187,14 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
     called the same way `serde_json` now is).
   - **Still genuinely blocked, not just undemonstrated** — an HTTP client
     and Leptos `Resource`-based data fetching both need real `async`/
-    `await` support and lambda/closure-argument syntax, neither of which
-    exist in Kittine yet; see the dynamic-WASM-module-loading gap logged
-    below, a related but distinct blocker. Validation and
-    string/date/number formatting utilities beyond what `MethodCall`
-    interop already reaches are still open, lower-priority Phase 2 items.
+    `await` support, which doesn't exist in Kittine yet (a closure literal,
+    `|param, ..| expr`, landed 2026-07-23 and covers the synchronous
+    iterator-predicate case — see [LANGUAGE.md §
+    Closures](LANGUAGE.md#closures) — but that's not `async`/`await`); see
+    the dynamic-WASM-module-loading gap logged below, a related but
+    distinct blocker. Validation and string/date/number formatting
+    utilities beyond what `MethodCall` interop already reaches are still
+    open, lower-priority Phase 2 items.
   Landed 2026-07-22.
 - **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
@@ -600,7 +603,7 @@ above. Writing full docs/tutorials for anything in this list before it's
 real would mean documenting features that don't exist — so this section
 stays a plan, not a spec, until an item graduates into `LANGUAGE.md`.
 
-### Phase 1 — Language completeness (extends [Next up](#next-up)) — **done, with one documented exception**
+### Phase 1 — Language completeness (extends [Next up](#next-up)) — **done**
 
 Every item originally listed under this phase has landed, as of
 2026-07-19:
@@ -628,14 +631,16 @@ Every item originally listed under this phase has landed, as of
   `pub(crate)`-style granularity to actually mean anything. Revisit if a
   real multi-package use case ever demonstrates otherwise.
 - ~~A formal grammar spec document~~ — [GRAMMAR.md](GRAMMAR.md).
-
-**The one deliberate exception**: `pounce>` is still statement-only — a
-`purr` can't compute and `return` a value depending on which `breed`
-variant matched, the way Rust's own `match`/`?` can. This is tracked as
-[Production readiness](#production-readiness) gap 1, not re-listed as an
-open Phase 1 item, because it's a narrow, well-scoped, already-documented
-gap rather than an open-ended one — closing it is a natural next
-increment, not a blocker to calling the rest of this phase done.
+- ~~`pounce>` as an expression~~ — a `purr` can now compute and `return`
+  a value depending on which `breed` variant matched, the way Rust's own
+  `match`/`?` can, not just branch-and-act as a statement — see
+  [LANGUAGE.md § `pounce>` as an
+  expression](LANGUAGE.md#pounce-as-an-expression). This closed what used
+  to be this phase's one tracked exception (see [Production
+  readiness](#production-readiness) gap 1, which still lists the one
+  narrower thing left: a `pounce>` expression's bare-string-literal-arm
+  coercion only covers a `purr`'s own `return (...)` value today, not a
+  `hold`/signal value).
 
 ### Phase 2 — Standard library — **in progress**
 
@@ -648,10 +653,11 @@ just undemonstrated; XML is a weaker fit for serde's derive model), and
 environment/config access are callable today via existing path-qualified-
 call interop (server-side only — no filesystem/env access from CSR/WASM)
 but have no real example wired up yet. Still fully open: an HTTP client
-(genuinely blocked — needs `async`/`await` and lambda/closure-argument
-syntax, neither of which exist yet), string/date/number formatting
-utilities beyond what already-existing `MethodCall` interop reaches, and
-validation.
+(genuinely blocked — needs `async`/`await` support, which doesn't exist
+yet; a closure literal for the predicate/callback side landed separately,
+see [LANGUAGE.md § Closures](LANGUAGE.md#closures)), string/date/number
+formatting utilities beyond what already-existing `MethodCall` interop
+reaches, and validation.
 
 ### Phase 3 — Backend & data
 

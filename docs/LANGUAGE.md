@@ -968,12 +968,19 @@ body or return expression (a component prop also looks at the `return (
 
 | Usage | Inferred type |
 |---|---|
-| `+`/`-`/`*`/`/` against a number literal, or `<`/`<=`/`>`/`>=` at all | `Num` |
+| `+` against a number literal, or `-`/`*`/`/`/`<`/`<=`/`>`/`>=` at all | `Num` |
 | `+` against a string literal (concatenation) | `Word` |
+| `==`/`!=` against a number literal | `Num` |
 | `==`/`!=` against a string literal | `Word` |
 | `==`/`!=` against `yes>`/`no>` | `Flag` |
 | either side of `&&`/`\|\|` | `Flag` |
 | none of the above (e.g. passed straight through with no operator touching it) | `Word` (default) |
+
+`-`/`*`/`/` and the four ordering comparisons infer `Num` unconditionally
+(whatever the *other* operand looks like) — `+` is the one operator
+genuinely ambiguous between arithmetic and string concatenation, so its
+inference looks at whether the *other* side is a number or string literal
+before deciding.
 
 An explicit tag always wins outright — inference only ever fills a gap
 left by omitting one, never overrides a tag actually written. Two real

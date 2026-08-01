@@ -18,7 +18,7 @@ language before a full language server exists.
 ```sh
 cd vscode-kittine
 npx @vscode/vsce package --no-rewrite-relative-links
-code --install-extension kittine-lang-0.4.0.vsix
+code --install-extension kittine-lang-0.5.0.vsix
 ```
 
 Restart VS Code (or reload the window: `Ctrl+Shift+P` → "Developer: Reload
@@ -39,7 +39,7 @@ file — send it directly, or attach it to a GitHub release, and anyone can
 run:
 
 ```sh
-code --install-extension kittine-lang-0.4.0.vsix
+code --install-extension kittine-lang-0.5.0.vsix
 ```
 
 No marketplace publishing step is required for this. If you do want it
@@ -56,16 +56,23 @@ nothing in this extension's structure needs to change to support that.
 | `<{name}>` | `punctuation.definition.variable.*` / `variable.other.kittine` |
 | `>>` / `<` / `<=` / `>` / `>=` / `!=` | `keyword.operator.assignment` / `keyword.operator.comparison` |
 | `&&` / `\|\|` | `keyword.operator.logical` |
+| `&` (reference operator) | `keyword.operator.reference` |
+| `\|` (closure param delimiter) | `punctuation.definition.closure` |
 | `if>` / `orif>` / `else>` | `keyword.control.conditional` |
-| `craft<...>` | `keyword.other.craft` |
+| `pounce>` (statement and expression forms) | `keyword.control.conditional` |
+| `craft<...>` / `warn<...>` / `error<...>` | `keyword.other.craft` |
+| `stash{ .. }` | `keyword.other.stash` |
+| `hold` | `keyword.other.hold` |
 | `'...'` and `"..."` | `string.quoted.*` |
 | `yes>` / `no>` | `constant.language.boolean` |
-| `#n` / `#w` / `#f` (or `#n[]`/`#w[]`/`#f[]` for an array of one) | `storage.type.kittine` |
+| `#n` / `#w` / `#f` (or `#n[]`/`#w[]`/`#f[]`/`#n{}`/`#w{}`/`#f{}` for an array/`stash` of one) | `storage.type.kittine` |
 | `spin` / `in` | `keyword.control.loop` |
 | `[` / `]` | `punctuation.definition.array` |
-| `func`, `purr`, `return` | `storage.type.function` / `keyword.control.flow` |
+| `func`, `purr`, `litter`, `breed`, `claw`, `return` | `storage.type.function` / `keyword.control.flow` |
+| `bare .. for ..` | `storage.type.function` / `entity.name.type` / `keyword.control` |
 | `private` | `storage.modifier` |
 | `import`, `from` | `keyword.control.import` |
+| `event` (reserved handler-value identifier) | `variable.language.event` |
 | JSX tags/attributes (incl. `leptos_router`'s `Router`/`Routes`/`Route`/`A`) | `entity.name.tag`, `entity.other.attribute-name` |
 | `// comment` | `comment.line.double-slash` |
 
