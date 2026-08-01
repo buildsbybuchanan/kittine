@@ -1035,14 +1035,88 @@ fn render_generic_field_value(expr: &Expr, render: &dyn Fn(&Expr) -> String) -> 
 /// just as often expects `usize`/`i32`/etc. (`Vec::get(0)`, not
 /// `Vec::get(0f64)`), and Kittine has no way to tell which. Rust's own
 /// type checker is the source of truth on whether the call is valid.
+///
+/// Three method names are reserved exceptions, checked first, exactly the
+/// way `name == "stash"` is a reserved exception in
+/// [`render_struct_init`]: `fixed`/`padded`/`grouped` are number-formatting
+/// utilities `format!`'s macro syntax can express but no real Rust *method*
+/// on `f64`/any other type can (Rust has no `.fixed()`/`.padded()`/
+/// `.grouped()` inherent method — this isn't interop with something that
+/// already exists, it's Kittine synthesizing the `format!` call a `.kitty`
+/// author would otherwise have to drop into raw Rust for). See
+/// [`render_fixed`], [`render_padded`], [`render_grouped`].
 fn render_method_call(
     receiver: &Expr,
     method: &str,
     args: &[Expr],
     render: &dyn Fn(&Expr) -> String,
 ) -> String {
+    match (method, args) {
+        ("fixed", [precision]) => return render_fixed(receiver, precision, render),
+        ("padded", [width]) => return render_padded(receiver, width, render),
+        ("grouped", []) => return render_grouped(receiver, render),
+        _ => {}
+    }
     let rendered_args: Vec<String> = args.iter().map(|a| render(a)).collect();
     format!("{}.{method}({})", render(receiver), rendered_args.join(", "))
+}
+
+/// Renders `receiver.fixed(precision)` — a fixed-decimal-places number
+/// format, e.g. `price.fixed(2)` on `3.14159` -> `"3.14"`. Lowers to
+/// `format!("{:.*}", precision as usize, receiver)`: the `.*` precision
+/// specifier consumes the *first* positional argument as the precision and
+/// the second as the value, which is what makes a non-literal (a signal
+/// read, a `hold` binding) precision argument possible at all — a plain
+/// `{:.2}` only accepts a literal. `as usize` tolerates both a bare integer
+/// literal (`2`, which renders unsuffixed and infers fine under a cast) and
+/// a `Num` (`f64`) expression on the precision side, without Kittine having
+/// to know which it is.
+fn render_fixed(receiver: &Expr, precision: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "format!(\"{{:.*}}\", ({}) as usize, ({}))",
+        render(precision),
+        render(receiver)
+    )
+}
+
+/// Renders `receiver.padded(width)` — zero-left-pads a value's `Display`
+/// text to `width` characters, e.g. `n.padded(2)` on `7` -> `"07"` (clock
+/// digits, IDs, anything that needs a stable column width). Lowers to
+/// `format!("{:0>1$}", receiver, width as usize)`: `0>` fills with `'0'`
+/// right-aligned, and `1$` reads the width from the *second* positional
+/// argument, the same dynamic-width mechanism `fixed` uses for precision —
+/// a literal `{:02}`-style spec only accepts a compile-time-constant width.
+fn render_padded(receiver: &Expr, width: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "format!(\"{{:0>1$}}\", ({}), ({}) as usize)",
+        render(receiver),
+        render(width)
+    )
+}
+
+/// Renders `receiver.grouped()` — thousands-separator formatting, e.g.
+/// `1234567.grouped()` -> `"1,234,567"`. Rust's `format!` has no grouping
+/// specifier at all (unlike `.*`-precision or `$`-width, there's no macro
+/// syntax to reach for), so this lowers to a small self-contained block
+/// expression instead of a single `format!` call — still just one Rust
+/// *expression*, valid anywhere `render_method_call`'s caller needs one
+/// (JSX interpolation, a signal mutation, a call argument), only spanning
+/// more than one line of generated source. Splits the `Display` text on an
+/// optional leading `-` and an optional `.` (decimal point), groups the
+/// integer part into comma-separated 3-digit chunks from the right via
+/// `rchunks(3).rev()`, and leaves the sign/decimal part untouched.
+fn render_grouped(receiver: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "{{ let __kittine_v = format!(\"{{}}\", ({receiver})); \
+let (__kittine_sign, __kittine_digits): (&str, &str) = match __kittine_v.strip_prefix('-') {{ \
+Some(rest) => (\"-\", rest), None => (\"\", __kittine_v.as_str()) }}; \
+let (__kittine_int, __kittine_frac): (&str, String) = match __kittine_digits.split_once('.') {{ \
+Some((i, f)) => (i, format!(\".{{f}}\")), None => (__kittine_digits, String::new()) }}; \
+let __kittine_grouped: String = __kittine_int.as_bytes().rchunks(3).rev()\
+.map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(\",\"); \
+format!(\"{{__kittine_sign}}{{__kittine_grouped}}{{__kittine_frac}}\") }}",
+        receiver = render(receiver)
+    )
 }
 
 /// Renders `callee(arg, arg, ..)` where `callee` isn't a bare name — see

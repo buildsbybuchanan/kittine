@@ -18,6 +18,7 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 - [Functions (`purr`)](#functions-purr)
 - [Calling functions](#calling-functions)
   - [Method calls](#method-calls)
+  - [Number formatting (`.fixed` / `.padded` / `.grouped`)](#number-formatting)
   - [Tuples](#tuples)
 - [Modules and imports](#modules-and-imports)
   - [Visibility](#visibility)
@@ -261,6 +262,65 @@ calls the closure `use_navigate()` itself returns. This is what makes
 [programmatic navigation](#programmatic-navigation--a-real-current-gap)'s
 first argument reachable at all, even though its second argument still
 isn't (see that section).
+
+### Number formatting
+
+```kitty
+revenue.fixed(2)
+count.padded(4)
+revenue.grouped()
+```
+
+Three method names are reserved exceptions to the "renders verbatim"
+[method call](#method-calls) rule above: `fixed`, `padded`, and `grouped`
+are number-formatting utilities Rust's `format!` macro syntax can express
+but no real Rust *method* can — `f64` has no `.fixed()`/`.padded()`/
+`.grouped()` inherent method to interop with, so unlike an ordinary method
+call these three synthesize a real `format!` (or, for `.grouped()`, a small
+self-contained block expression) instead of passing the call through as-is.
+This is the "beyond what already-existing `MethodCall` interop reaches"
+half of Phase 2's standard-library gap (see [ROADMAP.md § Phase
+2](ROADMAP.md#phase-2--standard-library)) — Rust has no method-call syntax
+for fixed-decimal precision, padding, or thousands grouping at all, so
+there was nothing for ordinary interop to reach.
+
+| Kittine | Generated Rust | Result (given `revenue` is `1234567.891`, `count` is `7`) |
+| --- | --- | --- |
+| `revenue.fixed(2)` | `format!("{:.*}", (2) as usize, (revenue.get()))` | `"1234567.89"` |
+| `count.padded(4)` | `format!("{:0>1$}", (count.get()), (4) as usize)` | `"0007"` |
+| `revenue.grouped()` | *(see below)* | `"1,234,567.891"` |
+
+- **`.fixed(precision)`** — fixed decimal places, JS `.toFixed()`-style.
+  Lowers to `format!`'s `{:.*}` dynamic-precision specifier, which takes the
+  precision as a *runtime* positional argument instead of a compile-time
+  literal (`{:.2}` only accepts a literal) — the reason `precision` can be
+  any expression, not just a number literal: `revenue.fixed(decimals)`
+  works exactly the same way with `decimals` a signal.
+- **`.padded(width)`** — zero-left-pads a value's `Display` text to `width`
+  characters (clock digits, order numbers, anything that needs a stable
+  column width). Lowers to `format!`'s `{:0>1$}` fill/align/dynamic-width
+  specifier — same "width can be any expression, not just a literal"
+  reasoning as `.fixed`'s precision.
+- **`.grouped()`** — thousands-separator formatting (`1234567` →
+  `"1,234,567"`). Rust's `format!` has no grouping specifier at all (unlike
+  precision/width, there's no macro syntax to reach for), so this is the
+  one case that lowers to a small self-contained Rust block expression
+  instead of a single `format!` call — still just one expression, valid
+  everywhere a method call's result is (a `craft<...>` argument, a JSX `{
+  expr }` interpolation, a call argument), it just spans more than one line
+  of generated source. The block splits the value's `Display` text on an
+  optional leading `-` and an optional `.`, groups the integer part into
+  comma-separated 3-digit chunks from the right, and leaves the sign/
+  decimal part untouched — `(-1234.5).grouped()` → `"-1,234.5"`.
+
+All three take no receiver-type information either, same trust model as an
+ordinary method call: nothing stops writing `someWord.fixed(2)` and having
+it fail only once Rust's own type checker sees the generated
+`format!("{:.*}", .., someWord.get())` and rejects a `String` where a
+`Display`-of-a-number was implicitly expected by the *author's* intent
+(though `String` does implement `Display`, so this specific misuse would
+actually still compile — it just wouldn't do anything meaningful with
+`.fixed`'s intent of controlling decimal places on a non-numeric value).
 
 ### Tuples
 

@@ -196,6 +196,45 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
     utilities beyond what `MethodCall` interop already reaches are still
     open, lower-priority Phase 2 items.
   Landed 2026-07-22.
+- **Phase 2 continues: number formatting beyond what `MethodCall` interop
+  reaches** (`.fixed(precision)`, `.padded(width)`, `.grouped()`) — the
+  first slice of the "string/date/number formatting utilities" gap the
+  round above left open, scoped deliberately narrow (see [Full vision §
+  Phase 2](#phase-2--standard-library) for what's still open: date/time
+  formatting needs a `Date`/`Time` type Kittine doesn't have at all yet, a
+  bigger design decision than fit this round; string formatting had no
+  real gap left to close, since case conversion/`trim`/etc. already work
+  via plain `MethodCall` passthrough).
+  - **Three reserved method names**, checked before the "renders verbatim"
+    rule any other method call gets: Rust's `f64` has no `.fixed()`/
+    `.padded()`/`.grouped()` inherent method for real `MethodCall` interop
+    to reach at all — `format!`'s macro syntax can express fixed-decimal
+    precision (`{:.*}`) and dynamic-width zero-padding (`{:0>1$}`), but
+    there's no *method* spelling of either in real Rust, so ordinary
+    interop had nothing to pass through to. `.grouped()` (thousands
+    separators) goes further still: `format!` has no grouping specifier at
+    all, so it lowers to a small self-contained Rust block expression
+    (still one Rust *expression*, valid everywhere a method call's result
+    is) instead of a single macro call. Same reserved-identifier precedent
+    as `stash` (see the entry above): a real method genuinely named
+    `fixed`/`padded`/`grouped` on some other receiver type would collide,
+    same trade-off `stash` already accepted.
+  - Both `.fixed`'s precision and `.padded`'s width accept *any* expression
+    (a signal read, not just a literal), because `format!`'s `.*`/`N$`
+    dynamic-precision/width specifiers take their value from a runtime
+    positional argument, not a compile-time-constant format spec — the
+    reason `revenue.fixed(decimals)` (where `decimals` is itself a signal)
+    works at all.
+  - Verified with 4 new compiler tests (167 total, up from 163) and a real
+    `cargo check --target wasm32-unknown-unknown` against Leptos 0.7 (this
+    round's sandbox had no `npm`/`node` at all, so `example-app`'s Rust
+    crate was checked directly against its own `Cargo.toml`, bypassing the
+    Vite plugin layer — the same Rust `cargo check` every prior round's
+    verification already leaned on as its real bar) — `example-app`'s
+    `Home.kitty` gained a `revenue` signal displayed three ways
+    (`revenue.fixed(2)`, `revenue.grouped()`, and `count.padded(4)` reusing
+    the existing click-counter signal), both logged via `craft<...>` and
+    rendered live in the view. Landed 2026-08-01.
 - **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -361,6 +400,18 @@ vision](#full-vision-phased-honest) are where these get addressed.
   JS `Error`). A real fix needs some kind of JS-interop story, not just a
   parser tweak — likely its own scoped design, not a quick follow-on to
   `event`.
+
+Done: ~~Number formatting beyond what `MethodCall` interop reaches~~
+(`.fixed(precision)`/`.padded(width)`/`.grouped()` — three reserved
+method names lowering to `format!`'s dynamic-precision/dynamic-width
+specifiers, and, for `.grouped()`, a small self-contained block expression
+since `format!` has no thousands-grouping specifier at all. See [Status §
+Phase 2 continues](#status-what-works-today), [LANGUAGE.md § Number
+formatting](LANGUAGE.md#number-formatting)) — landed 2026-08-01. Still open,
+logged in [Full vision § Phase 2](#phase-2--standard-library): date/time
+formatting (no `Date`/`Time` type exists in Kittine yet — a bigger design
+decision, deliberately not folded into this round) and validation.
+
 Done: ~~No array-of-`litter`/`breed` types~~ and ~~no lambda/closure-
 argument syntax for a filter predicate~~ (array-typed props/returns are no
 longer scalar-only — a bare `litter`/`breed` name, optionally
@@ -647,17 +698,23 @@ Every item originally listed under this phase has landed, as of
 ~~Collections beyond arrays~~ (`stash{ .. }`, a real `String`-keyed map),
 ~~JSON (de)serialization~~ (every `litter`/`breed` derives
 `serde::Serialize`/`Deserialize` — YAML/CSV covered by the same derive,
-just undemonstrated; XML is a weaker fit for serde's derive model), and
-~~logging~~ (`warn<...>`/`error<...>` join `craft<...>`) are done — see
-[Status](#status-what-works-today) for the full description. File I/O and
-environment/config access are callable today via existing path-qualified-
-call interop (server-side only — no filesystem/env access from CSR/WASM)
-but have no real example wired up yet. Still fully open: an HTTP client
-(genuinely blocked — needs `async`/`await` support, which doesn't exist
-yet; a closure literal for the predicate/callback side landed separately,
-see [LANGUAGE.md § Closures](LANGUAGE.md#closures)), string/date/number
-formatting utilities beyond what already-existing `MethodCall` interop
-reaches, and validation.
+just undemonstrated; XML is a weaker fit for serde's derive model),
+~~logging~~ (`warn<...>`/`error<...>` join `craft<...>`), and ~~number
+formatting beyond what `MethodCall` interop reaches~~ (`.fixed(precision)`/
+`.padded(width)`/`.grouped()` — see [Status](#status-what-works-today))
+are done. File I/O and environment/config access are callable today via
+existing path-qualified-call interop (server-side only — no filesystem/env
+access from CSR/WASM) but have no real example wired up yet. Still fully
+open: an HTTP client (genuinely blocked — needs `async`/`await` support,
+which doesn't exist yet; a closure literal for the predicate/callback side
+landed separately, see [LANGUAGE.md § Closures](LANGUAGE.md#closures));
+**date/time formatting and parsing specifically** (no `Date`/`Time` type
+exists in Kittine at all yet — a real design decision, its own literal
+syntax and probably its own type-tag, scoped out of the number-formatting
+round above on purpose rather than half-built); string formatting beyond
+what `MethodCall` interop already reaches (case conversion/`trim`/etc.
+already work via plain method-call passthrough — no additional gap found
+there beyond what was already true); and validation.
 
 ### Phase 3 — Backend & data
 

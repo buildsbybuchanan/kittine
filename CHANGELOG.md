@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
+## [Unreleased] - 2026-08-01
+
+### Added (number formatting: `.fixed` / `.padded` / `.grouped`)
+
+- **`.fixed(precision)`, `.padded(width)`, `.grouped()`** — three reserved
+  method names closing the first slice of the "string/date/number
+  formatting utilities beyond what `MethodCall` interop already reaches"
+  gap logged in [ROADMAP.md § Phase 2](docs/ROADMAP.md#phase-2--standard-library).
+  Real Rust has no `.fixed()`/`.padded()`/`.grouped()` inherent method on
+  `f64` (or anything else) to interop with — unlike ordinary
+  [method calls](docs/LANGUAGE.md#method-calls), which render verbatim and
+  trust Rust's own type checker, these three synthesize a real `format!`
+  call (or, for `.grouped()`, a small self-contained block expression)
+  instead. `.fixed`/`.padded` lower to `format!`'s `{:.*}`/`{:0>1$}`
+  dynamic-precision/dynamic-width specifiers, which is also why their
+  argument can be any expression (a signal read), not just a literal — a
+  plain `{:.2}`-style spec only accepts a compile-time constant.
+  `.grouped()` (thousands separators) has no `format!` macro-syntax
+  equivalent at all, so it's the one case that lowers to a block
+  expression: split the `Display` text on an optional leading `-` and an
+  optional `.`, group the integer part into comma-separated 3-digit
+  chunks from the right, leave the sign/decimal part untouched. Same
+  reserved-identifier trade-off `stash` already accepted (see the
+  2026-07-22 entry below): a real method genuinely named `fixed`/`padded`/
+  `grouped` on some other receiver type would collide with this.
+  Deliberately scoped narrow rather than attempting the whole
+  "string/date/number formatting" gap in one pass: date/time formatting
+  needs a `Date`/`Time` type Kittine doesn't have at all yet (a real
+  design decision — its own literal syntax, probably its own type-tag —
+  logged honestly as still open rather than half-built), and string
+  formatting had no real gap left to close (case conversion/`trim`/etc.
+  already reach through plain `MethodCall` passthrough). See
+  [LANGUAGE.md § Number formatting](docs/LANGUAGE.md#number-formatting).
+  Verified with 4 new compiler tests (167 total, up from 163) and a real
+  `cargo check --target wasm32-unknown-unknown` against Leptos 0.7 —
+  `example-app`'s `Home.kitty` gained a `revenue` signal formatted three
+  ways (`revenue.fixed(2)`, `revenue.grouped()`, and `count.padded(4)`
+  reusing the existing click-counter signal), logged via `craft<...>` and
+  rendered live in the view.
+
 ## [Unreleased] - 2026-07-23
 
 ### Added (array-of-`litter`/`breed` types, closures, `pounce>` as an expression)

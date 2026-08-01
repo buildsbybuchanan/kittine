@@ -23,6 +23,10 @@ func Home() {
     <{prices}> >> #n{} stash { milk: 2, eggs: 3, bread: 4 }
     craft<prices.get('milk').cloned().unwrap_or_default()>
     craft<stash { a: 1, b: 2 }>
+    <{revenue}> >> #n 1234567.891
+    craft<revenue.fixed(2)>
+    craft<revenue.grouped()>
+    craft<count.padded(4)>
     warn<'demonstrating warn< -- a real leptos::logging::warn! call'>
     error<'demonstrating error< -- a real leptos::logging::error! call'>
 
@@ -79,6 +83,14 @@ func Home() {
             </Card>
             <NavList items={sections}/>
             <p>'Milk costs: ' { prices.get('milk').cloned().unwrap_or_default() }</p>
+            <p>
+                'Revenue: $'
+                { revenue.fixed(2) }
+                ' ('
+                { revenue.grouped() }
+                ') / order #'
+                { count.padded(4) }
+            </p>
             <Shapes/>
         </div>
     )

@@ -39,6 +39,10 @@ pub fn Home() -> impl IntoView {
     let (prices, set_prices) = signal(std::collections::HashMap::from([("milk".to_string(), 2f64), ("eggs".to_string(), 3f64), ("bread".to_string(), 4f64)]));
     leptos::logging::log!("{}", prices.get().get("milk").cloned().unwrap_or_default());
     leptos::logging::log!("{:?}", std::collections::HashMap::from([("a".to_string(), 1f64), ("b".to_string(), 2f64)]));
+    let (revenue, set_revenue) = signal(1234567.891);
+    leptos::logging::log!("{}", format!("{:.*}", (2) as usize, (revenue.get())));
+    leptos::logging::log!("{}", { let __kittine_v = format!("{}", (revenue.get())); let (__kittine_sign, __kittine_digits): (&str, &str) = match __kittine_v.strip_prefix('-') { Some(rest) => ("-", rest), None => ("", __kittine_v.as_str()) }; let (__kittine_int, __kittine_frac): (&str, String) = match __kittine_digits.split_once('.') { Some((i, f)) => (i, format!(".{f}")), None => (__kittine_digits, String::new()) }; let __kittine_grouped: String = __kittine_int.as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","); format!("{__kittine_sign}{__kittine_grouped}{__kittine_frac}") });
+    leptos::logging::log!("{}", format!("{:0>1$}", (count.get()), (4) as usize));
     leptos::logging::warn!("demonstrating warn< -- a real leptos::logging::warn! call");
     leptos::logging::error!("demonstrating error< -- a real leptos::logging::error! call");
     if username.get() == "Admin" {
@@ -100,6 +104,14 @@ pub fn Home() -> impl IntoView {
             <p>
                 "Milk costs: "
                 {move || prices.get().get("milk").cloned().unwrap_or_default()}
+            </p>
+            <p>
+                "Revenue: $"
+                {move || format!("{:.*}", (2) as usize, (revenue.get()))}
+                " ("
+                {move || { let __kittine_v = format!("{}", (revenue.get())); let (__kittine_sign, __kittine_digits): (&str, &str) = match __kittine_v.strip_prefix('-') { Some(rest) => ("-", rest), None => ("", __kittine_v.as_str()) }; let (__kittine_int, __kittine_frac): (&str, String) = match __kittine_digits.split_once('.') { Some((i, f)) => (i, format!(".{f}")), None => (__kittine_digits, String::new()) }; let __kittine_grouped: String = __kittine_int.as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","); format!("{__kittine_sign}{__kittine_grouped}{__kittine_frac}") }}
+                ") / order #"
+                {move || format!("{:0>1$}", (count.get()), (4) as usize)}
             </p>
             <Shapes/>
         </div>

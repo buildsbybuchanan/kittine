@@ -1324,6 +1324,78 @@ func App() {
 }
 
 #[test]
+fn fixed_lowers_to_dynamic_precision_format() {
+    // `.fixed(n)` is a reserved pseudo-method (see `codegen::render_fixed`)
+    // -- no real Rust type has an inherent `.fixed()` method, so unlike
+    // ordinary `MethodCall` interop this one doesn't render verbatim, it
+    // lowers to `format!`'s `{:.*}` dynamic-precision specifier, the only
+    // way to parameterize precision with a non-literal expression.
+    let out = compile(
+        r#"
+func App() {
+    craft<price.fixed(2)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"format!("{:.*}", (2) as usize, (price))"#));
+}
+
+#[test]
+fn fixed_accepts_a_non_literal_precision_argument() {
+    // The whole point of lowering to `{:.*}` instead of a literal `{:.2}`
+    // spec: the precision argument can be any expression -- here, another
+    // signal read -- not just a compile-time constant.
+    let out = compile(
+        r#"
+func App() {
+    <{price}> >> #n 3.5
+    <{decimals}> >> #n 2
+    craft<price.fixed(decimals)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"format!("{:.*}", (decimals.get()) as usize, (price.get()))"#));
+}
+
+#[test]
+fn padded_lowers_to_dynamic_width_zero_fill() {
+    // `.padded(width)` is the same class of reserved pseudo-method as
+    // `.fixed` -- Rust has no `.padded()` method either -- lowering to
+    // `format!`'s `0>1$` fill/align/dynamic-width specifier.
+    let out = compile(
+        r#"
+func App() {
+    craft<n.padded(3)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"format!("{:0>1$}", (n), (3) as usize)"#));
+}
+
+#[test]
+fn grouped_lowers_to_a_thousands_separator_block_expression() {
+    // `.grouped()` has no `format!` macro-syntax equivalent at all (no
+    // grouping specifier exists), so it's the one pseudo-method that lowers
+    // to a small self-contained Rust block expression instead of a single
+    // `format!` call -- still one expression, valid anywhere a
+    // `MethodCall` is.
+    let out = compile(
+        r#"
+func App() {
+    craft<total.grouped()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("__kittine_grouped"));
+    assert!(out.contains("rchunks(3)"));
+    assert!(out.contains("format!(\"{}\", (total))"));
+}
+
+#[test]
 fn calling_the_result_of_an_expression_renders_verbatim() {
     // `use_navigate()('/', ..)` -- calling the closure `use_navigate()`
     // returns immediately, rather than a bare named function -- is a
