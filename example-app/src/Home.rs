@@ -43,6 +43,10 @@ pub fn Home() -> impl IntoView {
     leptos::logging::log!("{}", format!("{:.*}", (2) as usize, (revenue.get())));
     leptos::logging::log!("{}", { let __kittine_v = format!("{}", (revenue.get())); let (__kittine_sign, __kittine_digits): (&str, &str) = match __kittine_v.strip_prefix('-') { Some(rest) => ("-", rest), None => ("", __kittine_v.as_str()) }; let (__kittine_int, __kittine_frac): (&str, String) = match __kittine_digits.split_once('.') { Some((i, f)) => (i, format!(".{f}")), None => (__kittine_digits, String::new()) }; let __kittine_grouped: String = __kittine_int.as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","); format!("{__kittine_sign}{__kittine_grouped}{__kittine_frac}") });
     leptos::logging::log!("{}", format!("{:0>1$}", (count.get()), (4) as usize));
+    let (joined, set_joined) = signal(chrono::Utc::now());
+    leptos::logging::log!("{}", (joined.get()).format(&("%Y-%m-%d")).to_string());
+    let (launchDay, set_launchDay) = signal(chrono::NaiveDateTime::parse_from_str(&("2026-01-01 09:00:00"), &("%Y-%m-%d %H:%M:%S")).unwrap().and_utc());
+    leptos::logging::log!("{}", (launchDay.get()).format(&("%B %d, %Y")).to_string());
     leptos::logging::warn!("demonstrating warn< -- a real leptos::logging::warn! call");
     leptos::logging::error!("demonstrating error< -- a real leptos::logging::error! call");
     if username.get() == "Admin" {
@@ -112,6 +116,12 @@ pub fn Home() -> impl IntoView {
                 {move || { let __kittine_v = format!("{}", (revenue.get())); let (__kittine_sign, __kittine_digits): (&str, &str) = match __kittine_v.strip_prefix('-') { Some(rest) => ("-", rest), None => ("", __kittine_v.as_str()) }; let (__kittine_int, __kittine_frac): (&str, String) = match __kittine_digits.split_once('.') { Some((i, f)) => (i, format!(".{f}")), None => (__kittine_digits, String::new()) }; let __kittine_grouped: String = __kittine_int.as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","); format!("{__kittine_sign}{__kittine_grouped}{__kittine_frac}") }}
                 ") / order #"
                 {move || format!("{:0>1$}", (count.get()), (4) as usize)}
+            </p>
+            <p>
+                "Joined: "
+                {move || (joined.get()).format(&("%Y-%m-%d")).to_string()}
+                " / Launch day: "
+                {move || (launchDay.get()).format(&("%B %d, %Y")).to_string()}
             </p>
             <Shapes/>
         </div>

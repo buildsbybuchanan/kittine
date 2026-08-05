@@ -308,6 +308,7 @@ fn rust_type(ty: &str) -> String {
         "Num" => "f64".to_string(),
         "Word" => "String".to_string(),
         "Flag" => "bool".to_string(),
+        "Date" => "chrono::DateTime<chrono::Utc>".to_string(),
         "Children" => "Children".to_string(),
         "T" => "T".to_string(),
         other => other.to_string(),
@@ -323,7 +324,9 @@ fn rust_type(ty: &str) -> String {
 /// `Copy` scalars — a reference to a user-declared `litter`/`breed`, which
 /// `gen_litter`/`gen_breed` never derives `Copy` for.
 fn is_non_copy_param_type(ty: &str) -> bool {
-    !matches!(ty, "Num" | "Flag" | "Children")
+    // `chrono::DateTime<Utc>` is `Copy` (its `Offset` type, `Utc`, is a
+    // zero-sized `Copy` unit struct), same reasoning as `Num`/`Flag`.
+    !matches!(ty, "Num" | "Flag" | "Date" | "Children")
 }
 
 fn param_list_rust(params: &[Param]) -> String {
@@ -831,6 +834,7 @@ fn substitute_self(expr: &Expr, name: &str, scope: &Scope) -> String {
         Expr::Closure { params, body } => {
             render_closure(params, body, scope, &|e, s| substitute_self(e, name, s))
         }
+        Expr::Now => "chrono::Utc::now()".to_string(),
     }
 }
 
@@ -1036,15 +1040,21 @@ fn render_generic_field_value(expr: &Expr, render: &dyn Fn(&Expr) -> String) -> 
 /// `Vec::get(0f64)`), and Kittine has no way to tell which. Rust's own
 /// type checker is the source of truth on whether the call is valid.
 ///
-/// Three method names are reserved exceptions, checked first, exactly the
+/// Five method names are reserved exceptions, checked first, exactly the
 /// way `name == "stash"` is a reserved exception in
 /// [`render_struct_init`]: `fixed`/`padded`/`grouped` are number-formatting
 /// utilities `format!`'s macro syntax can express but no real Rust *method*
 /// on `f64`/any other type can (Rust has no `.fixed()`/`.padded()`/
 /// `.grouped()` inherent method — this isn't interop with something that
 /// already exists, it's Kittine synthesizing the `format!` call a `.kitty`
-/// author would otherwise have to drop into raw Rust for). See
-/// [`render_fixed`], [`render_padded`], [`render_grouped`].
+/// author would otherwise have to drop into raw Rust for). `formatted`/
+/// `toDate` are the `Date`-typed sibling: real `chrono` methods exist
+/// (`DateTime::format`, `NaiveDateTime::parse_from_str`) but under
+/// different names/shapes than a `.kitty` author would guess, so these two
+/// reserved names give the Date/Time type the same "no dedicated syntax
+/// needed" ergonomics `fixed`/`padded`/`grouped` already give `Num`. See
+/// [`render_fixed`], [`render_padded`], [`render_grouped`],
+/// [`render_formatted`], [`render_to_date`].
 fn render_method_call(
     receiver: &Expr,
     method: &str,
@@ -1055,6 +1065,8 @@ fn render_method_call(
         ("fixed", [precision]) => return render_fixed(receiver, precision, render),
         ("padded", [width]) => return render_padded(receiver, width, render),
         ("grouped", []) => return render_grouped(receiver, render),
+        ("formatted", [pattern]) => return render_formatted(receiver, pattern, render),
+        ("toDate", [pattern]) => return render_to_date(receiver, pattern, render),
         _ => {}
     }
     let rendered_args: Vec<String> = args.iter().map(|a| render(a)).collect();
@@ -1116,6 +1128,43 @@ let __kittine_grouped: String = __kittine_int.as_bytes().rchunks(3).rev()\
 .map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(\",\"); \
 format!(\"{{__kittine_sign}}{{__kittine_grouped}}{{__kittine_frac}}\") }}",
         receiver = render(receiver)
+    )
+}
+
+/// Renders `receiver.formatted(pattern)` — a `chrono` strftime-pattern
+/// format of a `Date` value, e.g. `moment.formatted("%Y-%m-%d")` on `now>`
+/// -> `"2026-08-04"`. Lowers to `receiver.format(&(pattern)).to_string()`:
+/// `chrono::DateTime::format` needs a `&str` specifically (not
+/// `impl AsRef<str>`), so `&(pattern)` leans on Rust's own deref coercion
+/// to accept either a bare string literal (`&(pattern)` is `&&str`, which
+/// coerces down one level) or an owned `Word` signal/`hold` value
+/// (`&(pattern)` is `&String`, which coerces via `Deref<Target = str>`) —
+/// same "render plain, let Rust's own coercion sort it out" trust model
+/// [`render_method_call`] already has for an arbitrary receiver/argument.
+fn render_formatted(receiver: &Expr, pattern: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "({}).format(&({})).to_string()",
+        render(receiver),
+        render(pattern)
+    )
+}
+
+/// Renders `receiver.toDate(pattern)` — parses a `Word` (string) value into
+/// a `Date`, the reverse of [`render_formatted`], e.g.
+/// `"2026-08-04".toDate("%Y-%m-%d %H:%M:%S")`. Lowers to
+/// `chrono::NaiveDateTime::parse_from_str(&(receiver), &(pattern))
+/// .unwrap().and_utc()` — `parse_from_str` needs a *full* date+time pattern
+/// (a date-only pattern like `"%Y-%m-%d"` alone doesn't parse via this
+/// path; see `docs/LANGUAGE.md` § Known limitations), and `.unwrap()`
+/// panics on a bad parse rather than returning a `Result` — the same
+/// documented "no un-modeled-failure story yet" limitation every other
+/// interop escape hatch already has (see `docs/ROADMAP.md` § Production
+/// readiness), not a new gap this method introduces.
+fn render_to_date(receiver: &Expr, pattern: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "chrono::NaiveDateTime::parse_from_str(&({}), &({})).unwrap().and_utc()",
+        render(receiver),
+        render(pattern)
     )
 }
 
@@ -1301,6 +1350,7 @@ fn expr_to_rust(expr: &Expr, scope: &Scope) -> String {
             catch_all,
         } => render_pounce_expr(subject, arms, catch_all, scope, &expr_to_rust),
         Expr::Closure { params, body } => render_closure(params, body, scope, &expr_to_rust),
+        Expr::Now => "chrono::Utc::now()".to_string(),
     }
 }
 
@@ -1516,7 +1566,8 @@ fn is_children_call(expr: &Expr) -> bool {
 fn expr_references_event(expr: &Expr) -> bool {
     match expr {
         Expr::Ident(n) => n == "event",
-        Expr::VarRead(_) | Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Path(_) => false,
+        Expr::VarRead(_) | Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Path(_)
+        | Expr::Now => false,
         Expr::Binary { left, right, .. } => {
             expr_references_event(left) || expr_references_event(right)
         }
@@ -1580,7 +1631,7 @@ fn non_copy_tracked_names(expr: &Expr, scope: &Scope, out: &mut Vec<String>) {
     };
     match expr {
         Expr::Ident(name) | Expr::VarRead(name) => note(name, out),
-        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Path(_) => {}
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Path(_) | Expr::Now => {}
         Expr::Binary { left, right, .. } => {
             non_copy_tracked_names(left, scope, out);
             non_copy_tracked_names(right, scope, out);

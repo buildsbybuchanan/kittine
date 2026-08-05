@@ -355,6 +355,13 @@ pub enum Expr {
         params: Vec<String>,
         body: Box<Expr>,
     },
+    /// `now>` — the Date/Time literal, same `>`-suffixed-keyword shape as
+    /// `yes>`/`no>` (see `Expr::Bool`). The only way to produce a `Date`
+    /// value from scratch (there's no date-literal syntax for a fixed
+    /// calendar date, e.g. no `now>`-like spelling for "2026-01-01" —
+    /// scoped out for this round). Lowers to `chrono::Utc::now()`; see
+    /// `codegen::rust_type`'s `"Date"` arm.
+    Now,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

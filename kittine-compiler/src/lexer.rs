@@ -29,6 +29,7 @@ pub enum TokenKind {
     TypeNum,  // #n
     TypeWord, // #w
     TypeFlag, // #f
+    TypeDate, // #d
     /// `#t` — the generic type-parameter placeholder inside a `litter`/
     /// `breed`'s own `<#t>` declaration and field/variant types (e.g.
     /// `litter Box<#t> { value #t }`). Distinct from `TypeNum`/`TypeWord`/
@@ -76,6 +77,7 @@ pub enum TokenKind {
     Number(f64),
     Str(String),
     Bool(bool), // yes> / no>
+    Now,        // now> -- the Date/Time literal (see ast::Expr::Now)
 
     // Punctuation
     LParen,
@@ -113,6 +115,7 @@ impl fmt::Display for TokenKind {
             TokenKind::TypeNum => write!(f, "#n"),
             TokenKind::TypeWord => write!(f, "#w"),
             TokenKind::TypeFlag => write!(f, "#f"),
+            TokenKind::TypeDate => write!(f, "#d"),
             TokenKind::TypeGeneric => write!(f, "#t"),
             TokenKind::Lt => write!(f, "<"),
             TokenKind::Gt => write!(f, ">"),
@@ -144,6 +147,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Str(s) => write!(f, "\"{s}\""),
             TokenKind::Bool(true) => write!(f, "yes>"),
             TokenKind::Bool(false) => write!(f, "no>"),
+            TokenKind::Now => write!(f, "now>"),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::LBrace => write!(f, "{{"),
@@ -447,11 +451,12 @@ impl Lexer {
                     Some('n') => TokenKind::TypeNum,
                     Some('w') => TokenKind::TypeWord,
                     Some('f') => TokenKind::TypeFlag,
+                    Some('d') => TokenKind::TypeDate,
                     Some('t') => TokenKind::TypeGeneric,
                     other => {
                         return Err(LexError {
                             message: format!(
-                                "unknown type sigil '#{}': expected #n (Num), #w (Word), #f (Flag), or #t (a litter/breed's own generic type parameter)",
+                                "unknown type sigil '#{}': expected #n (Num), #w (Word), #f (Flag), #d (Date), or #t (a litter/breed's own generic type parameter)",
                                 other.map(String::from).unwrap_or_default()
                             ),
                             line,
@@ -527,6 +532,10 @@ impl Lexer {
                     "no" if self.peek() == Some('>') => {
                         self.advance();
                         TokenKind::Bool(false)
+                    }
+                    "now" if self.peek() == Some('>') => {
+                        self.advance();
+                        TokenKind::Now
                     }
                     _ => TokenKind::Ident(word),
                 };

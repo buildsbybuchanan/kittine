@@ -106,6 +106,7 @@ fn infer_return_type(expr: &Expr, param_types: &HashMap<String, String>) -> Stri
         Expr::Str(_) => "Word".to_string(),
         Expr::Number(_) => "Num".to_string(),
         Expr::Bool(_) => "Flag".to_string(),
+        Expr::Now => "Date".to_string(),
         Expr::Typed { ty, .. } => ty.clone(),
         Expr::Ident(n) => param_types
             .get(n)

@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
+## [Unreleased] - 2026-08-05
+
+### Added (a real `Date` type: `now>` / `#d` / `.formatted` / `.toDate`)
+
+- **`now>`, `#d`, `.formatted(pattern)`, `.toDate(pattern)`** — a real
+  `Date` type, closing the date/time half of the "string/date/number
+  formatting utilities" gap the 2026-08-01 entry below deliberately left
+  open (it needed an actual type, not just more number formatting). `now>`
+  is the literal (same `>`-suffixed shape as `yes>`/`no>`), lowering to
+  `chrono::Utc::now()`; `#d` is the type tag, the same two-character-sigil
+  convention `#n`/`#w`/`#f` already use (`#d[]`/`#d{}` work too);
+  `.formatted`/`.toDate` are two more reserved method names (same
+  precedent as `.fixed`/`.padded`/`.grouped`), lowering to
+  `receiver.format(&(pattern)).to_string()` and
+  `chrono::NaiveDateTime::parse_from_str(&(receiver), &(pattern)).unwrap()
+  .and_utc()` respectively. A project with a `Date` value needs `chrono`
+  as a real Cargo dependency — `features = ["wasmbind"]` specifically on a
+  CSR/WASM target, since `chrono::Utc::now()` otherwise compiles fine but
+  panics at runtime in the browser (`std::time::SystemTime::now()` has no
+  `wasm32-unknown-unknown` implementation without it). `Date` is `Copy`
+  (`chrono::DateTime<Utc>`'s `Offset` type, `Utc`, is a zero-sized `Copy`
+  unit struct), so it joins `Num`/`Flag` rather than getting the
+  `Word`/`litter`/`breed` pre-clone treatment. `.toDate` needs a full
+  date+time pattern, not date-only (inherited from
+  `chrono::NaiveDateTime::parse_from_str` itself, which has no date-only
+  parse path), and its `.unwrap()` panics on a malformed input rather than
+  returning a `Result` — the same "no un-modeled-failure story yet"
+  limitation every other interop escape hatch already has. See
+  [LANGUAGE.md § Date and time](docs/LANGUAGE.md#date-and-time).
+  Verified with 7 new compiler tests (174 total, up from 167) and a real
+  `cargo check --target wasm32-unknown-unknown` against Leptos 0.7 —
+  `example-app`'s `Home.kitty` gained a `joined` signal (`now>`, displayed
+  via `.formatted("%Y-%m-%d")`) and a `launchDay` signal (a fixed date
+  parsed from a string literal via `.toDate(...)`, displayed via
+  `.formatted("%B %d, %Y")`), both rendered live in the view.
+
 ## [Unreleased] - 2026-08-01
 
 ### Added (number formatting: `.fixed` / `.padded` / `.grouped`)

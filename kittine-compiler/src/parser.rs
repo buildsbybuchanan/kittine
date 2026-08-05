@@ -214,9 +214,10 @@ impl Parser {
             TokenKind::TypeNum => "Num".to_string(),
             TokenKind::TypeWord => "Word".to_string(),
             TokenKind::TypeFlag => "Flag".to_string(),
+            TokenKind::TypeDate => "Date".to_string(),
             _ => {
                 return Err(self.err(format!(
-                    "expected a type tag (#n for Num, #w for Word, or #f for Flag), found '{}'",
+                    "expected a type tag (#n for Num, #w for Word, #f for Flag, or #d for Date), found '{}'",
                     self.peek().kind
                 )));
             }
@@ -243,7 +244,7 @@ impl Parser {
     fn peek_is_type_sigil(&self) -> bool {
         matches!(
             self.peek().kind,
-            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag
+            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag | TokenKind::TypeDate
         )
     }
 
@@ -1243,6 +1244,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Bool(b))
             }
+            TokenKind::Now => {
+                self.advance();
+                Ok(Expr::Now)
+            }
             TokenKind::Ident(name) => {
                 self.advance();
                 if matches!(self.peek().kind, TokenKind::ColonColon) {
@@ -1284,7 +1289,7 @@ impl Parser {
                 }
             }
             TokenKind::LBracket => self.parse_array_literal(),
-            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag => {
+            TokenKind::TypeNum | TokenKind::TypeWord | TokenKind::TypeFlag | TokenKind::TypeDate => {
                 self.parse_type_tag()
             }
             TokenKind::KeywordPounce => self.parse_pounce_expr(),
@@ -1396,16 +1401,20 @@ impl Parser {
             ("Num", Expr::Number(_)) => true,
             ("Word", Expr::Str(_)) => true,
             ("Flag", Expr::Bool(_)) => true,
-            ("Num[]" | "Word[]" | "Flag[]", Expr::Array(items)) => {
+            ("Date", Expr::Now) => true,
+            ("Num[]" | "Word[]" | "Flag[]" | "Date[]", Expr::Array(items)) => {
                 array_elements_match(&ty, items)
             }
-            (_, Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_)) => false,
+            (_, Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Now | Expr::Array(_)) => {
+                false
+            }
             _ => true, // a variable read or computed expression — trust the annotation
         };
         if !matches_ty {
             let sigil = match ty.as_str() {
                 "Num" | "Num[]" | "Num{}" => "#n",
                 "Word" | "Word[]" | "Word{}" => "#w",
+                "Date" | "Date[]" | "Date{}" => "#d",
                 _ => "#f",
             };
             return Err(ParseError {
@@ -1625,6 +1634,7 @@ fn array_elements_match(array_ty: &str, items: &[Expr]) -> bool {
         "Num[]" => "Num",
         "Word[]" => "Word",
         "Flag[]" => "Flag",
+        "Date[]" => "Date",
         _ => return true,
     };
     items.iter().all(|item| {
@@ -1633,6 +1643,7 @@ fn array_elements_match(array_ty: &str, items: &[Expr]) -> bool {
             ("Num", Expr::Number(_))
                 | ("Word", Expr::Str(_))
                 | ("Flag", Expr::Bool(_))
+                | ("Date", Expr::Now)
                 | (_, Expr::Ident(_) | Expr::VarRead(_) | Expr::Call { .. } | Expr::MethodCall { .. } | Expr::CallResult { .. } | Expr::Tuple(_) | Expr::Path(_) | Expr::Binary { .. } | Expr::InlineAssign { .. } | Expr::Typed { .. })
         )
     })

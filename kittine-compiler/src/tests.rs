@@ -1396,6 +1396,108 @@ func App() {
 }
 
 #[test]
+fn now_literal_lowers_to_chrono_utc_now() {
+    // `now>` is the only way to produce a `Date` value from scratch -- same
+    // `>`-suffixed-keyword shape as `yes>`/`no>` -- and it's the one piece
+    // of the Date/Time gap ROADMAP.md logged as still open after the
+    // `.fixed`/`.padded`/`.grouped` round: a real type, not just more
+    // number-formatting.
+    let out = compile(
+        r#"
+func App() {
+    <{moment}> >> #d now>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("let (moment, set_moment) = signal(chrono::Utc::now());"));
+}
+
+#[test]
+fn date_type_tag_rejects_a_non_date_literal() {
+    // Same mismatch-detection path `#n 'oops'` already exercises --
+    // `#d` only matches `Expr::Now`, not a number/string/bool literal.
+    let message = compile_err(
+        r#"
+func App() {
+    <{moment}> >> #d 5
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(message.contains("does not match"));
+}
+
+#[test]
+fn unknown_type_tag_error_lists_date_sigil() {
+    // The lex-error message enumerating valid sigils must mention `#d` now
+    // that it's a real one, not just #n/#w/#f/#t.
+    let src = r#"
+func App() {
+    <{count}> >> #z 0
+    return ( <div></div> )
+}
+"#;
+    let err = lexer::tokenize(src).expect_err("expected a lex error for an unknown type sigil");
+    assert!(err.message.contains("#d (Date)"), "got: {}", err.message);
+}
+
+#[test]
+fn formatted_lowers_to_chrono_strftime() {
+    // `.formatted(pattern)` is the `Date`-typed sibling of `.fixed`/
+    // `.padded`/`.grouped` -- a reserved method name since Rust's real
+    // `chrono::DateTime::format` takes a different shape (a `&str`
+    // strftime pattern, returning a lazy `DelayedFormat` rather than a
+    // `String`) than a `.kitty` author would guess from the method name
+    // alone.
+    let out = compile(
+        r#"
+func App() {
+    <{moment}> >> #d now>
+    craft<moment.formatted("%Y-%m-%d")>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"(moment.get()).format(&("%Y-%m-%d")).to_string()"#));
+}
+
+#[test]
+fn to_date_lowers_to_chrono_parse_from_str() {
+    // `.toDate(pattern)` is the reverse of `.formatted` -- parses a `Word`
+    // into a `Date` via `chrono::NaiveDateTime::parse_from_str`, which
+    // needs a full date+time pattern (see LANGUAGE.md's Known limitations:
+    // a date-only pattern doesn't parse via this path).
+    let out = compile(
+        r#"
+func App() {
+    <{raw}> >> #w '2026-08-04 12:00:00'
+    craft<raw.toDate("%Y-%m-%d %H:%M:%S")>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(
+        r#"chrono::NaiveDateTime::parse_from_str(&(raw.get()), &("%Y-%m-%d %H:%M:%S")).unwrap().and_utc()"#
+    ));
+}
+
+#[test]
+fn date_typed_prop_and_return() {
+    // `#d` works as a plain param/return type tag, the same way `#n`/`#w`/
+    // `#f` already do -- proof the type made it into `sig_type_str`/
+    // `parse_type_tag`, not just expression position.
+    let out = compile(
+        r#"
+purr describe(#d moment) #w {
+    return (moment.formatted("%Y-%m-%d"))
+}
+"#,
+    );
+    assert!(out.contains("fn describe(moment: chrono::DateTime<chrono::Utc>) -> String"));
+}
+
+#[test]
 fn calling_the_result_of_an_expression_renders_verbatim() {
     // `use_navigate()('/', ..)` -- calling the closure `use_navigate()`
     // returns immediately, rather than a bare named function -- is a

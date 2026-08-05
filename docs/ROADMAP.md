@@ -235,6 +235,54 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
     (`revenue.fixed(2)`, `revenue.grouped()`, and `count.padded(4)` reusing
     the existing click-counter signal), both logged via `craft<...>` and
     rendered live in the view. Landed 2026-08-01.
+- **Phase 2 continues: a real `Date` type** — the piece the round above
+  deliberately left open, needing an actual type rather than more number
+  formatting: `now>` (a `>`-suffixed literal, same shape as `yes>`/`no>`),
+  a `#d` type tag (`Date`'s two-character sigil, same convention as
+  `#n`/`#w`/`#f`, including `#d[]`/`#d{}` array/stash forms), and two
+  reserved methods — `.formatted(pattern)`/`.toDate(pattern)` — closing
+  the date/time half of the "string/date/number formatting utilities" gap
+  the `.fixed`/`.padded`/`.grouped` round above logged as still open. See
+  [LANGUAGE.md § Date and time](LANGUAGE.md#date-and-time).
+  - Lowers to `chrono::DateTime<chrono::Utc>` — `now>` to
+    `chrono::Utc::now()`, `.formatted` to `receiver.format(&(pattern))
+    .to_string()`, `.toDate` to `chrono::NaiveDateTime::parse_from_str(
+    &(receiver), &(pattern)).unwrap().and_utc()`. A project with a `Date`
+    value needs `chrono` as a real Cargo dependency — `features =
+    ["wasmbind"]` specifically on a CSR/WASM target, a real, non-optional
+    requirement: without it, `chrono::Utc::now()` compiles fine but
+    *panics at runtime in the browser* (`std::time::SystemTime::now()`
+    has no `wasm32-unknown-unknown` implementation without it) — the kind
+    of gap that only surfaces by actually running the generated code in a
+    browser, not just compiling it, so it's called out here explicitly
+    rather than left for the next round to rediscover.
+  - `Date` is `Copy` (`chrono::DateTime<Utc>`'s `Offset` type, `Utc`, is a
+    zero-sized `Copy` unit struct), so it joins `Num`/`Flag` in
+    `is_non_copy_param_type`'s exception list rather than getting the
+    `Word`/`litter`/`breed` pre-clone treatment.
+  - **`.toDate` needs a full date+time pattern, not date-only** — inherited
+    from `chrono::NaiveDateTime::parse_from_str` itself, which has no
+    date-only-pattern parse path — and its generated `.unwrap()` panics on
+    a malformed input rather than returning a `Result`, the same
+    "no un-modeled-failure story yet" limitation every other interop
+    escape hatch already has. See [LANGUAGE.md § Known
+    limitations](LANGUAGE.md#known-limitations).
+  - Verified with 7 new compiler tests (174 total, up from 167) and a real
+    `cargo check --target wasm32-unknown-unknown` against Leptos 0.7 (this
+    sandbox had `npm`/`node` available but was severely memory-constrained
+    — under 600MB free on a 2-core/3.6GB box — which made a couple of
+    *unrelated* dependency crates trip real rustc/LLVM internal-compiler-
+    error crashes under parallel codegen; resolved by capping to a single
+    build job and disabling debug-info generation for the check, not by
+    changing any generated code, and confirmed as an environment issue,
+    not a Kittine one, since the crashes moved between different
+    unrelated crates — `version_check`, `wasm-bindgen-macro-support` — on
+    successive retries) — `example-app`'s `Home.kitty` gained a `joined`
+    signal (`now>`, the "current moment," displayed via
+    `.formatted("%Y-%m-%d")`) and a `launchDay` signal (a fixed date
+    parsed from a string literal via `.toDate(...)`, displayed via
+    `.formatted("%B %d, %Y")`), both rendered live in the view. Landed
+    2026-08-05.
 - **Codegen targets real Leptos 0.7** — every language feature above
   has been round-tripped through `cargo check`/`cargo build` against the
   actual `leptos` crate, not just asserted against generated-string
@@ -334,7 +382,7 @@ authoritative day-to-day list; this file is about direction, not spec.
 
 **Not yet.** This is answered honestly here every time something changes
 — per standing instruction, not a one-time verdict. Kittine is a real,
-tested compiler (162+ tests, every feature round-tripped against actual
+tested compiler (174+ tests, every feature round-tripped against actual
 Leptos under both CSR/hydrate and SSR configurations, routing (including
 dynamic segments) driven end-to-end in a real browser) with a language
 core solid enough for a genuine multi-page site, CSR or server-rendered.
@@ -401,6 +449,17 @@ vision](#full-vision-phased-honest) are where these get addressed.
   parser tweak — likely its own scoped design, not a quick follow-on to
   `event`.
 
+Done: ~~Date/time formatting and parsing~~ (a real `Date` type —
+`now>` the literal, `#d` the type tag, `.formatted(pattern)`/
+`.toDate(pattern)` the two reserved methods bridging to `chrono` — closing
+the gap the round just below deliberately left open. See [Status § Phase 2
+continues](#status-what-works-today), [LANGUAGE.md § Date and
+time](LANGUAGE.md#date-and-time)) — landed 2026-08-05. Narrower gap left,
+logged in [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations):
+`.toDate` needs a full date+time pattern, not date-only (inherited from
+`chrono::NaiveDateTime::parse_from_str` itself). Still open, logged in
+[Full vision § Phase 2](#phase-2--standard-library): validation.
+
 Done: ~~Number formatting beyond what `MethodCall` interop reaches~~
 (`.fixed(precision)`/`.padded(width)`/`.grouped()` — three reserved
 method names lowering to `format!`'s dynamic-precision/dynamic-width
@@ -409,8 +468,7 @@ since `format!` has no thousands-grouping specifier at all. See [Status §
 Phase 2 continues](#status-what-works-today), [LANGUAGE.md § Number
 formatting](LANGUAGE.md#number-formatting)) — landed 2026-08-01. Still open,
 logged in [Full vision § Phase 2](#phase-2--standard-library): date/time
-formatting (no `Date`/`Time` type exists in Kittine yet — a bigger design
-decision, deliberately not folded into this round) and validation.
+formatting (closed separately, just above — see that entry) and validation.
 
 Done: ~~No array-of-`litter`/`breed` types~~ and ~~no lambda/closure-
 argument syntax for a filter predicate~~ (array-typed props/returns are no
@@ -699,22 +757,22 @@ Every item originally listed under this phase has landed, as of
 ~~JSON (de)serialization~~ (every `litter`/`breed` derives
 `serde::Serialize`/`Deserialize` — YAML/CSV covered by the same derive,
 just undemonstrated; XML is a weaker fit for serde's derive model),
-~~logging~~ (`warn<...>`/`error<...>` join `craft<...>`), and ~~number
+~~logging~~ (`warn<...>`/`error<...>` join `craft<...>`), ~~number
 formatting beyond what `MethodCall` interop reaches~~ (`.fixed(precision)`/
-`.padded(width)`/`.grouped()` — see [Status](#status-what-works-today))
-are done. File I/O and environment/config access are callable today via
-existing path-qualified-call interop (server-side only — no filesystem/env
-access from CSR/WASM) but have no real example wired up yet. Still fully
-open: an HTTP client (genuinely blocked — needs `async`/`await` support,
-which doesn't exist yet; a closure literal for the predicate/callback side
+`.padded(width)`/`.grouped()`), and ~~date/time formatting and parsing~~
+(a real `Date` type — `now>`/`#d`/`.formatted(pattern)`/`.toDate(pattern)`,
+lowering to `chrono` — see [Status](#status-what-works-today),
+[LANGUAGE.md § Date and time](LANGUAGE.md#date-and-time)) are done. File
+I/O and environment/config access are callable today via existing
+path-qualified-call interop (server-side only — no filesystem/env access
+from CSR/WASM) but have no real example wired up yet. Still fully open: an
+HTTP client (genuinely blocked — needs `async`/`await` support, which
+doesn't exist yet; a closure literal for the predicate/callback side
 landed separately, see [LANGUAGE.md § Closures](LANGUAGE.md#closures));
-**date/time formatting and parsing specifically** (no `Date`/`Time` type
-exists in Kittine at all yet — a real design decision, its own literal
-syntax and probably its own type-tag, scoped out of the number-formatting
-round above on purpose rather than half-built); string formatting beyond
-what `MethodCall` interop already reaches (case conversion/`trim`/etc.
-already work via plain method-call passthrough — no additional gap found
-there beyond what was already true); and validation.
+string formatting beyond what `MethodCall` interop already reaches (case
+conversion/`trim`/etc. already work via plain method-call passthrough —
+no additional gap found there beyond what was already true); and
+validation.
 
 ### Phase 3 — Backend & data
 

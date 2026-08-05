@@ -184,7 +184,7 @@ fn collect_names_expr(e: &Expr, set: &mut HashSet<String>) {
         Expr::Ident(name) | Expr::VarRead(name) => {
             set.insert(name.clone());
         }
-        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) => {}
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Now => {}
         Expr::Binary { left, right, .. } => {
             collect_names_expr(left, set);
             collect_names_expr(right, set);

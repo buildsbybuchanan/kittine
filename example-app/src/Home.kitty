@@ -27,6 +27,10 @@ func Home() {
     craft<revenue.fixed(2)>
     craft<revenue.grouped()>
     craft<count.padded(4)>
+    <{joined}> >> #d now>
+    craft<joined.formatted("%Y-%m-%d")>
+    <{launchDay}> >> '2026-01-01 09:00:00'.toDate("%Y-%m-%d %H:%M:%S")
+    craft<launchDay.formatted("%B %d, %Y")>
     warn<'demonstrating warn< -- a real leptos::logging::warn! call'>
     error<'demonstrating error< -- a real leptos::logging::error! call'>
 
@@ -90,6 +94,12 @@ func Home() {
                 { revenue.grouped() }
                 ') / order #'
                 { count.padded(4) }
+            </p>
+            <p>
+                'Joined: '
+                { joined.formatted("%Y-%m-%d") }
+                ' / Launch day: '
+                { launchDay.formatted("%B %d, %Y") }
             </p>
             <Shapes/>
         </div>

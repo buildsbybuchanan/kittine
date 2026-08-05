@@ -19,6 +19,7 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 - [Calling functions](#calling-functions)
   - [Method calls](#method-calls)
   - [Number formatting (`.fixed` / `.padded` / `.grouped`)](#number-formatting)
+  - [Date and time (`now>` / `#d` / `.formatted` / `.toDate`)](#date-and-time)
   - [Tuples](#tuples)
 - [Modules and imports](#modules-and-imports)
   - [Visibility](#visibility)
@@ -35,7 +36,7 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
 - [Booleans (`yes>` / `no>`)](#booleans)
 - [Arrays (`[ ]`)](#arrays)
 - [Stashes (`stash{ }`, maps)](#stashes)
-- [Type tags (`#n` / `#w` / `#f`)](#type-tags)
+- [Type tags (`#n` / `#w` / `#f` / `#d`)](#type-tags)
 - [Type inference](#type-inference)
 - [Litters (`litter`, structs)](#litters)
 - [Breeds (`breed`, enums)](#breeds)
@@ -321,6 +322,65 @@ it fail only once Rust's own type checker sees the generated
 (though `String` does implement `Display`, so this specific misuse would
 actually still compile — it just wouldn't do anything meaningful with
 `.fixed`'s intent of controlling decimal places on a non-numeric value).
+
+### Date and time
+
+```kitty
+<{joined}> >> #d now>
+craft<joined.formatted("%Y-%m-%d")>
+<{launchDay}> >> '2026-01-01 09:00:00'.toDate("%Y-%m-%d %H:%M:%S")
+craft<launchDay.formatted("%B %d, %Y")>
+```
+
+`Date` is Kittine's fourth scalar type (alongside `Num`/`Word`/`Flag`),
+closing the "date/time formatting" half of Phase 2's standard-library gap
+(see [ROADMAP.md § Phase 2](ROADMAP.md#phase-2--standard-library)) —
+deliberately left open in the `.fixed`/`.padded`/`.grouped` round above
+since it needed a real type, not just more number formatting. It lowers to
+`chrono::DateTime<chrono::Utc>`, and a project with a `Date` value needs
+`chrono` as a real Cargo dependency (`features = ["wasmbind"]` on a
+CSR/WASM target — see this section's own Compilation note below), the same
+way a `litter`/`breed` needs `serde` for JSON.
+
+- **`now>`** is the *only* way to produce a `Date` value from scratch —
+  same `>`-suffixed-keyword shape as [`yes>`/`no>`](#booleans). Lowers to
+  `chrono::Utc::now()`. There's no fixed-calendar-date literal (no
+  `now>`-like spelling for "2026-01-01") — construct one via
+  [`.toDate(pattern)`](#toDate) instead.
+- **`#d`** is the type tag for `Date`, the same two-character-sigil
+  convention `#n`/`#w`/`#f` already use — see [Type
+  tags](#type-tags). `#d[]`/`#d{}` (an array or [`stash`](#stashes) of
+  `Date`) work the same way their scalar siblings do.
+- **`.formatted(pattern)`** — a `chrono` strftime-pattern format of a
+  `Date` value, e.g. `moment.formatted("%Y-%m-%d")` → `"2026-08-04"`. A
+  reserved method name, the `Date`-typed sibling of
+  [`.fixed`/`.padded`/`.grouped`](#number-formatting): a real `chrono`
+  method exists (`DateTime::format`) but under a shape (`&str` in,
+  a lazy `DelayedFormat` out) a `.kitty` author calling it as an ordinary
+  [method call](#method-calls) wouldn't get for free — this reserved name
+  gives it the same "no dedicated syntax needed" ergonomics. Lowers to
+  `receiver.format(&(pattern)).to_string()`.
+- **`.toDate(pattern)`** — parses a `Word` into a `Date`, the reverse of
+  `.formatted`, e.g. `"2026-08-04 12:00:00".toDate("%Y-%m-%d %H:%M:%S")`.
+  Lowers to `chrono::NaiveDateTime::parse_from_str(&(receiver),
+  &(pattern)).unwrap().and_utc()` — needs a *full* date+time pattern (a
+  date-only pattern like `"%Y-%m-%d"` alone doesn't parse via this path),
+  and `.unwrap()` panics on a bad parse rather than returning a `Result`
+  — see [Known limitations](#known-limitations).
+
+| Kittine | Generated Rust |
+| --- | --- |
+| `now>` | `chrono::Utc::now()` |
+| `moment.formatted("%Y-%m-%d")` | `(moment.get()).format(&("%Y-%m-%d")).to_string()` |
+| `raw.toDate("%Y-%m-%d %H:%M:%S")` | `chrono::NaiveDateTime::parse_from_str(&(raw.get()), &("%Y-%m-%d %H:%M:%S")).unwrap().and_utc()` |
+
+#### Compilation
+
+`Date`/`#d` follows the same `is_non_copy_param_type` reasoning `Num`/
+`Flag` already get, not `Word`'s: `chrono::DateTime<Utc>` is `Copy` (its
+`Offset` type, `Utc`, is a zero-sized `Copy` unit struct), so a `Date`
+param/prop is passed by value like a number or boolean, never pre-cloned
+like a `Word`/`litter`/`breed`.
 
 ### Tuples
 
@@ -953,22 +1013,24 @@ tuple-index (`.0`/`.1`) field-access syntax to destructure that inside a
 <{count}> >> #n 0
 <{label}> >> #w 'hi'
 <{ready}> >> #f yes>
+<{moment}> >> #d now>
 ```
 
 `#t value` is an explicit type tag — the idiomatic Kittine way to annotate
 a value's type. It's a two-character sigil (one for the `#`, one for the
 type's initial) with **no closing delimiter** — shorter than every Rust
-type it can stand for (`f64`, `String`, `bool`), by design (see [Brevity
-by design](#brevity-by-design)). There are three scalar sigils, plus an
-array form for each:
+type it can stand for (`f64`, `String`, `bool`, `chrono::DateTime<Utc>`),
+by design (see [Brevity by design](#brevity-by-design)). There are four
+scalar sigils, plus an array form for each:
 
 | Tag | Matches |
 |---|---|
 | `#n` | number literals |
 | `#w` | string literals |
 | `#f` | boolean literals |
-| `#n[]` / `#w[]` / `#f[]` | array literals of the matching element type |
-| `#n{}` / `#w{}` / `#f{}` | [`stash`](#stashes) literals of the matching value type |
+| `#d` | [the `now>` literal](#date-and-time) |
+| `#n[]` / `#w[]` / `#f[]` / `#d[]` | array literals of the matching element type |
+| `#n{}` / `#w{}` / `#f{}` / `#d{}` | [`stash`](#stashes) literals of the matching value type |
 
 ```kitty
 <{scores}> >> #n[] [10, 20, 30]
@@ -2228,3 +2290,15 @@ These are intentional scope boundaries of the current prototype, not bugs:
   `craft<Litter{..}>`/`craft<stash{..}>` directly, or convert the value to
   a `Word` first (e.g. a debug-formatting `purr` helper), to work around
   this until a real fix lands.
+- **[`.toDate(pattern)`](#date-and-time) needs a full date+time pattern
+  and panics on a bad parse.** `chrono::NaiveDateTime::parse_from_str`
+  (what `.toDate` lowers to) requires the pattern to describe both a date
+  *and* a time — a date-only pattern like `"%Y-%m-%d"` alone doesn't parse
+  via this path even against a date-only string, and there's no
+  `.toDate`-equivalent for constructing a fixed calendar date some other
+  way (see [`now>`](#date-and-time)'s own note on this). The generated
+  `.unwrap()` also panics on a malformed input rather than returning a
+  `Result` — the same "no un-modeled-failure story yet" limitation every
+  other interop escape hatch already has (see [ROADMAP.md § Production
+  readiness](ROADMAP.md#production-readiness)), not a new gap this method
+  introduces.

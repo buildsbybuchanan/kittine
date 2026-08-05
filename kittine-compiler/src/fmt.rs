@@ -157,6 +157,7 @@ fn print_expr(e: &Expr, min_prec: u8) -> String {
         Expr::Closure { params, body } => {
             format!("|{}| {}", params.join(", "), print_expr(body, P_TOP))
         }
+        Expr::Now => "now>".to_string(),
     }
 }
 
@@ -268,12 +269,15 @@ fn sig_type_str(ty: &str) -> String {
         "Num" => "#n".to_string(),
         "Word" => "#w".to_string(),
         "Flag" => "#f".to_string(),
+        "Date" => "#d".to_string(),
         "Num[]" => "#n[]".to_string(),
         "Word[]" => "#w[]".to_string(),
         "Flag[]" => "#f[]".to_string(),
+        "Date[]" => "#d[]".to_string(),
         "Num{}" => "#n{}".to_string(),
         "Word{}" => "#w{}".to_string(),
         "Flag{}" => "#f{}".to_string(),
+        "Date{}" => "#d{}".to_string(),
         other => other.to_string(),
     }
 }
@@ -826,6 +830,18 @@ mod tests {
         let out = fmt_ok(src);
         assert!(out.contains("warn<'careful'>"), "got: {out}");
         assert!(out.contains("error<'oh no'>"), "got: {out}");
+        assert_idempotent(src);
+    }
+
+    #[test]
+    fn now_literal_and_date_type_tag_round_trip() {
+        // Same `>`-suffixed-keyword shape `yes>`/`no>` already round-trip
+        // via `print_expr`'s `Expr::Bool` arm -- `now>` needs the same
+        // treatment for `Expr::Now`, plus `#d` in `sig_type_str`.
+        let src = "func F(#d moment) {\n    <{seen}> >> #d now>\n}\n";
+        let out = fmt_ok(src);
+        assert!(out.contains("#d moment"), "got: {out}");
+        assert!(out.contains("#d now>"), "got: {out}");
         assert_idempotent(src);
     }
 
