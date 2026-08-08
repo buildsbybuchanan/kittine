@@ -235,6 +235,41 @@ compiling `example-app` against real Leptos 0.7 — not aspirational.
     (`revenue.fixed(2)`, `revenue.grouped()`, and `count.padded(4)` reusing
     the existing click-counter signal), both logged via `craft<...>` and
     rendered live in the view. Landed 2026-08-01.
+- **Phase 2 continues: validation** — seven more reserved method names
+  closing the "validation" item Phase 2 has logged as open since
+  2026-07-22: `.isEmail()`, `.isUrl()`, `.isNumeric()`, `.isAlpha()`,
+  `.isAlphanumeric()`, `.minLength(n)`, `.maxLength(n)`. Same trade-off as
+  `.fixed`/`.padded`/`.grouped`: none of the seven is a real inherent
+  method on `String`/`&str`, so each synthesizes a real boolean-valued
+  Rust expression instead of passing the call through as-is. See
+  [LANGUAGE.md § Validation](LANGUAGE.md#validation).
+  - `.isNumeric()`, `.minLength(n)`, and `.maxLength(n)` are single
+    expressions (`.trim().parse::<f64>().is_ok()`, a `.chars().count()`
+    comparison cast to `f64` the same "argument can be any expression"
+    way `.fixed`'s precision already is). `.isEmail()`, `.isUrl()`,
+    `.isAlpha()`, and `.isAlphanumeric()` lower to a small self-contained
+    block expression instead, the same shape `.grouped()` already uses
+    for a check `format!` itself can't express.
+  - A real bug caught by an actual `cargo check --target
+    wasm32-unknown-unknown` against Leptos 0.7, not assumed: a `.get()`
+    receiver is an unnamed temporary, and a `&str` borrowed from it via
+    `.as_ref()` doesn't live long enough for a *later* statement in the
+    same block to read it (`E0716`) unless the temporary itself is bound
+    to a named local (`__kittine_owned`) first. Caught while regenerating
+    `example-app`'s `Home.rs` from a `cargo check`, which surfaced the
+    bug in `.isUrl()`/`.isAlpha()`/`.isAlphanumeric()` — all three had
+    the same unnamed-temporary shape `.isEmail()` was already fixed for,
+    just not yet fixed themselves; a regression test now pins all four
+    sharing the `__kittine_owned` binding so this can't silently regress
+    one at a time again.
+  - Verified with 6 new compiler tests (180 total, up from 174) and a
+    real `cargo check --target wasm32-unknown-unknown` against Leptos
+    0.7 — `example-app`'s `Home.kitty` gained `signupEmail`/
+    `signupWebsite`/`signupZip` signals plus reuse of the existing
+    `username` signal, exercising all seven validators, logged via
+    `craft<...>` and rendered live in the view (including a real
+    `onInput` binding on `signupEmail` so `.isEmail()` re-evaluates as
+    the user types). Landed 2026-08-08.
 - **Phase 2 continues: a real `Date` type** — the piece the round above
   deliberately left open, needing an actual type rather than more number
   formatting: `now>` (a `>`-suffixed literal, same shape as `yes>`/`no>`),
@@ -449,6 +484,23 @@ vision](#full-vision-phased-honest) are where these get addressed.
   parser tweak — likely its own scoped design, not a quick follow-on to
   `event`.
 
+Done: ~~Validation~~ (`.isEmail()`/`.isUrl()`/`.isNumeric()`/`.isAlpha()`/
+`.isAlphanumeric()`/`.minLength(n)`/`.maxLength(n)` — seven reserved
+method names closing the last open slice of Phase 2's "string/date/number
+formatting utilities" gap, the same "no real inherent method exists, so
+synthesize a real boolean-valued Rust expression" trade-off
+`.fixed`/`.padded`/`.grouped` already made. See [Status § Phase 2
+continues](#status-what-works-today), [LANGUAGE.md §
+Validation](LANGUAGE.md#validation)) — landed 2026-08-08. Four of the
+seven (`.isEmail`/`.isUrl`/`.isAlpha`/`.isAlphanumeric`) share a real
+E0716 lifetime bug caught by an actual `cargo check --target
+wasm32-unknown-unknown`, not assumed: a `.get()` receiver is an unnamed
+temporary, and a `&str` borrowed from it via `.as_ref()` doesn't outlive
+a block's later statements unless the temporary itself is named first —
+fixed by binding it to `__kittine_owned` before borrowing, the same fix
+`.isEmail()` alone had already landed with when the other three were
+first added still carrying the bug.
+
 Done: ~~Date/time formatting and parsing~~ (a real `Date` type —
 `now>` the literal, `#d` the type tag, `.formatted(pattern)`/
 `.toDate(pattern)` the two reserved methods bridging to `chrono` — closing
@@ -457,8 +509,9 @@ continues](#status-what-works-today), [LANGUAGE.md § Date and
 time](LANGUAGE.md#date-and-time)) — landed 2026-08-05. Narrower gap left,
 logged in [LANGUAGE.md § Known limitations](LANGUAGE.md#known-limitations):
 `.toDate` needs a full date+time pattern, not date-only (inherited from
-`chrono::NaiveDateTime::parse_from_str` itself). Still open, logged in
-[Full vision § Phase 2](#phase-2--standard-library): validation.
+`chrono::NaiveDateTime::parse_from_str` itself). Phase 2's
+"string/date/number formatting utilities" gap is now fully closed — see
+the validation entry just above.
 
 Done: ~~Number formatting beyond what `MethodCall` interop reaches~~
 (`.fixed(precision)`/`.padded(width)`/`.grouped()` — three reserved
@@ -466,9 +519,9 @@ method names lowering to `format!`'s dynamic-precision/dynamic-width
 specifiers, and, for `.grouped()`, a small self-contained block expression
 since `format!` has no thousands-grouping specifier at all. See [Status §
 Phase 2 continues](#status-what-works-today), [LANGUAGE.md § Number
-formatting](LANGUAGE.md#number-formatting)) — landed 2026-08-01. Still open,
-logged in [Full vision § Phase 2](#phase-2--standard-library): date/time
-formatting (closed separately, just above — see that entry) and validation.
+formatting](LANGUAGE.md#number-formatting)) — landed 2026-08-01. Date/time
+formatting and validation, the other two items logged as still open here,
+are both closed separately — see the two entries just above.
 
 Done: ~~No array-of-`litter`/`breed` types~~ and ~~no lambda/closure-
 argument syntax for a filter predicate~~ (array-typed props/returns are no
@@ -759,11 +812,15 @@ Every item originally listed under this phase has landed, as of
 just undemonstrated; XML is a weaker fit for serde's derive model),
 ~~logging~~ (`warn<...>`/`error<...>` join `craft<...>`), ~~number
 formatting beyond what `MethodCall` interop reaches~~ (`.fixed(precision)`/
-`.padded(width)`/`.grouped()`), and ~~date/time formatting and parsing~~
+`.padded(width)`/`.grouped()`), ~~date/time formatting and parsing~~
 (a real `Date` type — `now>`/`#d`/`.formatted(pattern)`/`.toDate(pattern)`,
 lowering to `chrono` — see [Status](#status-what-works-today),
-[LANGUAGE.md § Date and time](LANGUAGE.md#date-and-time)) are done. File
-I/O and environment/config access are callable today via existing
+[LANGUAGE.md § Date and time](LANGUAGE.md#date-and-time)), and
+~~validation~~ (`.isEmail`/`.isUrl`/`.isNumeric`/`.isAlpha`/
+`.isAlphanumeric`/`.minLength`/`.maxLength` — see
+[LANGUAGE.md § Validation](LANGUAGE.md#validation)) are done, closing the
+"string/date/number formatting utilities" gap in full. File I/O and
+environment/config access are callable today via existing
 path-qualified-call interop (server-side only — no filesystem/env access
 from CSR/WASM) but have no real example wired up yet. Still fully open: an
 HTTP client (genuinely blocked — needs `async`/`await` support, which
@@ -771,8 +828,7 @@ doesn't exist yet; a closure literal for the predicate/callback side
 landed separately, see [LANGUAGE.md § Closures](LANGUAGE.md#closures));
 string formatting beyond what `MethodCall` interop already reaches (case
 conversion/`trim`/etc. already work via plain method-call passthrough —
-no additional gap found there beyond what was already true); and
-validation.
+no additional gap found there beyond what was already true).
 
 ### Phase 3 — Backend & data
 

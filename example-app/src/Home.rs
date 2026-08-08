@@ -47,6 +47,14 @@ pub fn Home() -> impl IntoView {
     leptos::logging::log!("{}", (joined.get()).format(&("%Y-%m-%d")).to_string());
     let (launchDay, set_launchDay) = signal(chrono::NaiveDateTime::parse_from_str(&("2026-01-01 09:00:00"), &("%Y-%m-%d %H:%M:%S")).unwrap().and_utc());
     leptos::logging::log!("{}", (launchDay.get()).format(&("%B %d, %Y")).to_string());
+    let (signupEmail, set_signupEmail) = signal("admin@example.com".to_string());
+    let (signupWebsite, set_signupWebsite) = signal("https://kittine.dev".to_string());
+    let (signupZip, set_signupZip) = signal("90210".to_string());
+    leptos::logging::log!("{}", { let __kittine_owned = (signupEmail.get()); let __kittine_v: &str = __kittine_owned.as_ref(); match __kittine_v.split_once('@') { Some((__kittine_local, __kittine_domain)) => !__kittine_local.is_empty() && !__kittine_domain.is_empty() && __kittine_domain.contains('.') && !__kittine_domain.starts_with('.') && !__kittine_domain.ends_with('.') && !__kittine_v.contains(' '), None => false, } });
+    leptos::logging::log!("{}", { let __kittine_owned = (signupWebsite.get()); let __kittine_v: &str = __kittine_owned.as_ref(); let __kittine_rest = __kittine_v.strip_prefix("https://").or_else(|| __kittine_v.strip_prefix("http://")); match __kittine_rest { Some(__kittine_after_scheme) => { let __kittine_host = __kittine_after_scheme.split('/').next().unwrap_or(""); !__kittine_host.is_empty() && __kittine_host.contains('.') && !__kittine_v.contains(' ') }, None => false, } });
+    leptos::logging::log!("{}", (signupZip.get()).trim().parse::<f64>().is_ok());
+    leptos::logging::log!("{}", { let __kittine_owned = (username.get()); let __kittine_v: &str = __kittine_owned.as_ref(); !__kittine_v.is_empty() && __kittine_v.chars().all(|c| c.is_alphabetic()) });
+    leptos::logging::log!("{}", (((username.get()).chars().count() as f64) >= ((3) as f64) && ((username.get()).chars().count() as f64) <= ((20) as f64)));
     leptos::logging::warn!("demonstrating warn< -- a real leptos::logging::warn! call");
     leptos::logging::error!("demonstrating error< -- a real leptos::logging::error! call");
     if username.get() == "Admin" {
@@ -122,6 +130,24 @@ pub fn Home() -> impl IntoView {
                 {move || (joined.get()).format(&("%Y-%m-%d")).to_string()}
                 " / Launch day: "
                 {move || (launchDay.get()).format(&("%B %d, %Y")).to_string()}
+            </p>
+            <p>
+                "Signup email: "
+                <input placeholder="you@example.com" on:input=move |ev| set_signupEmail.update(|n| *n = event_target_value(&ev))/>
+                {move || signupEmail.get()}
+                " (valid: "
+                {move || { let __kittine_owned = (signupEmail.get()); let __kittine_v: &str = __kittine_owned.as_ref(); match __kittine_v.split_once('@') { Some((__kittine_local, __kittine_domain)) => !__kittine_local.is_empty() && !__kittine_domain.is_empty() && __kittine_domain.contains('.') && !__kittine_domain.starts_with('.') && !__kittine_domain.ends_with('.') && !__kittine_v.contains(' '), None => false, } }}
+                ")"
+            </p>
+            <p>
+                "Website valid: "
+                {move || { let __kittine_owned = (signupWebsite.get()); let __kittine_v: &str = __kittine_owned.as_ref(); let __kittine_rest = __kittine_v.strip_prefix("https://").or_else(|| __kittine_v.strip_prefix("http://")); match __kittine_rest { Some(__kittine_after_scheme) => { let __kittine_host = __kittine_after_scheme.split('/').next().unwrap_or(""); !__kittine_host.is_empty() && __kittine_host.contains('.') && !__kittine_v.contains(' ') }, None => false, } }}
+                " / Zip is numeric: "
+                {move || (signupZip.get()).trim().parse::<f64>().is_ok()}
+                " / Username is alphabetic: "
+                {move || { let __kittine_owned = (username.get()); let __kittine_v: &str = __kittine_owned.as_ref(); !__kittine_v.is_empty() && __kittine_v.chars().all(|c| c.is_alphabetic()) }}
+                " / Username length 3-20: "
+                {move || (((username.get()).chars().count() as f64) >= ((3) as f64) && ((username.get()).chars().count() as f64) <= ((20) as f64))}
             </p>
             <Shapes/>
         </div>

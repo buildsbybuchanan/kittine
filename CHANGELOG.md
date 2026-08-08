@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kittine does not yet follow Semantic Versioning tags/releases — entries are
 grouped by date until the first tagged release.
 
+## [Unreleased] - 2026-08-08
+
+### Added (validation: `.isEmail` / `.isUrl` / `.isNumeric` / `.isAlpha` / `.isAlphanumeric` / `.minLength` / `.maxLength`)
+
+- **`.isEmail()`, `.isUrl()`, `.isNumeric()`, `.isAlpha()`,
+  `.isAlphanumeric()`, `.minLength(n)`, `.maxLength(n)`** — seven reserved
+  method names closing "validation," the last open item of the
+  "string/date/number formatting utilities" gap logged since 2026-07-22
+  (see [ROADMAP.md § Phase 2](docs/ROADMAP.md#phase-2--standard-library)).
+  Same trade-off as `.fixed`/`.padded`/`.grouped`: none of the seven is a
+  real inherent method on `String`/`&str`, so each synthesizes a real
+  boolean-valued Rust expression instead of passing the call through
+  as-is. `.isEmail()` is a real-enough (not RFC-5322-complete) shape
+  check — one `@`, non-empty local/domain parts, a domain `.` not at
+  either edge, no whitespace. `.isUrl()` is a real-enough
+  `http(s)://host...` shape check — recognized scheme, non-empty
+  `.`-containing host, no whitespace. `.isNumeric()` leans on a real
+  underlying method (`str::parse::<f64>`), the same "existing method
+  under an unguessable shape" reasoning `.formatted`/`.toDate` already
+  use for `chrono`. `.isAlpha()`/`.isAlphanumeric()` are
+  `char::is_alphabetic`/`is_alphanumeric` over every character plus an
+  explicit non-empty check (a bare `.chars().all(..)` on `""` is
+  vacuously `true`, not the useful answer). `.minLength(n)`/
+  `.maxLength(n)` compare `.chars().count()` (not `.len()`, which counts
+  UTF-8 bytes, not user-perceived characters) against `n`, cast to `f64`
+  since `n` can be any expression, not just a literal — same reasoning
+  `.fixed`'s precision argument already has. See [LANGUAGE.md §
+  Validation](docs/LANGUAGE.md#validation).
+  A real bug caught by an actual `cargo check --target
+  wasm32-unknown-unknown` against Leptos 0.7, not assumed: `.isEmail()`,
+  `.isUrl()`, `.isAlpha()`, and `.isAlphanumeric()` each lower to a
+  multi-statement block that borrows a `&str` from a `.get()` call's
+  result — an unnamed temporary — via `.as_ref()`, then reads that
+  reference from a *later* statement in the same block; that doesn't
+  live long enough (`E0716`) unless the temporary itself is bound to a
+  named local (`__kittine_owned`) first. The fix had already landed for
+  `.isEmail()` alone; regenerating `example-app`'s `Home.rs` from a real
+  `cargo check` surfaced the same bug still present, unfixed, in the
+  other three, which shared the identical block shape. Fixed all three
+  the same way, and added a regression test asserting all four validators
+  share the `__kittine_owned` binding, so this can't silently regress one
+  at a time again. Verified with 6 new compiler tests (180 total, up from
+  174) and a real `cargo check --target wasm32-unknown-unknown` —
+  `example-app`'s `Home.kitty` gained `signupEmail`/`signupWebsite`/
+  `signupZip` signals plus reuse of the existing `username` signal,
+  exercising all seven validators, logged via `craft<...>` and rendered
+  live in the view, including a real `onInput` binding on `signupEmail`
+  so `.isEmail()` re-evaluates as the user types.
+
 ## [Unreleased] - 2026-08-05
 
 ### Added (a real `Date` type: `now>` / `#d` / `.formatted` / `.toDate`)

@@ -20,6 +20,7 @@ document's narrative walkthrough), see [GRAMMAR.md](GRAMMAR.md).
   - [Method calls](#method-calls)
   - [Number formatting (`.fixed` / `.padded` / `.grouped`)](#number-formatting)
   - [Date and time (`now>` / `#d` / `.formatted` / `.toDate`)](#date-and-time)
+  - [Validation (`.isEmail` / `.isUrl` / `.isNumeric` / `.isAlpha` / `.isAlphanumeric` / `.minLength` / `.maxLength`)](#validation)
   - [Tuples](#tuples)
 - [Modules and imports](#modules-and-imports)
   - [Visibility](#visibility)
@@ -381,6 +382,67 @@ way a `litter`/`breed` needs `serde` for JSON.
 `Offset` type, `Utc`, is a zero-sized `Copy` unit struct), so a `Date`
 param/prop is passed by value like a number or boolean, never pre-cloned
 like a `Word`/`litter`/`breed`.
+
+### Validation
+
+```kitty
+email.isEmail()
+website.isUrl()
+zip.isNumeric()
+username.isAlpha()
+code.isAlphanumeric()
+username.minLength(3) && username.maxLength(20)
+```
+
+Seven more reserved method names, closing the "validation" half of Phase
+2's standard-library gap (see [ROADMAP.md § Phase
+2](ROADMAP.md#phase-2--standard-library)) left open by the [number
+formatting](#number-formatting) and [date/time](#date-and-time) rounds
+above. None of `isEmail`/`isUrl`/`isNumeric`/`isAlpha`/`isAlphanumeric`/
+`minLength`/`maxLength` is a real inherent method on `String`/`&str`, so,
+same trade-off as `.fixed`/`.padded`/`.grouped`, these synthesize a real
+boolean-valued Rust expression instead of passing the call through
+verbatim.
+
+| Kittine | Generated Rust (shape) | Result (given `zip` is `"90210"`) |
+| --- | --- | --- |
+| `zip.isNumeric()` | `(zip.get()).trim().parse::<f64>().is_ok()` | `true` |
+| `name.minLength(3)` | `((name.get()).chars().count() as f64) >= ((3) as f64)` | — |
+
+- **`.isEmail()`** — a real-enough (not RFC-5322-complete) shape check:
+  exactly one `@`, a non-empty local part, and a domain part that
+  contains a `.` without starting or ending on one, with no whitespace
+  anywhere in the value. No MX-record lookup, no full RFC 5322 grammar —
+  the same trust level as HTML5's own `<input type="email">` pattern.
+- **`.isUrl()`** — a real-enough `http(s)://host...` shape check: a
+  recognized scheme, a non-empty host containing a `.`, and no
+  whitespace. No non-`http(s)` scheme support, no percent-encoding
+  validation.
+- **`.isNumeric()`** — whether the whole (trimmed) value parses as a real
+  `f64`. Unlike `.isEmail`/`.isUrl`, this one has a real underlying Rust
+  method to lean on (`str::parse`), the same "an existing method under a
+  shape a `.kitty` author wouldn't guess" reasoning `.formatted`/`.toDate`
+  already use for `chrono`.
+- **`.isAlpha()` / `.isAlphanumeric()`** — every character
+  alphabetic/alphanumeric (Unicode-aware, via `char::is_alphabetic`/
+  `char::is_alphanumeric`) *and* the value non-empty — a bare
+  `.chars().all(..)` on an empty string is vacuously `true`, which isn't
+  the useful validation-utility answer, so both add an explicit
+  non-empty check.
+- **`.minLength(n)` / `.maxLength(n)`** — compares `.chars().count()`
+  (not `.len()`, which counts UTF-8 bytes, not user-perceived characters)
+  against `n`. `n` can be any expression (a signal read), not just a
+  literal, cast to `f64` for the comparison since Kittine's `Num` is
+  always `f64` — same "argument can be any expression" reasoning
+  `.fixed`'s precision argument already has.
+
+`.isEmail()`, `.isUrl()`, `.isAlpha()`, and `.isAlphanumeric()` each lower
+to a small self-contained block expression (the receiver bound to a named
+local before `.as_ref()` borrows from it — a `.get()` call's result is an
+unnamed temporary, and a reference taken from it needs the temporary
+itself named first to outlive the block's later statements, `E0716`
+otherwise). `.isNumeric()`, `.minLength()`, and `.maxLength()` are single
+expressions with no such binding needed.
 
 ### Tuples
 

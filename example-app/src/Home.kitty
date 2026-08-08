@@ -31,6 +31,14 @@ func Home() {
     craft<joined.formatted("%Y-%m-%d")>
     <{launchDay}> >> '2026-01-01 09:00:00'.toDate("%Y-%m-%d %H:%M:%S")
     craft<launchDay.formatted("%B %d, %Y")>
+    <{signupEmail}> >> 'admin@example.com'
+    <{signupWebsite}> >> 'https://kittine.dev'
+    <{signupZip}> >> '90210'
+    craft<signupEmail.isEmail()>
+    craft<signupWebsite.isUrl()>
+    craft<signupZip.isNumeric()>
+    craft<username.isAlpha()>
+    craft<username.minLength(3) && username.maxLength(20)>
     warn<'demonstrating warn< -- a real leptos::logging::warn! call'>
     error<'demonstrating error< -- a real leptos::logging::error! call'>
 
@@ -100,6 +108,20 @@ func Home() {
                 { joined.formatted("%Y-%m-%d") }
                 ' / Launch day: '
                 { launchDay.formatted("%B %d, %Y") }
+            </p>
+            <p>
+                'Signup email: '
+                <input placeholder='you@example.com' onInput={<{signupEmail}> >> event}/>
+                <{signupEmail}>
+                ' (valid: '
+                { signupEmail.isEmail() }
+                ')'
+            </p>
+            <p>
+                'Website valid: ' { signupWebsite.isUrl() }
+                ' / Zip is numeric: ' { signupZip.isNumeric() }
+                ' / Username is alphabetic: ' { username.isAlpha() }
+                ' / Username length 3-20: ' { username.minLength(3) && username.maxLength(20) }
             </p>
             <Shapes/>
         </div>

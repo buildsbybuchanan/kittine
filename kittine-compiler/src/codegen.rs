@@ -1040,8 +1040,8 @@ fn render_generic_field_value(expr: &Expr, render: &dyn Fn(&Expr) -> String) -> 
 /// `Vec::get(0f64)`), and Kittine has no way to tell which. Rust's own
 /// type checker is the source of truth on whether the call is valid.
 ///
-/// Five method names are reserved exceptions, checked first, exactly the
-/// way `name == "stash"` is a reserved exception in
+/// A growing list of method names are reserved exceptions, checked first,
+/// exactly the way `name == "stash"` is a reserved exception in
 /// [`render_struct_init`]: `fixed`/`padded`/`grouped` are number-formatting
 /// utilities `format!`'s macro syntax can express but no real Rust *method*
 /// on `f64`/any other type can (Rust has no `.fixed()`/`.padded()`/
@@ -1052,9 +1052,16 @@ fn render_generic_field_value(expr: &Expr, render: &dyn Fn(&Expr) -> String) -> 
 /// (`DateTime::format`, `NaiveDateTime::parse_from_str`) but under
 /// different names/shapes than a `.kitty` author would guess, so these two
 /// reserved names give the Date/Time type the same "no dedicated syntax
-/// needed" ergonomics `fixed`/`padded`/`grouped` already give `Num`. See
+/// needed" ergonomics `fixed`/`padded`/`grouped` already give `Num`. The
+/// seven `is*`/`minLength`/`maxLength` names are Phase 2's validation
+/// utilities (see `docs/ROADMAP.md` § Phase 2): none of them is a real
+/// inherent method on `String`/`&str` either, so, same as the
+/// number-formatting group, these synthesize a real boolean-valued Rust
+/// expression instead of passing the call through as-is. See
 /// [`render_fixed`], [`render_padded`], [`render_grouped`],
-/// [`render_formatted`], [`render_to_date`].
+/// [`render_formatted`], [`render_to_date`], [`render_is_email`],
+/// [`render_is_url`], [`render_is_numeric`], [`render_is_alpha`],
+/// [`render_is_alphanumeric`], [`render_min_length`], [`render_max_length`].
 fn render_method_call(
     receiver: &Expr,
     method: &str,
@@ -1067,6 +1074,13 @@ fn render_method_call(
         ("grouped", []) => return render_grouped(receiver, render),
         ("formatted", [pattern]) => return render_formatted(receiver, pattern, render),
         ("toDate", [pattern]) => return render_to_date(receiver, pattern, render),
+        ("isEmail", []) => return render_is_email(receiver, render),
+        ("isUrl", []) => return render_is_url(receiver, render),
+        ("isNumeric", []) => return render_is_numeric(receiver, render),
+        ("isAlpha", []) => return render_is_alpha(receiver, render),
+        ("isAlphanumeric", []) => return render_is_alphanumeric(receiver, render),
+        ("minLength", [min]) => return render_min_length(receiver, min, render),
+        ("maxLength", [max]) => return render_max_length(receiver, max, render),
         _ => {}
     }
     let rendered_args: Vec<String> = args.iter().map(|a| render(a)).collect();
@@ -1165,6 +1179,128 @@ fn render_to_date(receiver: &Expr, pattern: &Expr, render: &dyn Fn(&Expr) -> Str
         "chrono::NaiveDateTime::parse_from_str(&({}), &({})).unwrap().and_utc()",
         render(receiver),
         render(pattern)
+    )
+}
+
+/// Renders `receiver.isEmail()` — a real-enough (not RFC-5322-complete)
+/// email shape check: exactly one `@`, a non-empty local part, and a domain
+/// part that contains a `.` without starting or ending on one, with no
+/// whitespace anywhere in the value. Rust's `str` has no `.isEmail()`
+/// inherent method (there's no format-macro spelling for this the way
+/// `.fixed`/`.padded` could lean on `format!`'s own specifiers), so this
+/// lowers to a small self-contained block expression, the same shape
+/// [`render_grouped`] already uses for a check `format!` itself can't
+/// express. See `docs/LANGUAGE.md` § Known limitations for what this
+/// deliberately doesn't attempt (no MX-record lookup, no full RFC 5322
+/// grammar — this is a shape check, the same trust level as HTML5's own
+/// `<input type="email">` pattern).
+///
+/// `receiver` is bound to a named local (`__kittine_owned`) before
+/// `.as_ref()` borrows from it — a real bug caught by an actual
+/// `cargo check` against Leptos, not assumed: a receiver that's a `.get()`
+/// call produces an unnamed temporary whose scope is just the one `let`
+/// statement that first uses it, so a reference taken from it (`&str`) and
+/// then read by a *later* statement in the same block (the `match`) doesn't
+/// live long enough (`E0716`) unless the temporary itself is named first.
+fn render_is_email(receiver: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "{{ let __kittine_owned = ({receiver}); let __kittine_v: &str = __kittine_owned.as_ref(); \
+match __kittine_v.split_once('@') {{ \
+Some((__kittine_local, __kittine_domain)) => !__kittine_local.is_empty() \
+&& !__kittine_domain.is_empty() \
+&& __kittine_domain.contains('.') \
+&& !__kittine_domain.starts_with('.') \
+&& !__kittine_domain.ends_with('.') \
+&& !__kittine_v.contains(' '), \
+None => false, \
+}} }}",
+        receiver = render(receiver)
+    )
+}
+
+/// Renders `receiver.isUrl()` — a real-enough `http(s)://host...` shape
+/// check: a recognized scheme, a non-empty host containing a `.`, and no
+/// whitespace. Same "no real inherent method exists, so a self-contained
+/// block expression" reasoning as [`render_is_email`] — Rust's `str` has no
+/// `.isUrl()` either, and a genuinely complete URL grammar is a much bigger
+/// thing than this scoped check attempts (see `docs/LANGUAGE.md` § Known
+/// limitations: no non-http(s) scheme support, no percent-encoding
+/// validation). Same `__kittine_owned`-before-`.as_ref()` shape as
+/// [`render_is_email`], for the same E0716 reason.
+fn render_is_url(receiver: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "{{ let __kittine_owned = ({receiver}); let __kittine_v: &str = __kittine_owned.as_ref(); \
+let __kittine_rest = __kittine_v.strip_prefix(\"https://\").or_else(|| __kittine_v.strip_prefix(\"http://\")); \
+match __kittine_rest {{ \
+Some(__kittine_after_scheme) => {{ \
+let __kittine_host = __kittine_after_scheme.split('/').next().unwrap_or(\"\"); \
+!__kittine_host.is_empty() && __kittine_host.contains('.') && !__kittine_v.contains(' ') \
+}}, \
+None => false, \
+}} }}",
+        receiver = render(receiver)
+    )
+}
+
+/// Renders `receiver.isNumeric()` — whether the whole (trimmed) value
+/// parses as a real `f64`. Unlike [`render_is_email`]/[`render_is_url`],
+/// this one *does* have a real underlying Rust method to lean on
+/// (`str::parse`), the same "an existing method under a shape a `.kitty`
+/// author wouldn't guess" reasoning [`render_formatted`]/[`render_to_date`]
+/// already use for `chrono` — `.parse::<f64>().is_ok()` is real Rust, just
+/// not a name/shape a validation-utility call would spell on its own.
+fn render_is_numeric(receiver: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "({}).trim().parse::<f64>().is_ok()",
+        render(receiver)
+    )
+}
+
+/// Renders `receiver.isAlpha()` — every character alphabetic (Unicode-aware
+/// via `char::is_alphabetic`) and the value non-empty (an empty string
+/// vacuously satisfying `.all(..)` would make `''.isAlpha()` true, which
+/// isn't the useful validation-utility answer). Same
+/// `__kittine_owned`-before-`.as_ref()` shape as [`render_is_email`], for
+/// the same E0716 reason.
+fn render_is_alpha(receiver: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "{{ let __kittine_owned = ({}); let __kittine_v: &str = __kittine_owned.as_ref(); \
+!__kittine_v.is_empty() && __kittine_v.chars().all(|c| c.is_alphabetic()) }}",
+        render(receiver)
+    )
+}
+
+/// Renders `receiver.isAlphanumeric()` — same shape as [`render_is_alpha`],
+/// `char::is_alphanumeric` instead of `char::is_alphabetic`.
+fn render_is_alphanumeric(receiver: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "{{ let __kittine_owned = ({}); let __kittine_v: &str = __kittine_owned.as_ref(); \
+!__kittine_v.is_empty() && __kittine_v.chars().all(|c| c.is_alphanumeric()) }}",
+        render(receiver)
+    )
+}
+
+/// Renders `receiver.minLength(n)` — a `chars().count()` (not `.len()`,
+/// which counts UTF-8 bytes, not user-perceived characters) compared
+/// against `n`, cast to `f64` for the comparison since Kittine's `Num` is
+/// always `f64` and `n` may be an arbitrary expression (a signal read), not
+/// just a literal — same "argument can be any expression" reasoning
+/// [`render_fixed`]'s precision argument already has.
+fn render_min_length(receiver: &Expr, min: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "(({}).chars().count() as f64) >= (({}) as f64)",
+        render(receiver),
+        render(min)
+    )
+}
+
+/// Renders `receiver.maxLength(n)` — same shape as [`render_min_length`],
+/// `<=` instead of `>=`.
+fn render_max_length(receiver: &Expr, max: &Expr, render: &dyn Fn(&Expr) -> String) -> String {
+    format!(
+        "(({}).chars().count() as f64) <= (({}) as f64)",
+        render(receiver),
+        render(max)
     )
 }
 

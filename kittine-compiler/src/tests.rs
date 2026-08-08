@@ -1396,6 +1396,127 @@ func App() {
 }
 
 #[test]
+fn is_email_lowers_to_a_split_once_shape_check() {
+    // `.isEmail()` is the same class of reserved pseudo-method as
+    // `.fixed`/`.grouped` -- Rust's `str` has no `.isEmail()` method -- and,
+    // like `.grouped()`, there's no `format!` macro-syntax equivalent for a
+    // boolean shape check, so it lowers to a self-contained block
+    // expression (see `codegen::render_is_email`).
+    let out = compile(
+        r#"
+func App() {
+    craft<email.isEmail()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("split_once('@')"));
+    assert!(out.contains("__kittine_domain.contains('.')"));
+}
+
+#[test]
+fn is_url_lowers_to_a_scheme_and_host_shape_check() {
+    let out = compile(
+        r#"
+func App() {
+    craft<link.isUrl()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains(r#"strip_prefix("https://")"#));
+    assert!(out.contains(r#"strip_prefix("http://")"#));
+    assert!(out.contains("__kittine_host.contains('.')"));
+}
+
+#[test]
+fn is_numeric_lowers_to_a_real_parse_check() {
+    // Unlike `.isEmail()`/`.isUrl()`, `.isNumeric()` has a real underlying
+    // Rust method to lean on (`str::parse`) -- same "an existing method
+    // under a shape a `.kitty` author wouldn't guess" reasoning
+    // `.formatted`/`.toDate` already use for `chrono`.
+    let out = compile(
+        r#"
+func App() {
+    craft<code.isNumeric()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("(code).trim().parse::<f64>().is_ok()"));
+}
+
+#[test]
+fn is_alpha_and_is_alphanumeric_reject_the_empty_string() {
+    // A bare `.chars().all(..)` on an empty string is vacuously true, which
+    // isn't the useful validation-utility answer -- both lower to an
+    // explicit non-empty check alongside the `char` predicate.
+    let out = compile(
+        r#"
+func App() {
+    craft<name.isAlpha()>
+    craft<code.isAlphanumeric()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("!__kittine_v.is_empty() && __kittine_v.chars().all(|c| c.is_alphabetic())"));
+    assert!(out.contains("!__kittine_v.is_empty() && __kittine_v.chars().all(|c| c.is_alphanumeric())"));
+}
+
+#[test]
+fn is_email_is_url_is_alpha_is_alphanumeric_name_the_receiver_before_as_ref() {
+    // `receiver.get()` (a signal read) is an unnamed temporary; taking a
+    // `&str` from it via `.as_ref()` and reading that reference from a
+    // *later* statement in the same block doesn't live long enough (E0716)
+    // unless the temporary itself is bound to a named local first (see
+    // `codegen::render_is_email`'s doc comment -- a real bug caught by a
+    // `cargo check --target wasm32-unknown-unknown`, not assumed). All four
+    // validators built on a multi-statement block (`.isNumeric()`,
+    // `.minLength()`/`.maxLength()` are single expressions and don't need
+    // this) must share the fix, not just `.isEmail()`.
+    let out = compile(
+        r#"
+func App() {
+    craft<email.isEmail()>
+    craft<link.isUrl()>
+    craft<name.isAlpha()>
+    craft<code.isAlphanumeric()>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert_eq!(
+        out.matches("let __kittine_owned = ").count(),
+        4,
+        "isEmail/isUrl/isAlpha/isAlphanumeric must each name the receiver \
+before .as_ref() to avoid E0716 -- got:\n{out}"
+    );
+}
+
+#[test]
+fn min_length_and_max_length_compare_char_count_not_byte_len() {
+    // `.chars().count()`, not `.len()` -- `.len()` counts UTF-8 bytes, not
+    // user-perceived characters, which would silently misjudge any
+    // non-ASCII input. The bound argument can be any expression (a signal
+    // read), not just a literal -- same reasoning `.fixed`'s precision
+    // argument already has -- so it's cast to `f64`, not assumed to already
+    // be one.
+    let out = compile(
+        r#"
+func App() {
+    <{minLen}> >> #n 3
+    craft<name.minLength(minLen)>
+    craft<name.maxLength(20)>
+    return ( <div></div> )
+}
+"#,
+    );
+    assert!(out.contains("(name).chars().count() as f64) >= ((minLen.get()) as f64)"));
+    assert!(out.contains("(name).chars().count() as f64) <= ((20) as f64)"));
+}
+
+#[test]
 fn now_literal_lowers_to_chrono_utc_now() {
     // `now>` is the only way to produce a `Date` value from scratch -- same
     // `>`-suffixed-keyword shape as `yes>`/`no>` -- and it's the one piece
