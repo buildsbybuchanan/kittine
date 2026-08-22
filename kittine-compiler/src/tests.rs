@@ -310,6 +310,31 @@ func App() {
 }
 
 #[test]
+fn num_signal_mutation_to_a_brand_new_literal_is_unambiguous_f64() {
+    // `<{count}> >> 5` as a *mutation* (not the signal's first/declaring
+    // occurrence, and not the self-referential `count + 1` compound-op
+    // shape) used to render `*n = 5` -- an unsuffixed integer literal left
+    // to Rust's generic inference, which fails to compile (`expected f64,
+    // found integer`) whenever nothing else in the same `set_x.update(|n|
+    // ..)` closure pins the type down first -- e.g. a JSX inline event
+    // handler mutation (`onClick={<{open}> >> 1}`), which has no other
+    // f64-typed operand in scope. Same class of fix as
+    // `word_signal_mutation_to_a_brand_new_literal_is_owned`, for `Num`
+    // instead of `Word`.
+    let out = compile(
+        r#"
+func App() {
+    <{count}> >> 0
+    <{count}> >> 5
+    return ( <button onClick={<{count}> >> 1}></button> )
+}
+"#,
+    );
+    assert!(out.contains("set_count.update(|n| *n = 5f64);"));
+    assert!(out.contains("set_count.update(|n| *n = 1f64)"));
+}
+
+#[test]
 fn nested_if_inside_if_block() {
     let out = compile(
         r#"

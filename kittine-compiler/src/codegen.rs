@@ -743,6 +743,18 @@ fn mutation_body(name: &str, value: &Expr, scope: &Scope) -> String {
         // already lowers to an owned `format!(..)` regardless.
         return format!("*n = {}.to_string()", substitute_self(value, name, scope));
     }
+    if let Expr::Number(n) = value {
+        // Same reasoning as `render_signal_init`: `*n` is a concrete `f64`
+        // (a `Num` signal's mutation target), so a bare whole-number
+        // literal here needs the same unambiguous `f64` suffix a signal's
+        // initializer or a compound-assignment operand already gets above
+        // — `*n = 5` alone leaves `5`'s type to generic inference, which
+        // fails to compile (`expected f64, found integer`) the moment
+        // nothing else in the same closure pins it down first (e.g. an
+        // inline `onClick={<{open}> >> 1}` event-handler mutation, which
+        // has no other f64-typed operand in scope to infer from).
+        return format!("*n = {}", fmt_num_unambiguous(*n));
+    }
     format!("*n = {}", substitute_self(value, name, scope))
 }
 
